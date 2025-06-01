@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import type { UserInfo } from '@/types';
@@ -50,10 +50,12 @@ export default function DerivFinalizePage() {
   }, [authStatus, router, searchParams, login]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-      <p className="text-lg font-semibold text-foreground">Finalizing Deriv Login...</p>
-      <p className="text-sm text-muted-foreground">Please wait while we securely log you in.</p>
-    </div>
+    <Suspense fallback={<div>Loading...</div>}>
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-lg font-semibold text-foreground">Finalizing Deriv Login...</p>
+        <p className="text-sm text-muted-foreground">Please wait while we securely log you in.</p>
+      </div>
+    </Suspense>
   );
 } 
