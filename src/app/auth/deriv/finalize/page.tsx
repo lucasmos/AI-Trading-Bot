@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/auth-context';
 import type { UserInfo } from '@/types';
 import { Loader2 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function DerivFinalizePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
