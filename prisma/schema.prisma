@@ -1,0 +1,283 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth specific models - START
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String // provider type, e.g., "oauth", "email", "credentials"
+  provider          String // provider name, e.g., "google", "github"
+  providerAccountId String // id of the user on the provider's side
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text // ID token from provider (e.g., Google)
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+// NextAuth specific models - END
+
+// User model for extension users
+model User {
+  id            String     @id @default(cuid()) // Changed to cuid for NextAuth
+  name          String?    // Standard NextAuth field for user's name
+  email         String?    @unique   // Standard NextAuth field
+  emailVerified DateTime?  // Standard NextAuth field
+  image         String?    // Standard NextAuth field (for avatar URL or data URL)
+  hashedPassword String?    // For NextAuth Credentials Provider
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Your custom fields (review for redundancy with NextAuth fields)
+  authMethod    String?    // Potentially redundant with NextAuth Account model
+  googleId      String?    @unique // Potentially redundant, providerAccountId in Account is preferred
+  picture       String?    // Original Google picture, can be mapped to 'image' if needed
+  displayName   String?    // Can be merged with 'name' or used for specific display logic
+  avatarDataUrl String?    // Your custom field for base64 avatar data, map to/from 'image'
+
+  // Relations
+  accounts      Account[]      // For NextAuth
+  sessions      Session[]      // For NextAuth sessions
+  
+  settings      UserSettings?  // Your existing relation
+  usageStats    UsageStats[]   // Your existing relation
+  savedItems    SavedItem[]    // Your existing relation
+  notifications Notification[] // Your existing relation
+  trades        Trade[]        // Your existing relation
+  profitSummary ProfitSummary? // Your existing relation
+  watchlists    Watchlist[]    // Your existing relation
+  alerts        PriceAlert[]   // Your existing relation
+  apiKeys       ApiKey[]       // Your existing relation
+
+  // Your original custom Session model - now commented out
+  // customSessions  CustomSession[] 
+}
+
+
+// Your existing Session model - RENAMED or TO BE REMOVED
+// To avoid conflict with NextAuth's Session model, this needs to be renamed or removed.
+// If you need to keep its functionality, rename it (e.g., to UserActivitySession)
+// and update its relation to User accordingly.
+/*
+model CustomSession { // Example rename
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  startTime DateTime @default(now())
+  endTime   DateTime?
+  userAgent String?
+  ipAddress String?
+
+  @@index([userId])
+  @@index([startTime])
+}
+*/
+
+// User preferences and settings
+model UserSettings {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  theme         String   @default("light")
+  language      String   @default("en")
+  notifications Boolean  @default(true)
+  settings      Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Extension usage statistics
+model UsageStats {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  action    String
+  timestamp DateTime @default(now())
+  metadata  Json?
+
+  @@index([userId])
+  @@index([timestamp])
+}
+
+// Saved data or bookmarks
+model SavedItem {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  title       String
+  content     String
+  url         String?
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tags])
+}
+
+// User notifications
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  title     String
+  message   String
+  type      String   // 'info' | 'warning' | 'error' | 'success'
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([read])
+}
+
+// Trading related models
+model Trade {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol      String
+  type        String   // 'buy' | 'sell'
+  amount      Float
+  price       Float
+  totalValue  Float
+  status      String   // 'open' | 'closed' | 'cancelled'
+  openTime    DateTime @default(now())
+  closeTime   DateTime?
+  profit      Float?
+  metadata    Json?    // Additional trade details
+  aiStrategyId String?  // ID of the AI strategy used for this trade
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  stopLoss    Float?   // Stop loss price
+  takeProfit  Float?   // Take profit price
+  leverage    Float?   // Leverage used
+  fees        Float?   // Trading fees
+  exchange    String?  // Exchange used
+  orderType   String?  // 'market' | 'limit' | 'stop' | 'trailing_stop'
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([status])
+  @@index([openTime])
+}
+
+model ProfitSummary {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  totalProfit   Float    @default(0)
+  totalTrades   Int      @default(0)
+  winningTrades Int      @default(0)
+  losingTrades  Int      @default(0)
+  winRate       Float    @default(0)
+  lastUpdated   DateTime @updatedAt
+}
+
+// Watchlist for tracking favorite symbols
+model Watchlist {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  name        String
+  symbols     String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([symbols])
+}
+
+// Price alerts for monitoring price movements
+model PriceAlert {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  symbol      String
+  price       Float
+  condition   String   // 'above' | 'below'
+  triggered   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([triggered])
+}
+
+// API keys for exchange integration
+model ApiKey {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Added onDelete
+  exchange    String
+  apiKey      String   // Encrypted API key
+  secretKey   String   // Encrypted secret key
+  passphrase  String?  // Encrypted passphrase (if needed)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([exchange])
+}
+
+// Extension logs for debugging (No direct user relation, so no onDelete: Cascade needed here)
+model ExtensionLog {
+  id        String   @id @default(uuid())
+  level     String   // 'info' | 'warn' | 'error'
+  message   String
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([level])
+  @@index([timestamp])
+}
+
+// Model for password reset tokens
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique // Storing raw token as per decision
+  email     String   // Email of the user requesting reset
+  expires   DateTime // When the token is no longer valid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([token])
+}

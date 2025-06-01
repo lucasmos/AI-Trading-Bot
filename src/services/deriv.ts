@@ -1,12 +1,34 @@
 // import WebSocket from 'ws'; // Removed: 'ws' is for Node.js, browser has native WebSocket
-import type { TradingInstrument } from '@/types';
+// Types import - ensuring CandleData is recognized
+import type { TradingInstrument, PriceTick, CandleData } from '@/types';
+import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-// Deriv WebSocket API endpoint
-const DERIV_WS_URL = 'wss://ws.binaryws.com/websockets/v3?app_id=74597'; 
+const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
+const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
-// Read the token from environment variables. NEXT_PUBLIC_ prefix makes it available to the browser.
-const DERIV_API_TOKEN = "TXQW98UdRF92bo0";
+// Define the instrument map
+const DERIV_INSTRUMENT_MAP: Partial<Record<TradingInstrument, string>> = {
+  'Volatility 10 Index': 'R_10',
+  'Volatility 25 Index': 'R_25',
+  'Volatility 50 Index': 'R_50',
+  'Volatility 75 Index': 'R_75',
+  'Volatility 100 Index': 'R_100',
+  // Forex, Crypto, Commodities usually use their direct symbols, but map if needed
+  'EUR/USD': 'frxEURUSD',
+  'GBP/USD': 'frxGBPUSD',
+  'BTC/USD': 'cryBTCUSD',
+  // Add other mappings as necessary
+};
 
+// Define formatTickTime function
+const formatTickTime = (epoch: number): string => {
+  return new Date(epoch * 1000).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
 
 /**
  * Represents a tick data point for a financial instrument.
@@ -52,167 +74,117 @@ const instrumentToDerivSymbol = (instrument: TradingInstrument): string => {
     case 'Volatility 100 Index':
       return 'R_100';
     default:
-      // This should ideally not be reached if TradingInstrument type is exhaustive
-      // and all UI elements use instruments from this type.
-      // Making sure this function is never called with an invalid instrument (exhaustive check)
-      const exhaustiveCheck: never = instrument; 
-      console.error(`Unknown instrument passed to instrumentToDerivSymbol: ${exhaustiveCheck}`);
-      // Fallback to a commonly available symbol if type safety fails, though this indicates a bug.
+      // This case handles any string that wasn't explicitly matched.
+      // It might be an instrument symbol not yet in TradingInstrument type,
+      // or an unexpected value. Defaulting to a common Volatility Index or logging error.
+      console.warn(`[instrumentToDerivSymbol] Unknown instrument symbol: ${instrument}. Defaulting to R_100. Consider adding it to TradingInstrument type and DERIV_INSTRUMENT_MAP if valid.`);
+      // const exhaustiveCheck: never = instrument; // This will error if instrument is not 'never', which it isn't here.
       return 'R_100'; // Fallback to a common Volatility Index
   }
 };
 
 /**
- * Asynchronously retrieves tick data for a given symbol from Deriv API.
- *
- * @param instrument The trading instrument for which to retrieve tick data.
- * @returns A promise that resolves to an array of Tick objects.
+ * Fetches historical candle data for a given instrument from Deriv API.
+ * @param instrument The trading instrument.
+ * @param count Number of candles to fetch (default 120).
+ * @param granularity Seconds per candle (default 60 for 1-minute candles).
+ * @returns A promise that resolves to an array of CandleData.
  */
-export async function getTicks(instrument: TradingInstrument): Promise<Tick[]> {
-  const derivSymbol = instrumentToDerivSymbol(instrument);
-  
-  // Ensure WebSocket is only used in the browser environment
-  if (typeof window === 'undefined') {
-    console.warn('WebSocket operations (getTicks) are intended for the browser environment and will not run on the server.');
-    return Promise.resolve([]); 
-  }
+export async function getCandles(
+  instrument: TradingInstrument,
+  count: number = 120,
+  granularity: number = 60
+): Promise<CandleData[]> {
+  // Get the correct symbol for the Deriv API
+  const symbol = instrumentToDerivSymbol(instrument);
+  const decimalPlaces = getInstrumentDecimalPlaces(instrument);
+
+  const ws = new WebSocket(DERIV_API_URL);
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(DERIV_WS_URL); 
-    let requestSent = false;
-    let authorized = false; // Track authorization status
-
-    const timeout = setTimeout(() => {
-      if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) {
-        ws.close(); 
-      }
-      reject(new Error(`Deriv API request timed out for ${derivSymbol}`));
-    }, 15000); // 15 seconds timeout
-
     ws.onopen = () => {
-      console.log(`Deriv WebSocket connected for ${derivSymbol}.`);
+      // First authorize if we have a token
       if (DERIV_API_TOKEN) {
-        console.log('Attempting to authorize with API token.');
         ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
-      } else {
-        console.warn('Deriv API token is not available. Attempting to fetch public data. This may fail for protected resources like tick history.');
-        sendTicksRequest(); // Proceed without authorization if no token
       }
-    };
 
-    const sendTicksRequest = () => {
-      if (requestSent) return;
-      ws.send(
-        JSON.stringify({
-          ticks_history: derivSymbol,
+      // Wait a short moment after authorization before sending the ticks request
+      setTimeout(() => {
+        const request = {
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count: count,
           end: 'latest',
-          count: 50, // Fetch 50 ticks for the chart
-          style: 'ticks',
-          // subscribe: 1 // Uncomment if you want real-time tick updates, handle 'tick' messages
-        })
-      );
-      requestSent = true;
-      console.log(`Sent ticks_history request for ${derivSymbol}`);
+          start: 1,
+          style: 'candles',
+          granularity: granularity,
+        };
+        
+        console.log('[DerivService/getCandles] Sending request:', request);
+        ws.send(JSON.stringify(request));
+      }, DERIV_API_TOKEN ? 1000 : 0); // Wait 1 second if we need to authorize
     };
 
     ws.onmessage = (event) => {
       try {
-        const response = JSON.parse(event.data.toString());
+        const response = JSON.parse(event.data as string);
+        console.log('[DerivService/getCandles] Received response:', response);
         
         if (response.error) {
-          console.error(`Deriv API Error for ${derivSymbol}:`, response.error.message, response.error.code);
-          reject(new Error(`Deriv API Error for ${derivSymbol}: ${response.error.message} (Code: ${response.error.code})`));
+          console.error('[DerivService/getCandles] API Error:', response.error);
+          reject(new Error(response.error.message || 'Unknown API error'));
           ws.close();
-          clearTimeout(timeout);
-          return;
-        }
-
-        if (response.msg_type === 'authorize') {
-          if (response.authorize) {
-            console.log('Deriv API Authorized successfully.');
-            authorized = true;
-            sendTicksRequest(); 
-          } else {
-            console.error('Deriv API Authorization failed. Response:', response);
-            // If auth fails but token was provided, it might be invalid.
-            // If no token was provided, this path shouldn't be hit based on current logic.
-            // We could choose to proceed with public data request or reject.
-            // For now, if auth was attempted and failed, we reject.
-            if(DERIV_API_TOKEN){
-              reject(new Error('Deriv API Authorization failed. Ensure your token is valid and has tick_history permissions.'));
-              ws.close();
-              clearTimeout(timeout);
-              return;
-            }
-            // If no token was provided, and auth somehow failed (unexpected), try public request
-            console.warn('Authorization message received without successful auth, but no token was provided. Proceeding with public request.');
-            sendTicksRequest();
-          }
           return;
         }
         
-        if (response.msg_type === 'history' && response.history) {
-          const { times, prices } = response.history;
-          if (times && prices && times.length === prices.length) {
-            const ticks: Tick[] = times.map((epoch: number, index: number) => ({
-              epoch,
-              price: prices[index],
-              time: new Date(epoch * 1000).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false 
-              }),
-            }));
-            resolve(ticks);
-          } else {
-            console.error('Deriv API ticks_history response format error for', derivSymbol, response);
-            reject(new Error(`Invalid data format in ticks_history response for ${derivSymbol}`));
-          }
+        if (response.msg_type === 'candles') {
+          const candles: CandleData[] = (response.candles || []).map((candle: any) => ({
+            time: formatTickTime(candle.epoch),
+            epoch: candle.epoch,
+            open: parseFloat(candle.open.toFixed(decimalPlaces)),
+            high: parseFloat(candle.high.toFixed(decimalPlaces)),
+            low: parseFloat(candle.low.toFixed(decimalPlaces)),
+            close: parseFloat(candle.close.toFixed(decimalPlaces)),
+          }));
+          resolve(candles.slice(-count));
           ws.close();
-          clearTimeout(timeout);
-        } else if (response.echo_req && response.echo_req.ticks_history && !response.history) {
-            // This can happen if the symbol is valid but has no recent ticks, or if not authorized for a protected symbol
-            console.warn(`No history data returned for ${derivSymbol}. This might be due to an invalid symbol, no recent ticks, or insufficient permissions if not authorized. Echo_req:`, response.echo_req);
-            resolve([]); 
+        } else if (response.msg_type === 'authorize') {
+          if (response.error) {
+            console.error('[DerivService/getCandles] Authorization Error:', response.error);
+            reject(new Error(`Authorization failed: ${response.error.message}`));
             ws.close();
-            clearTimeout(timeout);
         }
-        // Handle 'tick' messages if subscribed
-        // if (response.msg_type === 'tick' && response.tick) {
-        //   console.log('Received tick update:', response.tick);
-        //   // Here you would typically update a real-time chart or data store
-        // }
-
-
-      } catch (parseError) {
-        console.error(`Error parsing Deriv API response for ${derivSymbol}:`, parseError);
-        reject(new Error(`Error parsing Deriv API response for ${derivSymbol}`));
+          // Successfully authorized, waiting for candles
+        }
+      } catch (e) {
+        console.error('[DerivService/getCandles] Error processing message:', e);
+        reject(e);
         ws.close();
-        clearTimeout(timeout);
       }
     };
 
-    ws.onerror = (errorEvent) => {
-      console.error(`Deriv WebSocket error for ${derivSymbol}. Event:`, errorEvent);
-      // Browser WebSocket errors are typically DOMExceptions or generic Events
-      if (errorEvent instanceof Event && 'message' in errorEvent) {
-         reject(new Error(`Deriv WebSocket connection error for ${derivSymbol}: ${(errorEvent as any).message}. Check network and API endpoint.`));
-      } else {
-        reject(new Error(`Deriv WebSocket error for ${derivSymbol}. Check network, API endpoint, and console for details.`));
+    ws.onerror = (event) => {
+      let errorMessage = 'WebSocket error fetching candles.';
+      // Attempt to get more details from the event
+      if (event && typeof event === 'object') {
+        // For a standard ErrorEvent, `message` might be available.
+        // For a generic Event from WebSocket, it might not have a direct 'message'.
+        // We can log the type or stringify it.
+        // Browsers usually log the Event object well, but in Node.js or some environments it might be just '{}'.
+        // The console.error below will show the object, this is for the rejected Error.
+        if ('message' in event && (event as any).message) {
+            errorMessage = `WebSocket Error: ${(event as any).message}`;
+        } else {
+            errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+        }
       }
-      if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) {
+      console.error('[DerivService/getCandles] WebSocket Error Event:', event); // Log the full event object
+      reject(new Error(errorMessage)); // Reject with a more informative message
         ws.close();
-      }
-      clearTimeout(timeout);
     };
 
     ws.onclose = (event) => {
-      clearTimeout(timeout); // Ensure timeout is cleared on close
-      console.log(`Deriv WebSocket disconnected for ${derivSymbol}. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
-      // If the promise hasn't resolved/rejected yet, it means an unexpected close.
-      // This check might be redundant if all paths leading to close also resolve/reject.
-      // For safety, one might reject here if not already settled.
+      console.log('[DerivService/getCandles] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
     };
   });
 }

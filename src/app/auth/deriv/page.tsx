@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 import type { UserInfo } from '@/types';
 import { useRouter } from 'next/navigation';
 import { LogIn } from 'lucide-react';
+import Link from 'next/link';
 
 export default function DerivLoginPage() {
   const { login } = useAuth(); // Use login from AuthContext
@@ -23,8 +24,20 @@ export default function DerivLoginPage() {
       derivDemoBalance: 10000,
       derivRealBalance: 500, // Example real balance
     };
-    login(mockUser, 'deriv'); // Pass 'deriv' as the method
-    // router.push('/'); // AuthContext login will handle navigation
+    // Call login with redirect option
+    login(mockUser, 'deriv', { redirect: true });
+  };
+
+  const handleRealDerivLogin = () => {
+    const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+    if (!derivAppId) {
+      console.error("Deriv App ID is not configured.");
+      // Optionally, show a toast or alert to the user
+      alert("Deriv login is currently unavailable. Please try again later.");
+      return;
+    }
+    const derivOauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${derivAppId}`;
+    router.push(derivOauthUrl); // Or window.location.href = derivOauthUrl;
   };
 
   return (
@@ -36,9 +49,18 @@ export default function DerivLoginPage() {
         <CardDescription>Securely connect your Deriv account to DerivAI Lite.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <Button
+          onClick={handleRealDerivLogin}
+          className="w-full bg-red-600 hover:bg-red-700 text-white text-lg py-6"
+        >
+          <LogIn className="mr-2 h-5 w-5" />
+          Login with Deriv (Actual)
+        </Button>
+
+        <hr /> 
+
         <p className="text-sm text-muted-foreground text-center">
-          You would be redirected to Deriv to authorize this application.
-          This is a <span className="font-semibold">simulated login</span> for demonstration purposes.
+          Alternatively, you can use the simulated login for demonstration purposes:
         </p>
         <Button
           onClick={handleMockLogin}

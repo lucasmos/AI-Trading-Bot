@@ -1,11 +1,10 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart'; 
-import type { VolatilityInstrumentType, TradingMode, PaperTradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, TradingInstrument, TradeRecord } from '@/types';
-import { generateVolatilityTradingStrategy } from '@/ai/flows/volatility-trading-strategy-flow';
+import type { VolatilityInstrumentType, TradingMode, PaperTradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index';
+import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,21 +13,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getTicks } from '@/services/deriv';
+import { getCandles } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react'; 
-import { addTradeToHistory } from '@/lib/trade-history-utils';
-
-
-const VOLATILITY_INSTRUMENTS: VolatilityInstrumentType[] = [
-  'Volatility 10 Index',
-  'Volatility 25 Index',
-  'Volatility 50 Index',
-  'Volatility 75 Index',
-  'Volatility 100 Index',
-];
+import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
+import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
+import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 
 export default function VolatilityTradingPage() {
   const { 
@@ -43,6 +35,7 @@ export default function VolatilityTradingPage() {
   const [currentVolatilityInstrument, setCurrentVolatilityInstrument] = useState<VolatilityInstrumentType>(VOLATILITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); 
+  const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
   
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(100);
   const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
@@ -81,7 +74,7 @@ export default function VolatilityTradingPage() {
     localStorage.setItem(profitsKey, JSON.stringify(profitsClaimable));
   }, [profitsClaimable, paperTradingMode]);
 
-  const handleInstrumentChange = (instrument: TradingInstrument) => {
+  const handleInstrumentChange = (instrument: string) => {
     if (VOLATILITY_INSTRUMENTS.includes(instrument as VolatilityInstrumentType)) {
       setCurrentVolatilityInstrument(instrument as VolatilityInstrumentType);
     }
@@ -118,21 +111,56 @@ export default function VolatilityTradingPage() {
 
     try {
       const instrumentTicksData: Record<VolatilityInstrumentType, PriceTick[]> = {} as Record<VolatilityInstrumentType, PriceTick[]>;
+      const instrumentIndicatorsData: Record<VolatilityInstrumentType, any> = {} as Record<VolatilityInstrumentType, any>; // Adjust 'any' to a more specific type if available
       
-      for (const inst of VOLATILITY_INSTRUMENTS) {
+      for (const inst of VOLATILITY_INSTRUMENTS as VolatilityInstrumentType[]) {
         try {
-          instrumentTicksData[inst] = await getTicks(inst);
+          const candles = await getCandles(inst, 60); // Fetch 60 candles for indicator calculation
+          if (candles && candles.length > 0) {
+            instrumentTicksData[inst] = candles.map(candle => ({
+              epoch: candle.epoch,
+              price: candle.close,
+              time: candle.time,
+            }));
+
+            const closePrices = candles.map(c => c.close);
+            const highPrices = candles.map(c => c.high);
+            const lowPrices = candles.map(c => c.low);
+
+            // Calculate latest values for each indicator
+            const rsi = calculateRSI(closePrices);
+            const macd = calculateMACD(closePrices);
+            const bb = calculateBollingerBands(closePrices);
+            const ema = calculateEMA(closePrices);
+            const atr = calculateATR(highPrices, lowPrices, closePrices);
+
+            instrumentIndicatorsData[inst] = {
+              ...(rsi !== undefined && { rsi }),
+              ...(macd && { macd }), // macd itself is an object { macd, signal, histogram } or undefined
+              ...(bb && { bollingerBands: bb }), // bb itself is an object { upper, middle, lower } or undefined
+              ...(ema !== undefined && { ema }),
+              ...(atr !== undefined && { atr }),
+            };
+
+          } else {
+            instrumentTicksData[inst] = [];
+            instrumentIndicatorsData[inst] = {}; // No data for indicators
+            toast({title: `Data Error ${inst}`, description: `Could not fetch sufficient candle data for ${inst}. AI may exclude it or work with limited info.`, variant: 'destructive', duration: 4000});
+          }
         } catch (err) {
           instrumentTicksData[inst] = []; 
+          instrumentIndicatorsData[inst] = {}; // Error fetching data
           toast({title: `Data Error ${inst}`, description: `Could not fetch price data for ${inst}. AI may exclude it.`, variant: 'destructive', duration: 4000});
         }
       }
       
-      const strategyInput = {
+      const strategyInput: VolatilityTradingStrategyInput = {
         totalStake: autoTradeTotalStake,
-        instruments: VOLATILITY_INSTRUMENTS,
+        instruments: VOLATILITY_INSTRUMENTS as VolatilityInstrumentType[],
         tradingMode: tradingMode,
+        aiStrategyId: selectedAiStrategyId,
         instrumentTicks: instrumentTicksData,
+        instrumentIndicators: instrumentIndicatorsData,
       };
       const strategyResult = await generateVolatilityTradingStrategy(strategyInput);
 
@@ -152,7 +180,7 @@ export default function VolatilityTradingPage() {
         if (currentAllocatedStake + proposal.stake > autoTradeTotalStake) continue; 
         currentAllocatedStake += proposal.stake;
 
-        const currentTicks = instrumentTicksData[proposal.instrument];
+        const currentTicks = instrumentTicksData[proposal.instrument as VolatilityInstrumentType];
         if (!currentTicks || currentTicks.length === 0) {
           toast({ title: "Auto-Trade Skipped (Volatility)", description: `No price data for ${proposal.instrument} to initiate AI trade.`, variant: "destructive"});
           continue;
@@ -164,12 +192,12 @@ export default function VolatilityTradingPage() {
         if (proposal.action === 'CALL') stopLossPrice = entryPrice * (1 - stopLossPercentage);
         else stopLossPrice = entryPrice * (1 + stopLossPercentage);
         
-        stopLossPrice = parseFloat(stopLossPrice.toFixed(getInstrumentDecimalPlaces(proposal.instrument)));
+        stopLossPrice = parseFloat(stopLossPrice.toFixed(getInstrumentDecimalPlaces(proposal.instrument as InstrumentType)));
 
         const tradeId = uuidv4();
         newTrades.push({
           id: tradeId,
-          instrument: proposal.instrument,
+          instrument: proposal.instrument as VolatilityInstrumentType,
           action: proposal.action,
           stake: proposal.stake,
           durationSeconds: proposal.durationSeconds,
@@ -195,7 +223,7 @@ export default function VolatilityTradingPage() {
     } finally {
       setIsAiLoading(false); 
     }
-  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo]);
+  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId]);
 
   const handleStopAiAutoTrade = () => {
     setIsAutoTradingActive(false); 
@@ -207,23 +235,67 @@ export default function VolatilityTradingPage() {
         if (trade.status === 'active') {
           const pnl = -trade.stake; 
 
-          const tradeRecord: TradeRecord = {
-            id: trade.id,
-            timestamp: Date.now(),
-            instrument: trade.instrument,
-            action: trade.action,
-            duration: `${trade.durationSeconds}s`,
-            stake: trade.stake,
-            entryPrice: trade.entryPrice,
-            exitPrice: trade.currentPrice, 
-            pnl: pnl,
-            status: 'closed_manual',
-            accountType: paperTradingMode,
-            tradeCategory: 'volatility',
-            reasoning: (trade.reasoning || "") + " Manually stopped.",
-          };
-          addTradeToHistory(tradeRecord, userInfo);
-
+          if (userInfo?.id) {
+            console.log('[VolatilityDashboard] Storing manually stopped automated trade in database for user:', userInfo.id);
+            fetch('/api/trades', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId: userInfo.id,
+                email: userInfo.email, 
+                name: userInfo.name, 
+                symbol: trade.instrument,
+                type: trade.action === 'CALL' ? 'buy' : 'sell',
+                amount: trade.stake,
+                price: trade.entryPrice,
+                aiStrategyId: selectedAiStrategyId,
+                metadata: {
+                  mode: tradingMode,
+                  duration: `${trade.durationSeconds}s`,
+                  accountType: paperTradingMode,
+                  automated: true,
+                  manualStop: true,
+                  tradeCategory: 'volatility',
+                  reasoning: (trade.reasoning || "") + " Manually stopped."
+                }
+              }),
+            })
+            .then(response => response.json())
+            .then(createdTrade => {
+              if (createdTrade && createdTrade.id) {
+                console.log('[VolatilityDashboard] Manual stop trade created, now closing:', createdTrade.id);
+                return fetch(`/api/trades/${createdTrade.id}/close`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    exitPrice: trade.currentPrice, 
+                    metadata: {
+                      outcome: 'closed_manual',
+                      pnl: pnl,
+                      reason: "Manually stopped automated trade"
+                    }
+                  }),
+                });
+              }
+              throw new Error('Failed to create trade in DB for manual stop');
+            })
+            .then(response => response?.json())
+            .then(closedTrade => {
+              if (closedTrade) {
+                console.log('[VolatilityDashboard] Manual stop trade closed successfully:', closedTrade.id);
+              } else {
+                 console.warn('[VolatilityDashboard] Failed to close manually stopped trade in DB or no trade to close.');
+              }
+            })
+            .catch(error => {
+              console.error("[VolatilityDashboard] Error processing manually stopped trade in database:", error);
+            });
+          }
+          
           setTimeout(() => {
             setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
             setProfitsClaimable(prevProfits => ({
@@ -263,7 +335,7 @@ export default function VolatilityTradingPage() {
                 return currentTrade;
               }
 
-              let newStatus = currentTrade.status;
+              let newStatus: ActiveAutomatedVolatilityTrade['status'] = currentTrade.status;
               let pnl = currentTrade.pnl ?? 0;
               let newCurrentPrice = currentTrade.currentPrice ?? currentTrade.entryPrice;
               const decimalPlaces = getInstrumentDecimalPlaces(currentTrade.instrument);
@@ -288,23 +360,66 @@ export default function VolatilityTradingPage() {
                 clearInterval(tradeIntervals.current.get(trade.id)!);
                 tradeIntervals.current.delete(trade.id);
                 
-                const tradeRecord: TradeRecord = {
-                  id: currentTrade.id,
-                  timestamp: Date.now(),
-                  instrument: currentTrade.instrument,
-                  action: currentTrade.action,
-                  duration: `${currentTrade.durationSeconds}s`,
-                  stake: currentTrade.stake,
-                  entryPrice: currentTrade.entryPrice,
-                  exitPrice: newCurrentPrice,
-                  pnl: pnl,
-                  status: newStatus,
-                  accountType: paperTradingMode,
-                  tradeCategory: 'volatility',
-                  reasoning: currentTrade.reasoning,
-                };
-                addTradeToHistory(tradeRecord, userInfo);
-
+                if (userInfo?.id) {
+                  console.log('[VolatilityDashboard] Storing automated trade in database for user:', userInfo.id);
+                  fetch('/api/trades', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      userId: userInfo.id,
+                      email: userInfo.email,
+                      name: userInfo.name,
+                      symbol: currentTrade.instrument,
+                      type: currentTrade.action === 'CALL' ? 'buy' : 'sell',
+                      amount: currentTrade.stake,
+                      price: currentTrade.entryPrice,
+                      aiStrategyId: selectedAiStrategyId,
+                      metadata: {
+                        mode: tradingMode,
+                        duration: `${currentTrade.durationSeconds}s`,
+                        accountType: paperTradingMode,
+                        automated: true,
+                        tradeCategory: 'volatility',
+                        reasoning: currentTrade.reasoning
+                      }
+                    }),
+                  })
+                  .then(response => response.json())
+                  .then(createdTrade => {
+                    if (createdTrade && createdTrade.id) {
+                      console.log('[VolatilityDashboard] Automated trade created, now closing:', createdTrade.id);
+                      return fetch(`/api/trades/${createdTrade.id}/close`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          exitPrice: newCurrentPrice,
+                          metadata: {
+                            outcome: newStatus,
+                            pnl: pnl,
+                            reason: "Automated trade completed"
+                          }
+                        }),
+                      });
+                    }
+                    throw new Error('Failed to create automated trade in DB');
+                  })
+                  .then(response => response?.json())
+                  .then(closedTrade => {
+                     if (closedTrade) {
+                        console.log('[VolatilityDashboard] Automated trade closed successfully:', closedTrade.id);
+                     } else {
+                        console.warn('[VolatilityDashboard] Failed to close automated trade in DB or no trade to close.');
+                     }
+                  })
+                  .catch(error => {
+                    console.error("[VolatilityDashboard] Error processing automated trade in database:", error);
+                  });
+                }
+                
                 setTimeout(() => { 
                   setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
                   setProfitsClaimable(prevProfits => ({
@@ -343,7 +458,7 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isAiLoading, userInfo]);
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
 
 
   return (
@@ -354,11 +469,50 @@ export default function VolatilityTradingPage() {
         <div className="md:col-span-1">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Volatility Trading Controls</CardTitle>
-              <CardDescription>Configure AI-driven trading for volatility indices.</CardDescription>
+              <CardTitle className="flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" />AI Auto-Trading Controls</CardTitle>
+              <CardDescription>Configure and manage automated AI trading sessions for Volatility Indices.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <BalanceDisplay balance={currentBalance} accountType={paperTradingMode} />
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="volatility-trading-mode">Trading Mode</Label>
+                <Select value={tradingMode} onValueChange={(value) => setTradingMode(value as TradingMode)}>
+                  <SelectTrigger id="volatility-trading-mode">
+                    <SelectValue placeholder="Select mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="conservative">Conservative</SelectItem>
+                    <SelectItem value="balanced">Balanced</SelectItem>
+                    <SelectItem value="aggressive">Aggressive</SelectItem>
+                  </SelectContent>
+                  </Select>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  <p><strong>Conservative:</strong> Focuses on capital preservation with lower risk.</p>
+                  <p><strong>Balanced:</strong> Aims for a moderate balance between risk and reward.</p>
+                  <p><strong>Aggressive:</strong> Seeks higher potential returns, accepting higher risk.</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="volatility-ai-strategy">AI Strategy</Label>
+                <Select value={selectedAiStrategyId} onValueChange={setSelectedAiStrategyId} disabled={isAutoTradingActive || isAiLoading}>
+                  <SelectTrigger id="volatility-ai-strategy">
+                    <SelectValue placeholder="Select AI Strategy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_TRADING_STRATEGIES.map((strategy) => (
+                      <SelectItem key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                  </Select>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  <p><strong>Dynamic Adaptive:</strong> Flexible strategy, adapts to market changes.</p>
+                  <p><strong>Trend Rider:</strong> Follows strong market trends.</p>
+                  <p><strong>Range Negotiator:</strong> For sideways-moving markets.</p>
+                  <p><em>Risk for all strategies is set by your chosen Trading Mode.</em></p>
+                </div>
+              </div>
               <div>
                 <Label htmlFor="vol-account-mode">Account Type</Label>
                 <Select value={paperTradingMode} onValueChange={(val) => setPaperTradingMode(val as PaperTradingMode)} disabled={isAutoTradingActive || isAiLoading}>
@@ -366,17 +520,6 @@ export default function VolatilityTradingPage() {
                   <SelectContent>
                     <SelectItem value="paper"><UserCheck className="mr-2 h-4 w-4 inline-block text-blue-500"/>Demo Account</SelectItem>
                     <SelectItem value="live"><Briefcase className="mr-2 h-4 w-4 inline-block text-green-500"/>Real Account (Simulated)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="vol-trading-mode">AI Risk Mode</Label>
-                <Select value={tradingMode} onValueChange={(val) => setTradingMode(val as TradingMode)} disabled={isAutoTradingActive || isAiLoading}>
-                  <SelectTrigger id="vol-trading-mode" className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="conservative">Conservative</SelectItem>
-                    <SelectItem value="balanced">Balanced</SelectItem>
-                    <SelectItem value="aggressive">Aggressive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

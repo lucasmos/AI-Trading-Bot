@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -8,13 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import type { TradingMode, TradeDuration, PaperTradingMode, TradingInstrument, ForexCryptoCommodityInstrumentType } from '@/types';
+import type { TradingMode, TradeDuration, PaperTradingMode, ForexCryptoCommodityInstrumentType, InstrumentType } from '@/types';
 import { TrendingUp, TrendingDown, Bot, DollarSign, Play, Square, Briefcase, UserCheck } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 
 interface TradeControlsProps {
   tradingMode: TradingMode;
   onTradingModeChange: (mode: TradingMode) => void;
+  selectedAiStrategyId: string;
+  onAiStrategyChange: (strategyId: string) => void;
   tradeDuration: TradeDuration;
   onTradeDurationChange: (duration: TradeDuration) => void;
   paperTradingMode: PaperTradingMode; 
@@ -22,9 +23,9 @@ interface TradeControlsProps {
   stakeAmount: number;
   onStakeAmountChange: (amount: number) => void;
   onExecuteTrade: (action: 'CALL' | 'PUT') => void;
-  onGetAiRecommendation?: () => void; // Make optional if needed, but likely required
-  isFetchingManualRecommendation: boolean; // Loading state for manual AI recommendation
-  isPreparingAutoTrades: boolean; // Loading state for auto-trade preparation
+  onGetAiRecommendation?: () => void; 
+  isFetchingManualRecommendation: boolean; 
+  isPreparingAutoTrades: boolean; 
   autoTradeTotalStake: number;
   onAutoTradeTotalStakeChange: (amount: number) => void;
   onStartAiAutoTrade: () => void;
@@ -33,12 +34,18 @@ interface TradeControlsProps {
   disableManualControls?: boolean;
   currentBalance: number; 
   supportedInstrumentsForManualAi: ForexCryptoCommodityInstrumentType[];
-  currentSelectedInstrument: TradingInstrument;
+  currentSelectedInstrument: InstrumentType;
+  isMarketOpenForSelected: boolean;
+  marketStatusMessage: string | null;
+  stopLossPercentage: number;
+  onStopLossPercentageChange: (value: number) => void;
 }
 
 export function TradeControls({
   tradingMode,
   onTradingModeChange,
+  selectedAiStrategyId,
+  onAiStrategyChange,
   tradeDuration,
   onTradeDurationChange,
   paperTradingMode, 
@@ -58,6 +65,10 @@ export function TradeControls({
   currentBalance,
   supportedInstrumentsForManualAi, 
   currentSelectedInstrument, 
+  isMarketOpenForSelected,
+  marketStatusMessage,
+  stopLossPercentage,
+  onStopLossPercentageChange,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
   const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m'];
@@ -85,14 +96,33 @@ export function TradeControls({
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;
-  const isManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance;
-  const isManualAiRecommendationDisabled = isAnyAiLoading || disableManualControls || !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType);
+  const isManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected;
+
+  // Determine if the selected instrument is a Forex or Commodity that is subject to market hours
+  const isForexOrCommoditySubjectToMarketHours = 
+    supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) &&
+    !['BTC/USD', 'ETH/USD'].includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) && 
+    !currentSelectedInstrument.startsWith('Volatility');
+
+  const isManualAiRecommendationDisabled = 
+    isAnyAiLoading || 
+    disableManualControls || 
+    !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) ||
+    (isForexOrCommoditySubjectToMarketHours && !isMarketOpenForSelected); // <-- Condition for market hours
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle>Trade Terminal</CardTitle>
         <CardDescription>Configure and execute your trades. This terminal is for Forex/Crypto/Commodity instruments.</CardDescription>
+        {marketStatusMessage && (
+          <Badge 
+            variant={isMarketOpenForSelected ? 'default' : 'destructive'} 
+            className={`mt-2 ${isMarketOpenForSelected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+          >
+            {marketStatusMessage}
+          </Badge>
+        )}
       </CardHeader>
       <CardContent className="space-y-6">
         
@@ -175,7 +205,13 @@ export function TradeControls({
               onClick={onGetAiRecommendation}
               className="w-full bg-gradient-to-r from-primary to-purple-600 text-primary-foreground hover:opacity-90 transition-opacity"
               disabled={isManualAiRecommendationDisabled}
-              title={!supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) ? `AI for ${currentSelectedInstrument} on Volatility page.` : "Get AI Recommendation"}
+              title={
+                !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) 
+                  ? `AI for ${currentSelectedInstrument} is available on its specific trading page (e.g., Volatility Trading).` 
+                  : (isForexOrCommoditySubjectToMarketHours && !isMarketOpenForSelected) 
+                    ? marketStatusMessage || `Market for ${currentSelectedInstrument} is closed.`
+                    : "Get AI Recommendation"
+              }
             >
               <Bot className="mr-2 h-5 w-5" />
               {isFetchingManualRecommendation ? 'Analyzing...' : 'Get Manual AI Recommendation'}
@@ -187,6 +223,7 @@ export function TradeControls({
                 className="bg-green-500 hover:bg-green-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('CALL')}
                 disabled={isManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place CALL trade'}
               >
                 <TrendingUp className="mr-2 h-6 w-6" />
                 CALL
@@ -196,6 +233,7 @@ export function TradeControls({
                 className="bg-red-500 hover:bg-red-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('PUT')}
                 disabled={isManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place PUT trade'}
               >
                 <TrendingDown className="mr-2 h-6 w-6" />
                 PUT

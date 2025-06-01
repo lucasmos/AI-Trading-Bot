@@ -1,4 +1,4 @@
-
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client';
 
 import {
@@ -15,35 +15,45 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
-import { LayoutDashboard, History, Settings, LogOut, DollarSign, LogIn, CreditCard, BarChartBig, User, AlertCircle, Activity } from 'lucide-react'; // Added Activity for Volatility
+import { LayoutDashboard, History, Settings, LogOut, DollarSign, LogIn, CreditCard, BarChartBig, User, AlertCircle, Activity, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { isFirebaseInitialized } from '@/lib/firebase/firebase'; // Import isFirebaseInitialized
+import { isFirebaseInitialized } from '@/lib/firebase/firebase';
+import { Badge } from '@/components/ui/badge';
 
 export function SidebarContentComponent() {
-  const { authStatus, userInfo, logout, currentAuthMethod } = useAuth();
+  const { 
+    authStatus, 
+    userInfo, 
+    logout, 
+    currentAuthMethod, 
+    derivDemoAccountId, 
+    derivLiveAccountId, 
+    selectedDerivAccountType,
+    switchToDerivDemo,
+    switchToDerivLive
+  } = useAuth();
   const { isMobile, open, setOpen, openMobile, setOpenMobile } = useSidebar(); 
   const pathname = usePathname();
   const router = useRouter();
 
   const handleLogout = async () => {
-    await logout(); // AuthContext logout handles Firebase/Deriv mock logout
-    // Navigation will be handled by AuthContext or redirect in login pages
-    // router.push('/auth/login'); // Potentially redundant if AuthContext handles it
+    await logout();
   };
 
   const handleMenuClick = () => {
     if (isMobile) {
-      setOpenMobile(false); // Closes the sheet overlay on mobile
+      setOpenMobile(false); 
     } else {
-      // On desktop, if the sidebar is expanded (not just icon state),
-      // collapse it to its icon state.
       if (open) {
         setOpen(false);
       }
     }
   };
+
+  const canSwitchToDemo = currentAuthMethod === 'deriv' && derivDemoAccountId && selectedDerivAccountType !== 'demo';
+  const canSwitchToLive = currentAuthMethod === 'deriv' && derivLiveAccountId && selectedDerivAccountType !== 'live';
 
   return (
     <Sidebar side="left" variant="sidebar" collapsible="icon">
@@ -107,6 +117,19 @@ export function SidebarContentComponent() {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === '/ai-performance'}
+              tooltip={{ children: 'AI Performance', side: 'right' }}
+              onClick={handleMenuClick}
+            >
+              <Link href="/ai-performance">
+                <BarChartBig />
+                <span>AI Performance</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
            <SidebarMenuItem>
             <SidebarMenuButton
               asChild
@@ -146,40 +169,100 @@ export function SidebarContentComponent() {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {!isFirebaseInitialized() && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === '/settings/profile'}
+              tooltip={{ children: 'User Profile', side: 'right' }}
+              onClick={handleMenuClick}
+            >
+              <Link href="/settings/profile"> 
+                <User /> 
+                <span>User Profile</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          
+          { !isFirebaseInitialized() && (
             <SidebarMenuItem>
                <SidebarMenuButton
                 isActive={false}
                 tooltip={{children: "Firebase Not Configured", side: "right"}}
-                className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+                className="text-destructive-foreground bg-destructive hover:bg-destructive/90 cursor-not-allowed"
                 disabled
                >
                 <AlertCircle/>
                 <span>Firebase N/A</span>
                </SidebarMenuButton>
             </SidebarMenuItem>
-          )}
+           )}
         </SidebarMenu>
       </SidebarContent>
       <Separator className="bg-sidebar-border" />
       <SidebarFooter className="p-4">
         {authStatus === 'authenticated' && userInfo ? (
           <div className="flex flex-col gap-3 items-start group-data-[collapsible=icon]:items-center">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 w-full">
               <Avatar className="h-10 w-10">
                 {userInfo.photoURL ? (
-                  <AvatarImage src={userInfo.photoURL} alt={userInfo.name} data-ai-hint="profile avatar" />
+                  <AvatarImage src={userInfo.photoURL} alt={userInfo.name || 'User'} />
                 ) : (
-                  <AvatarImage src={`https://picsum.photos/seed/${userInfo.id}/100/100`} alt={userInfo.name} data-ai-hint="profile avatar" />
+                  <AvatarImage src={`https://avatar.vercel.sh/${userInfo.id}.png?text=${userInfo.name?.substring(0,2).toUpperCase() || 'U'}`} alt={userInfo.name || 'User'} />
                 )}
-                <AvatarFallback>{userInfo.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                <AvatarFallback>{userInfo.name?.substring(0, 2).toUpperCase() || 'U'}</AvatarFallback>
               </Avatar>
-              <div className="group-data-[collapsible=icon]:hidden">
-                <p className="text-sm font-medium text-sidebar-foreground">{userInfo.name}</p>
-                {userInfo.email && <p className="text-xs text-sidebar-foreground/70">{userInfo.email}</p>}
-                <p className="text-xs text-sidebar-foreground/50 capitalize">{currentAuthMethod === 'deriv' ? 'Deriv Account' : currentAuthMethod ? `${currentAuthMethod} Account` : 'Logged In'}</p>
+              <div className="group-data-[collapsible=icon]:hidden flex-grow">
+                <p className="text-sm font-medium text-sidebar-foreground truncate" title={userInfo.name || ''}>{userInfo.name || 'Anonymous User'}</p>
+                {userInfo.email && <p className="text-xs text-sidebar-foreground/70 truncate" title={userInfo.email}>{userInfo.email}</p>}
+                
+                {currentAuthMethod === 'deriv' ? (
+                  <div className="text-xs text-sidebar-foreground/70 mt-0.5">
+                    <div className='flex items-center'>
+                       <span className="mr-1">Deriv:</span>
+                        {selectedDerivAccountType === 'demo' && derivDemoAccountId && (
+                            <Badge variant="outline" className="border-sky-500 text-sky-500">Demo: {derivDemoAccountId}</Badge>
+                        )}
+                        {selectedDerivAccountType === 'live' && derivLiveAccountId && (
+                            <Badge variant="outline" className="border-green-500 text-green-500">Real: {derivLiveAccountId}</Badge>
+                        )}
+                         {!selectedDerivAccountType && (
+                            <Badge variant="secondary">Account</Badge>
+                        )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-sidebar-foreground/50 capitalize">
+                    {currentAuthMethod ? `${currentAuthMethod} Account` : 'Logged In'}
+                  </p>
+                )}
               </div>
             </div>
+
+            {currentAuthMethod === 'deriv' && (derivDemoAccountId || derivLiveAccountId) && (
+              <div className="group-data-[collapsible=icon]:hidden w-full space-y-1 mt-1">
+                {canSwitchToDemo && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="w-full justify-start text-xs h-auto py-1 px-2 hover:bg-sidebar-accent"
+                    onClick={() => {switchToDerivDemo(); handleMenuClick();}}
+                  >
+                    <Eye className="mr-2 h-3.5 w-3.5 text-sky-500" /> Switch to Demo
+                  </Button>
+                )}
+                {canSwitchToLive && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="w-full justify-start text-xs h-auto py-1 px-2 hover:bg-sidebar-accent"
+                    onClick={() => {switchToDerivLive(); handleMenuClick();}}
+                  >
+                    <EyeOff className="mr-2 h-3.5 w-3.5 text-green-500" /> Switch to Real
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Button 
               variant="ghost" 
               size="sm" 

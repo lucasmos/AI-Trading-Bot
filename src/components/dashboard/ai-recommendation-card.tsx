@@ -34,30 +34,36 @@ export function AiRecommendationCard({ recommendation, isLoading }: AiRecommenda
             <div>
               <h4 className="text-sm font-medium text-muted-foreground">Recommendation</h4>
               <Badge 
-                variant={recommendation.tradeRecommendation.toUpperCase() === 'CALL' ? 'default' : 'destructive'}
-                className={`text-lg font-semibold px-3 py-1 ${recommendation.tradeRecommendation.toUpperCase() === 'CALL' ? 'bg-green-500 hover:bg-green-600 text-primary-foreground' : 'bg-red-500 hover:bg-red-600 text-primary-foreground'}`}
+                variant={recommendation.action.toUpperCase() === 'CALL' ? 'default' : 'destructive'}
+                className={`text-lg font-semibold px-3 py-1 ${recommendation.action.toUpperCase() === 'CALL' ? 'bg-green-500 hover:bg-green-600 text-primary-foreground' : 'bg-red-500 hover:bg-red-600 text-primary-foreground'}`}
               >
-                {recommendation.tradeRecommendation.toUpperCase()}
+                {recommendation.action.toUpperCase()}
               </Badge>
             </div>
-            <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Confidence Score</h4>
-              <p className="text-xl font-semibold flex items-center">
-                <BarChartBig className="mr-2 h-5 w-5 text-accent" />
-                {recommendation.confidenceScore}%
-              </p>
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Optimal Duration</h4>
-              <p className="text-lg flex items-center">
-                <Clock className="mr-2 h-5 w-5 text-accent" />
-                {recommendation.optimalDuration}
-              </p>
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-muted-foreground">Reasoning</h4>
-              <p className="text-sm text-foreground/90">{recommendation.reasoning}</p>
-            </div>
+            {recommendation.confidence !== undefined && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground">Confidence Score</h4>
+                <p className="text-xl font-semibold flex items-center">
+                  <BarChartBig className="mr-2 h-5 w-5 text-accent" />
+                  {(recommendation.confidence * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
+            {recommendation.suggestedDurationSeconds !== undefined && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground">Suggested Duration</h4>
+                <p className="text-lg flex items-center">
+                  <Clock className="mr-2 h-5 w-5 text-accent" />
+                  {recommendation.suggestedDurationSeconds}s
+                </p>
+              </div>
+            )}
+            {recommendation.reasoning && (
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground">Reasoning</h4>
+                <p className="text-sm text-foreground/90">{recommendation.reasoning}</p>
+              </div>
+            )}
           </>
         ) : (
           <div className="text-center py-6">

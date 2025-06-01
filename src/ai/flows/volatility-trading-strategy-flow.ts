@@ -1,110 +1,99 @@
-
 'use server';
 /**
- * @fileOverview AI flow for generating an automated trading strategy for Volatility Indices.
+ * @fileOverview This file defines a Genkit flow for generating a trading strategy for Volatility Indices.
  *
- * - generateVolatilityTradingStrategy - A function that creates a trading plan for volatility indices.
- * - VolatilityTradingStrategyInput - The input type.
- * - VolatilityTradingStrategyOutput - The return type.
+ * - generateVolatilityTradingStrategy - The main flow function.
+ * - VolatilityTradingStrategyInput - Input schema for the flow.
+ * - VolatilityTradingStrategyOutput - Output schema for the flow.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import type { VolatilityInstrumentType, TradingMode, PriceTick, VolatilityTradingStrategyInput, VolatilityTradingStrategyOutput, VolatilityTradeProposal } from '@/types'; 
+import { ai } from '@/ai/genkit';
+import * as z from 'zod';
+import type { VolatilityInstrumentType, TradingMode, PriceTick, VolatilityTradingStrategyOutput, VolatilityTradeProposal } from '@/types';
 
-// Define Zod schemas based on TypeScript types
+// Define a schema for individual instrument indicators
+const InstrumentIndicatorDataSchema = z.object({
+  rsi: z.number().optional(),
+  macd: z.object({ macd: z.number(), signal: z.number(), histogram: z.number() }).optional(),
+  bollingerBands: z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).optional(),
+  ema: z.number().optional(),
+  atr: z.number().optional(),
+});
+
+// Re-define PriceTick schema locally for this flow if it's not directly importable or to avoid complex imports
 const PriceTickSchema = z.object({
   epoch: z.number(),
   price: z.number(),
   time: z.string(),
 });
 
-const VolatilityInstrumentEnum = z.nativeEnum({
-  VOL_10: 'Volatility 10 Index',
-  VOL_25: 'Volatility 25 Index',
-  VOL_50: 'Volatility 50 Index',
-  VOL_75: 'Volatility 75 Index',
-  VOL_100: 'Volatility 100 Index',
-} as const satisfies Record<string, VolatilityInstrumentType>);
-
+// Use z.string() for instrument keys/names and cast to VolatilityInstrumentType in code where needed.
+const VolatilityInstrumentTypeSchema = z.string(); 
 
 const VolatilityTradingStrategyInputSchema = z.object({
-  totalStake: z.number().min(1).describe('Total amount available for trading volatility indices in this session. Must be at least 1.'),
-  instruments: z.array(VolatilityInstrumentEnum).describe('List of available volatility trading instruments.'),
-  tradingMode: z.enum(['conservative', 'balanced', 'aggressive']).describe('The user-defined trading risk mode.'),
-  instrumentTicks: z.record(VolatilityInstrumentEnum, z.array(PriceTickSchema))
-    .describe('Record of recent price ticks for each available volatility instrument. Key is instrument symbol, value is array of ticks (latest first).'),
+  totalStake: z.number().min(1).describe("User's total stake for the session."),
+  instruments: z.array(VolatilityInstrumentTypeSchema).describe("Array of volatility instrument symbols."),
+  tradingMode: z.enum(['conservative', 'balanced', 'aggressive']).describe("User's trading mode."),
+  aiStrategyId: z.string().optional().describe('The selected AI trading strategy ID from global strategies.'),
+  instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)),
+  instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema).optional().describe('Calculated technical indicators for each instrument.'),
+  formattedIndicatorsString: z.string().optional().describe('Pre-formatted string of technical indicators for the prompt.'),
 });
+
+export type VolatilityTradingStrategyInput = z.infer<typeof VolatilityTradingStrategyInputSchema>;
 
 const VolatilityTradeProposalSchema = z.object({
-  instrument: VolatilityInstrumentEnum.describe('The volatility instrument for this trade.'),
-  action: z.enum(['CALL', 'PUT']).describe('The trade direction (CALL for price up, PUT for price down).'),
-  stake: z.number().min(0.01).describe('The amount of stake apportioned to this specific trade. Must be a positive value, minimum 0.01.'),
-  durationSeconds: z.number().int().min(1).describe('The duration of the trade in seconds (e.g., 30, 60, 180, 300). Must be a positive integer, minimum 1.'),
-  reasoning: z.string().describe('Brief reasoning for this specific trade proposal.'),
+  instrument: VolatilityInstrumentTypeSchema, // Corresponds to VolatilityInstrumentType
+  action: z.enum(['CALL', 'PUT']),
+  stake: z.number().min(0.01),
+  durationSeconds: z.number().int().min(1),
+  reasoning: z.string(),
 });
 
-const VolatilityTradingStrategyOutputSchema = z.object({
-  tradesToExecute: z.array(VolatilityTradeProposalSchema).describe('A list of volatility trades the AI has decided to execute.'),
-  overallReasoning: z.string().describe('The overall reasoning behind the selected trades and stake apportionment strategy.'),
+// Infer the output type from the Zod schema, but ensure it matches the imported VolatilityTradingStrategyOutput
+const InferredVolatilityTradingStrategyOutputSchema = z.object({
+  tradesToExecute: z.array(VolatilityTradeProposalSchema),
+  overallReasoning: z.string(),
 });
-
-
-export async function generateVolatilityTradingStrategy(input: VolatilityTradingStrategyInput): Promise<VolatilityTradingStrategyOutput> {
-  return volatilityTradingStrategyFlow(input);
-}
 
 const prompt = ai.definePrompt({
   name: 'volatilityTradingStrategyPrompt',
   input: {schema: VolatilityTradingStrategyInputSchema},
-  output: {schema: VolatilityTradingStrategyOutputSchema},
-  prompt: `You are an expert AI trading strategist specializing in Volatility Indices. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data for these indices.
-You MUST aim for a minimum 70% win rate across the proposed trades. Prioritize high-probability setups.
-
-User's Total Stake for this session: {{{totalStake}}} (Must be at least 1)
-Available Volatility Instruments: {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
-Trading Mode: {{{tradingMode}}}
-
-Recent Price Ticks for Volatility Indices (latest tick is the most recent price):
-{{#each instrumentTicks}}
-Instrument: {{@key}}
-  {{#each this}}
-  - Time: {{time}}, Price: {{price}}
-  {{/each}}
-{{/each}}
-
-Important System Rule: A fixed 5% stop-loss based on the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration. Volatility indices can be very volatile, so short durations might be preferred, or ensure the trend is strong enough to withstand potential 5% pullbacks for longer durations.
-
-Your Task:
-1.  Analyze the provided tick data for trends and volatility for each volatility instrument.
-2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target.
-    *   Conservative: Focus on safest, clearest trends, smaller stakes. Aim for >75% win rate. Consider shorter durations due to volatility.
-    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.
-    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk. Longer durations can be considered if strong momentum is evident.
-3.  For each instrument you choose to trade:
-    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).
-    *   Recommend a trade duration in SECONDS (e.g., 30, 60, 180, 300). Durations MUST be positive integers representing seconds, with a minimum value of 1.
-    *   The system will set a 5% stop-loss. Your reasoning should reflect an understanding of this and how it impacts trade selection for volatile instruments.
-4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
-5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the 5% stop-loss rule, particularly in the context of volatility indices.
-
-Output Format:
-Return a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.
-Each trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
-Each trade's 'durationSeconds' must be an integer number of seconds (e.g., 30, 60, 300) and at least 1.
-
-Begin your response with the JSON object.
-`,
+  output: {schema: InferredVolatilityTradingStrategyOutputSchema},
+  prompt: `You are an expert AI trading strategist specializing in Volatility Indices. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data for these indices.\r
+You MUST aim for a minimum 70% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Volatility Instruments: {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\n\r\nRecent Price Ticks for Volatility Indices (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
+{{{formattedIndicatorsString}}} 
+Important System Rule: A fixed 5% stop-loss based on the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration. Volatility indices can be very volatile, so short durations might be preferred, or ensure the trend is strong enough to withstand potential 5% pullbacks for longer durations.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each volatility instrument.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate. Consider shorter durations due to volatility.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk. Longer durations can be considered if strong momentum is evident.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration in SECONDS (e.g., 30, 60, 180, 300). Durations MUST be positive integers representing seconds, with a minimum value of 1.\r\n    *   The system will set a 5% stop-loss. Your reasoning should reflect an understanding of this and how it impacts trade selection for volatile instruments.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.\r\n5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the 5% stop-loss rule, particularly in the context of volatility indices.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.\r\nEach trade's 'durationSeconds' must be an integer number of seconds (e.g., 30, 60, 300) and at least 1.\r\n\r\nBegin your response with the JSON object.\r\n`,
 });
 
 const volatilityTradingStrategyFlow = ai.defineFlow(
   {
     name: 'volatilityTradingStrategyFlow',
     inputSchema: VolatilityTradingStrategyInputSchema,
-    outputSchema: VolatilityTradingStrategyOutputSchema,
+    outputSchema: InferredVolatilityTradingStrategyOutputSchema, // Use inferred for the flow definition
   },
   async (input: VolatilityTradingStrategyInput): Promise<VolatilityTradingStrategyOutput> => {
-    const {output} = await prompt(input);
+    // Prepare the formattedIndicatorsString before calling the prompt
+    let formattedIndicators = '';
+    if (input.instrumentIndicators) {
+      formattedIndicators = '\n\nCalculated Technical Indicators:\n';
+      for (const inst in input.instrumentIndicators) {
+        const ind = input.instrumentIndicators[inst as VolatilityInstrumentType];
+        formattedIndicators += `Instrument: ${inst}\n`;
+        formattedIndicators += `  RSI: ${ind.rsi?.toFixed(4) ?? 'N/A'}\n`;
+        formattedIndicators += `  MACD: ${ind.macd ? `Line(${ind.macd.macd.toFixed(4)}), Signal(${ind.macd.signal.toFixed(4)}), Hist(${ind.macd.histogram.toFixed(4)})` : 'N/A'}\n`;
+        formattedIndicators += `  Bollinger Bands: ${ind.bollingerBands ? `Upper(${ind.bollingerBands.upper.toFixed(4)}), Middle(${ind.bollingerBands.middle.toFixed(4)}), Lower(${ind.bollingerBands.lower.toFixed(4)})` : 'N/A'}\n`;
+        formattedIndicators += `  EMA: ${ind.ema?.toFixed(4) ?? 'N/A'}\n`;
+        formattedIndicators += `  ATR: ${ind.atr?.toFixed(4) ?? 'N/A'}\n`;
+      }
+    }
+
+    const promptInput = {
+      ...input,
+      formattedIndicatorsString: formattedIndicators,
+    };
+
+    const {output} = await prompt(promptInput) as { output: VolatilityTradingStrategyOutput | null }; // Cast AI output
     if (!output) {
       throw new Error("AI failed to generate an automated volatility trading strategy.");
     }
@@ -123,32 +112,22 @@ const volatilityTradingStrategyFlow = ai.defineFlow(
       return isStakeValid && isDurationValid;
     });
     
-    let totalProposedStake = output.tradesToExecute.reduce((sum, trade) => sum + trade.stake, 0);
+    let totalProposedStake = output.tradesToExecute.reduce((sum, trade) => sum + (trade.stake || 0), 0);
     totalProposedStake = parseFloat(totalProposedStake.toFixed(2));
 
-
     if (totalProposedStake > input.totalStake) {
-        console.warn(`AI proposed total stake ${totalProposedStake} for volatility trades which exceeds available ${input.totalStake}. Scaling down.`);
-        const scaleFactor = input.totalStake / totalProposedStake;
-        
-        output.tradesToExecute.forEach(trade => {
-            trade.stake = Math.max(0.01, parseFloat((trade.stake * scaleFactor).toFixed(2)));
-        });
-        
-        let revisedTotalProposedStake = output.tradesToExecute.reduce((sum, trade) => sum + trade.stake, 0);
-        revisedTotalProposedStake = parseFloat(revisedTotalProposedStake.toFixed(2));
-
-        if (revisedTotalProposedStake > input.totalStake) {
-            console.error(`AI (Volatility) over-allocated stake (${revisedTotalProposedStake}), and scaling failed to correct it sufficiently below ${input.totalStake}. Minimum trade stakes might be an issue. Returning empty strategy.`);
-            return { 
-                tradesToExecute: [], 
-                overallReasoning: `AI (Volatility) over-allocated stake (${revisedTotalProposedStake} vs ${input.totalStake}), and scaling adjustments respecting minimum trade amounts failed. Please try again with a larger total stake or different parameters.`
+      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${input.totalStake} (Volatility). Trades may be capped or rejected by execution logic.`);
+    }
+    // Ensure the returned type matches the specific VolatilityTradingStrategyOutput from @/types
+    return {
+      ...output,
+      tradesToExecute: output.tradesToExecute.map(trade => ({
+        ...trade,
+        instrument: trade.instrument as VolatilityInstrumentType, // Cast instrument back to precise type
+      })),
             };
         }
-        output.overallReasoning += ` (Note: Stakes for volatility trades were adjusted proportionally to fit total budget of ${input.totalStake}, respecting minimum trade amounts.)`;
-    }
-
-    return output;
-  }
 );
+
+export const generateVolatilityTradingStrategy = volatilityTradingStrategyFlow;
 

@@ -9,134 +9,119 @@
  * - AnalyzeMarketSentimentOutput - The return type for the analyzeMarketSentiment function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import {getNewsArticles} from '@/services/news';
-import {analyzeSentiment} from '@/lib/ai/sentiment';
-import {getTicks} from '@/services/deriv';
+import { ai } from '@/ai/genkit';
+import { type GenerateResponse } from 'genkit';
+import * as z from 'zod';
+import { getNewsArticles } from '@/services/news';
+import { analyzeSentiment } from '@/lib/ai/sentiment';
+import { getCandles } from '@/services/deriv';
+import {SMA, EMA, ATR} from 'technicalindicators';
+import type { TradingInstrument } from '@/types';
 
 const AnalyzeMarketSentimentInputSchema = z.object({
   symbol: z.string().describe('The trading symbol to analyze (e.g., EUR/USD).'),
   tradingMode: z
     .enum(['conservative', 'balanced', 'aggressive'])
     .describe('The trading mode to use.'),
+  rsi: z.number().optional().describe('Calculated Relative Strength Index (RSI) value for the symbol.'),
+  macd: z.object({ 
+    macd: z.number(), 
+    signal: z.number(), 
+    histogram: z.number() 
+  }).optional().describe('Calculated MACD values (MACD line, signal line, histogram).'),
+  bollingerBands: z.object({
+    upper: z.number(),
+    middle: z.number(),
+    lower: z.number(),
+  }).optional().describe('Calculated Bollinger Bands (upper, middle, lower bands).'),
+  ema: z.number().optional().describe('Calculated Exponential Moving Average (EMA) value.'),
+  atr: z.number().optional().describe('Calculated Average True Range (ATR) value.'),
 });
 export type AnalyzeMarketSentimentInput = z.infer<typeof AnalyzeMarketSentimentInputSchema>;
 
 const AnalyzeMarketSentimentOutputSchema = z.object({
-  tradeRecommendation: z.string().describe('The recommended trade action (e.g., CALL, PUT).'),
-  confidenceScore: z
-    .number()
-    .min(0)
-    .max(100)
-    .describe('The confidence score for the recommendation (0-100%).'),
-  optimalDuration: z.string().describe('The optimal trade duration (e.g., 30s, 1m, 5m).'),
-  reasoning: z.string().describe('The AI reasoning behind the recommendation. This is a placeholder and will be populated by explainAiReasoning flow separately.'),
+  action: z.enum(['CALL', 'PUT', 'HOLD']).describe('The recommended trading action.'),
+  confidence: z.number().min(0).max(1).describe('Confidence score for the recommendation (0 to 1).'),
+  reasoning: z.string().describe('Explanation for the recommendation.'),
+  details: z.object({
+    newsSentiment: z.string().optional(),
+    priceTrend: z.string().optional(),
+    rsi: z.number().optional(),
+    macd: z.object({ macd: z.number(), signal: z.number(), histogram: z.number() }).optional(),
+    bollingerBands: z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).optional(),
+  }).optional(),
 });
 export type AnalyzeMarketSentimentOutput = z.infer<typeof AnalyzeMarketSentimentOutputSchema>;
 
-export async function analyzeMarketSentiment(input: AnalyzeMarketSentimentInput): Promise<AnalyzeMarketSentimentOutput> {
-  return analyzeMarketSentimentFlow(input);
-}
-
-const prompt = ai.definePrompt({
-  name: 'analyzeMarketSentimentPrompt',
-  input: z.object({
-    symbol: AnalyzeMarketSentimentInputSchema.shape.symbol,
-    tradingMode: AnalyzeMarketSentimentInputSchema.shape.tradingMode,
-    newsSentiment: z.string().describe('Aggregated sentiment from news articles related to the symbol or general forex market.'),
-    priceTrend: z.string().describe('The general price trend observed from recent tick data (e.g., Upward, Downward, Sideways, No data).'),
-  }),
-  output: {schema: AnalyzeMarketSentimentOutputSchema},
-  prompt: `You are an AI trading assistant that analyzes market sentiment to provide trade recommendations.
-
-You will receive a trading symbol, the current price (implied by recent ticks), news sentiment, price trend, and the trading mode. Use these to generate a trade recommendation, confidence score, and optimal duration. The reasoning will be generated separately.
-
-Symbol: {{{symbol}}}
-Trading Mode: {{{tradingMode}}}
-
-News Sentiment: {{newsSentiment}}
-Price Trend: {{priceTrend}}
-
-Consider the risk associated with the trading mode when generating a trade recommendation:
-- Conservative: Prioritize capital preservation. Lower confidence scores for aggressive trades. Shorter durations might be preferred.
-- Balanced: Seek a balance between risk and reward.
-- Aggressive: Willing to take higher risks for potentially higher rewards. Higher confidence scores for potentially volatile trades. Longer durations might be considered if trend is strong.
-
-Your recommendation should be formatted as follows:
-Trade Recommendation: [CALL or PUT]
-Confidence Score: [0-100] (integer)
-Optimal Duration: [30s, 1m, 5m, 15m, 30m]
-Reasoning: [This will be provided by another AI model based on technical indicators.]`,
-});
-
-const analyzeMarketSentimentFlow = ai.defineFlow(
+export const analyzeMarketSentiment = ai.defineFlow(
   {
     name: 'analyzeMarketSentimentFlow',
     inputSchema: AnalyzeMarketSentimentInputSchema,
     outputSchema: AnalyzeMarketSentimentOutputSchema,
+    // Removed prompt and model config from here
   },
-  async input => {
-    // Fetch news articles related to the symbol or general forex market
-    const newsArticles = await getNewsArticles({ query: input.symbol, pageSize: 5 });
+  async (input: AnalyzeMarketSentimentInput): Promise<AnalyzeMarketSentimentOutput> => {
+    console.log('[Flow:analyzeMarketSentimentFlow] Processing input:', input);
 
-    // Analyze the sentiment of the news articles using FinBERT
-    let newsSentimentSummary = 'Neutral or no significant news found.';
+    let newsSentimentSummary = 'Neutral';
+    try {
+      const newsArticles = await getNewsArticles({ query: input.symbol }); 
     if (newsArticles && newsArticles.length > 0) {
-      const sentimentResults = await Promise.all(
-        newsArticles.map(async article => {
-          if (!article.title) return null; // Skip articles without titles
-          try {
-            // FinBERT returns an array, usually with one dominant sentiment.
-            const sentiment = await analyzeSentiment(article.title);
-            return sentiment[0]; // Taking the first (typically highest score) sentiment
-          } catch (error) {
-            console.error('Error analyzing sentiment for article:', article.title, error);
-            return null; // Return null if sentiment analysis fails for an article
-          }
-        })
-      );
-      
-      const validSentiments = sentimentResults.filter(result => result !== null) as Array<{ label: string; score: number }>;
-
-      if (validSentiments.length > 0) {
-        // Aggregate sentiments (e.g., count positive/negative/neutral, or average scores)
-        // For simplicity, we'll just list the dominant sentiment of the first few articles.
-        newsSentimentSummary = validSentiments
-          .slice(0, 3) // Take top 3 relevant articles' sentiments
-          .map(s => `${s.label} (Score: ${s.score.toFixed(2)})`)
-          .join('; ');
-        if (validSentiments.length === 0) newsSentimentSummary = 'Sentiment analysis yielded no clear results from available news.';
+        const sentimentText = newsArticles.map(a => a.title + " " + (a.description || '')).join('\n');
+        const sentimentAnalysisResult = await analyzeSentiment(sentimentText);
+        if (sentimentAnalysisResult && sentimentAnalysisResult.length > 0 && sentimentAnalysisResult[0].label) {
+          newsSentimentSummary = sentimentAnalysisResult[0].label;
+        }
       }
-    }
+    } catch (error) {
+      console.error(`[Flow:analyzeMarketSentimentFlow] Error fetching or analyzing news for ${input.symbol}:`, error);
+      newsSentimentSummary = 'Error fetching news data';
+      }
+    console.log(`[Flow:analyzeMarketSentimentFlow] News sentiment for ${input.symbol}: ${newsSentimentSummary}`);
 
-    // Analyze price trend using LSTM (simulated with mock data for now)
-    const ticks = await getTicks(input.symbol); // Assumes getTicks returns recent data
-    let priceTrend = 'No data';
-    if (ticks.length > 1) {
-        // A very basic trend detection. A real LSTM would be more sophisticated.
-        const firstPrice = ticks[0].price;
-        const lastPrice = ticks[ticks.length - 1].price;
+    let priceTrend = 'Stable';
+    try {
+      const fetchedCandles = await getCandles(input.symbol as TradingInstrument, 30);
+      if (fetchedCandles && fetchedCandles.length > 1) {
+        const closePrices = fetchedCandles.map(c => c.close);
+        const firstPrice = closePrices[0];
+        const lastPrice = closePrices[closePrices.length - 1];
         if (lastPrice > firstPrice) priceTrend = 'Upward';
         else if (lastPrice < firstPrice) priceTrend = 'Downward';
         else priceTrend = 'Sideways';
+      } else if (fetchedCandles && fetchedCandles.length === 1) {
+        priceTrend = 'Sideways';
+      }
+    } catch (error) {
+      console.error(`[Flow:analyzeMarketSentimentFlow] Error fetching candles for ${input.symbol}:`, error);
+      priceTrend = 'Error fetching price data';
     }
-    
-    const {output} = await prompt({
-      symbol: input.symbol,
-      tradingMode: input.tradingMode,
-      newsSentiment: newsSentimentSummary,
-      priceTrend: priceTrend,
-    });
+    console.log(`[Flow:analyzeMarketSentimentFlow] Price trend for ${input.symbol}: ${priceTrend}`);
 
-    // Ensure output is not null and reasoning is a placeholder.
-    if (!output) {
-      throw new Error("AI prompt failed to return an output for market sentiment.");
+    const promptText = `Analyze market sentiment for ${input.symbol} with trading mode ${input.tradingMode}. News: ${newsSentimentSummary}. Trend: ${priceTrend}. RSI: ${input.rsi?.toFixed(4) ?? 'N/A'}. MACD: ${input.macd ? `Line(${input.macd.macd.toFixed(4)}), Signal(${input.macd.signal.toFixed(4)}), Hist(${input.macd.histogram.toFixed(4)})` : 'N/A'}. BB: ${input.bollingerBands ? `Upper(${input.bollingerBands.upper.toFixed(4)}), Middle(${input.bollingerBands.middle.toFixed(4)}), Lower(${input.bollingerBands.lower.toFixed(4)})` : 'N/A'}. EMA: ${input.ema?.toFixed(4) ?? 'N/A'}. ATR: ${input.atr?.toFixed(4) ?? 'N/A'}. Provide action (CALL, PUT, HOLD), confidence (0.0-1.0), and detailed reasoning considering all provided data points.`;
+
+    console.log('[Flow:analyzeMarketSentimentFlow] Constructed prompt:', promptText);
+
+    try {
+      const generationResponse: GenerateResponse<AnalyzeMarketSentimentOutput> = await ai.generate<any, typeof AnalyzeMarketSentimentOutputSchema>({
+        model: 'googleai/gemini-pro',
+        prompt: promptText,
+        output: { schema: AnalyzeMarketSentimentOutputSchema },
+      });
+
+      const output = generationResponse.output;
+      if (!output) {
+        throw new Error('No output from AI generation');
+      }
+      return output;
+    } catch (error) {
+      console.error('[AnalyzeMarketSentimentFlow] Error:', error);
+      // Return a structured error or a default neutral sentiment
+      return {
+        action: 'HOLD',
+        reasoning: `Error during analysis: ${(error as Error).message}`,
+        confidence: 0.5,
+      };
     }
-    
-    return {
-        ...output,
-        reasoning: "Detailed reasoning based on RSI, MACD, and Volatility will be generated separately." 
-    };
   }
 );

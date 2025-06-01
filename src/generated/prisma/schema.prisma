@@ -1,0 +1,209 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for extension users
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String?
+  googleId      String?        @unique // Google OAuth ID
+  picture       String? // Profile picture URL from Google
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  settings      UserSettings?
+  usageStats    UsageStats[]
+  savedItems    SavedItem[]
+  sessions      Session[]
+  notifications Notification[]
+  trades        Trade[]
+  profitSummary ProfitSummary?
+  watchlists    Watchlist[]
+  alerts        PriceAlert[]
+  apiKeys       ApiKey[]
+}
+
+// User sessions for tracking active usage
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  userAgent String?
+  ipAddress String?
+
+  @@index([userId])
+  @@index([startTime])
+}
+
+// User preferences and settings
+model UserSettings {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  theme         String   @default("light")
+  language      String   @default("en")
+  notifications Boolean  @default(true)
+  settings      Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Extension usage statistics
+model UsageStats {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  timestamp DateTime @default(now())
+  metadata  Json?
+
+  @@index([userId])
+  @@index([timestamp])
+}
+
+// Saved data or bookmarks
+model SavedItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  content   String
+  url       String?
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tags])
+}
+
+// Extension logs for debugging
+model ExtensionLog {
+  id        String   @id @default(uuid())
+  level     String // 'info' | 'warn' | 'error'
+  message   String
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([level])
+  @@index([timestamp])
+}
+
+// User notifications
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String // 'info' | 'warning' | 'error' | 'success'
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([read])
+}
+
+// Trading related models
+model Trade {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  symbol     String
+  type       String // 'buy' | 'sell'
+  amount     Float
+  price      Float
+  totalValue Float
+  status     String // 'open' | 'closed' | 'cancelled'
+  openTime   DateTime  @default(now())
+  closeTime  DateTime?
+  profit     Float?
+  metadata   Json? // Additional trade details
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  stopLoss   Float? // Stop loss price
+  takeProfit Float? // Take profit price
+  leverage   Float? // Leverage used
+  fees       Float? // Trading fees
+  exchange   String? // Exchange used
+  orderType  String? // 'market' | 'limit' | 'stop' | 'trailing_stop'
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([status])
+  @@index([openTime])
+}
+
+model ProfitSummary {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  totalProfit   Float    @default(0)
+  totalTrades   Int      @default(0)
+  winningTrades Int      @default(0)
+  losingTrades  Int      @default(0)
+  winRate       Float    @default(0)
+  lastUpdated   DateTime @updatedAt
+}
+
+// Watchlist for tracking favorite symbols
+model Watchlist {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  name      String
+  symbols   String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([symbols])
+}
+
+// Price alerts for monitoring price movements
+model PriceAlert {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  symbol    String
+  price     Float
+  condition String // 'above' | 'below'
+  triggered Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([triggered])
+}
+
+// API keys for exchange integration
+model ApiKey {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  exchange   String
+  apiKey     String // Encrypted API key
+  secretKey  String // Encrypted secret key
+  passphrase String? // Encrypted passphrase (if needed)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([exchange])
+}

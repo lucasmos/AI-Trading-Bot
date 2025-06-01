@@ -1,4 +1,3 @@
-
 'use client';
 
 import type { UserInfo, AuthStatus, AuthMethod } from '@/types';
@@ -6,13 +5,13 @@ import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { auth, isFirebaseInitialized } from '@/lib/firebase/firebase';
-import type { User as FirebaseUser } from 'firebase/auth';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { signOut as firebaseSignOutIfStillNeeded } from 'firebase/auth';
+import { useSession, signOut as nextAuthSignOut } from 'next-auth/react';
 
 interface AuthContextType {
   authStatus: AuthStatus;
   userInfo: UserInfo | null;
-  login: (user: UserInfo, method: AuthMethod) => void; // Kept for Deriv mock login
+  login: (user: UserInfo, method?: AuthMethod, options?: { redirect?: boolean | string }) => void;
   logout: () => void;
   paperBalance: number; 
   setPaperBalance: React.Dispatch<React.SetStateAction<number>>;
@@ -36,6 +35,8 @@ const DEFAULT_LIVE_BALANCE = 0;
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
+  const { data: nextSession, status: nextAuthStatus } = useSession();
+
   const [authStatus, setAuthStatus] = useState<AuthStatus>('pending');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [currentAuthMethod, setCurrentAuthMethod] = useState<AuthMethod>(null);
@@ -49,99 +50,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [derivLiveAccountId, setDerivLiveAccountId] = useState<string | null>(null);
   const [selectedDerivAccountType, setSelectedDerivAccountType] = useState<'demo' | 'live' | null>(null);
 
-  // Initialize auth state from Firebase or localStorage
-  useEffect(() => {
-    if (!isFirebaseInitialized()) {
-      // If Firebase is not initialized, rely on localStorage for mock/Deriv auth
-      // This part handles the existing Deriv mock login persistence
-      const storedUser = localStorage.getItem('derivAiUser');
-      const storedAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
-      if (storedUser && storedAuthMethod === 'deriv') {
-        try {
-          const user = JSON.parse(storedUser) as UserInfo;
-          setUserInfo(user);
-          setCurrentAuthMethod('deriv');
-          setAuthStatus('authenticated');
-          // Load Deriv specific balances etc.
-          setDerivDemoBalance(user.derivDemoBalance || DEFAULT_PAPER_BALANCE);
-          setDerivLiveBalanceState(user.derivRealBalance || 0);
-          setDerivDemoAccountId(user.derivDemoAccountId || `VD-mock-${user.id.slice(0,6)}`);
-          setDerivLiveAccountId(user.derivRealAccountId || `CR-mock-${user.id.slice(0,6)}`);
-          setSelectedDerivAccountType(localStorage.getItem('derivAiSelectedDerivAccountType') as 'demo' | 'live' || 'demo');
-          setPaperBalance(user.derivDemoBalance || DEFAULT_PAPER_BALANCE);
-          setLiveBalance(user.derivRealBalance || 0);
-        } catch (e) {
-          console.error("Failed to parse stored Deriv user data", e);
-          localStorage.removeItem('derivAiUser');
-          localStorage.removeItem('derivAiAuthMethod');
-          setAuthStatus('unauthenticated');
-        }
-      } else {
-         setAuthStatus('unauthenticated');
-         setPaperBalance(parseFloat(localStorage.getItem('derivAiPaperBalance') || DEFAULT_PAPER_BALANCE.toString()));
-         setLiveBalance(parseFloat(localStorage.getItem('derivAiLiveBalance') || DEFAULT_LIVE_BALANCE.toString()));
-      }
-      return;
-    }
-
-    // Firebase auth state listener
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
-        const name = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User';
-        const method = firebaseUser.providerData?.[0]?.providerId === 'google.com' ? 'google' : 'email';
-        
-        const appUser: UserInfo = {
-          id: firebaseUser.uid,
-          name: name,
-          email: firebaseUser.email,
-          authMethod: method,
-          photoURL: firebaseUser.photoURL,
-        };
-        setUserInfo(appUser);
-        setCurrentAuthMethod(method);
-        setAuthStatus('authenticated');
-        localStorage.setItem('derivAiUser', JSON.stringify(appUser));
-        localStorage.setItem('derivAiAuthMethod', method);
-
-        // For Firebase users, initialize with default paper/live balances
-        // Deriv balances are not applicable unless linked explicitly (future feature)
-        setPaperBalance(parseFloat(localStorage.getItem(`derivAiPaperBalance_${firebaseUser.uid}`) || DEFAULT_PAPER_BALANCE.toString()));
-        setLiveBalance(parseFloat(localStorage.getItem(`derivAiLiveBalance_${firebaseUser.uid}`) || DEFAULT_LIVE_BALANCE.toString()));
-        setSelectedDerivAccountType(null); // Not a Deriv login initially
-        
-      } else {
-        // No Firebase user, check for persisted Deriv mock login
-        const storedUser = localStorage.getItem('derivAiUser');
-        const storedAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
-        if (storedUser && storedAuthMethod === 'deriv') {
-           try {
-            const user = JSON.parse(storedUser) as UserInfo;
-            setUserInfo(user);
-            setCurrentAuthMethod('deriv');
-            setAuthStatus('authenticated');
-             // Load Deriv specific balances etc.
-            setDerivDemoBalance(user.derivDemoBalance || DEFAULT_PAPER_BALANCE);
-            setDerivLiveBalanceState(user.derivRealBalance || 0);
-            setDerivDemoAccountId(user.derivDemoAccountId || `VD-mock-${user.id.slice(0,6)}`);
-            setDerivLiveAccountId(user.derivRealAccountId || `CR-mock-${user.id.slice(0,6)}`);
-            setSelectedDerivAccountType(localStorage.getItem('derivAiSelectedDerivAccountType') as 'demo' | 'live' || 'demo');
-            setPaperBalance(user.derivDemoBalance || DEFAULT_PAPER_BALANCE);
-            setLiveBalance(user.derivRealBalance || 0);
-          } catch (e) {
-            console.error("Failed to parse stored Deriv user data on Firebase logout", e);
-            clearAuthData();
-          }
-        } else {
-          clearAuthData();
-        }
-      }
-    });
-
-    return () => unsubscribe();
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  
-  const clearAuthData = () => {
+  const clearAuthData = useCallback(() => {
+    console.log('[AuthContext] clearAuthData called.');
     setUserInfo(null);
     setCurrentAuthMethod(null);
     setAuthStatus('unauthenticated');
@@ -154,111 +64,192 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('derivAiUser');
     localStorage.removeItem('derivAiAuthMethod');
     localStorage.removeItem('derivAiSelectedDerivAccountType');
-    // Keep general paper/live balances for unauthenticated demo use, or reset if desired
-    // For now, we reset to default if no specific user persistence for them.
+    localStorage.removeItem('derivAiDerivDemoBalance');
+    localStorage.removeItem('derivAiDerivLiveBalance');
+    localStorage.removeItem('derivAiDerivDemoAccountId');
+    localStorage.removeItem('derivAiDerivLiveAccountId');
+
     setPaperBalance(DEFAULT_PAPER_BALANCE); 
     setLiveBalance(DEFAULT_LIVE_BALANCE);
-    localStorage.setItem('derivAiPaperBalance', DEFAULT_PAPER_BALANCE.toString()); // Persist default for next unauth session
+    localStorage.setItem('derivAiPaperBalance', DEFAULT_PAPER_BALANCE.toString());
     localStorage.setItem('derivAiLiveBalance', DEFAULT_LIVE_BALANCE.toString());
-  };
+    console.log('[AuthContext] Cleared all auth data and reset balances to default.');
+  }, []);
 
-
-  // Login specifically for Deriv mock
-  const login = useCallback((user: UserInfo, method: AuthMethod) => {
-    if (method !== 'deriv') {
-        // This login function from AuthContext is now primarily for the Deriv mock.
-        // Firebase auth is handled by onAuthStateChanged.
-        console.warn("AuthContext.login called with non-Deriv method. This should be handled by Firebase.");
-        return;
-    }
+  const login = useCallback((user: UserInfo, method?: AuthMethod, options?: { redirect?: boolean | string }) => {
+    const authMethodToSet: AuthMethod = method || user.authMethod || null;
+    console.log(`[AuthContext] login (syncing from NextAuth). User ID: ${user.id}, Method: ${authMethodToSet}`);
+    
     setUserInfo(user);
-    setCurrentAuthMethod(method);
+    setCurrentAuthMethod(authMethodToSet);
     setAuthStatus('authenticated');
-    localStorage.setItem('derivAiUser', JSON.stringify(user));
-    localStorage.setItem('derivAiAuthMethod', method);
 
-    const demoBal = user.derivDemoBalance || DEFAULT_PAPER_BALANCE;
-    const liveBal = user.derivRealBalance || 0;
-    const demoId = user.derivDemoAccountId || `VD-mock-${user.id.slice(0,6)}`;
-    const liveId = user.derivRealAccountId || `CR-mock-${user.id.slice(0,6)}`;
+    if (authMethodToSet === 'deriv') {
+        console.log('[AuthContext] Deriv login processing.');
+        const demoBal = typeof user.derivDemoBalance === 'number' ? user.derivDemoBalance : DEFAULT_PAPER_BALANCE;
+        const liveBal = typeof user.derivRealBalance === 'number' ? user.derivRealBalance : DEFAULT_LIVE_BALANCE;
+        const demoId = user.derivDemoAccountId || null;
+        const liveId = user.derivRealAccountId || null;
 
     setDerivDemoBalance(demoBal);
     setDerivLiveBalanceState(liveBal);
     setDerivDemoAccountId(demoId);
     setDerivLiveAccountId(liveId);
-    setSelectedDerivAccountType('demo'); 
+        
+        const initialAccountType = demoId ? 'demo' : (liveId ? 'live' : null);
+        setSelectedDerivAccountType(initialAccountType);
+
+        if (initialAccountType === 'demo') {
     setPaperBalance(demoBal); 
     setLiveBalance(liveBal);  
-
+        } else if (initialAccountType === 'live') {
+            setLiveBalance(liveBal);
+            setPaperBalance(demoBal); 
+        } else {
+            setPaperBalance(DEFAULT_PAPER_BALANCE);
+            setLiveBalance(DEFAULT_LIVE_BALANCE);
+        }
+        // Persist Deriv specific data
     localStorage.setItem('derivAiDerivDemoBalance', demoBal.toString());
     localStorage.setItem('derivAiDerivLiveBalance', liveBal.toString());
-    localStorage.setItem('derivAiDerivDemoAccountId', demoId);
-    localStorage.setItem('derivAiDerivLiveAccountId', liveId);
-    localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
-    
-    router.push('/');
+        if (demoId) localStorage.setItem('derivAiDerivDemoAccountId', demoId); else localStorage.removeItem('derivAiDerivDemoAccountId');
+        if (liveId) localStorage.setItem('derivAiDerivLiveAccountId', liveId); else localStorage.removeItem('derivAiDerivLiveAccountId');
+        if (initialAccountType) localStorage.setItem('derivAiSelectedDerivAccountType', initialAccountType); else localStorage.removeItem('derivAiSelectedDerivAccountType');
+
+    } else {
+        console.log('[AuthContext] NextAuth user login processing for balances.');
+        setPaperBalance(parseFloat(localStorage.getItem(`derivAiPaperBalance_${user.id}`) || DEFAULT_PAPER_BALANCE.toString()));
+        setLiveBalance(parseFloat(localStorage.getItem(`derivAiLiveBalance_${user.id}`) || DEFAULT_LIVE_BALANCE.toString()));
+        setSelectedDerivAccountType(null); 
+        setDerivDemoBalance(null);
+        setDerivLiveBalanceState(null);
+        setDerivDemoAccountId(null);
+        setDerivLiveAccountId(null);
+    }
+
+    if (options?.redirect) {
+        const redirectTo = typeof options.redirect === 'string' ? options.redirect : '/';
+        router.push(redirectTo);
+    }
   }, [router]);
 
+  useEffect(() => {
+    console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
+    if (nextAuthStatus === 'authenticated' && nextSession?.user) {
+      console.log('[AuthContext] NextAuth is authenticated. User:', nextSession.user);
+      
+      // Assuming Session type is augmented in a .d.ts file to include id and provider on user
+      const nextAuthUser = nextSession.user as {
+        id?: string;
+        name?: string | null;
+        email?: string | null;
+        image?: string | null;
+        provider?: string; // Added for clarity, should come from session callback
+      };
+
+      const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
+                    
+      const adaptedUser: UserInfo = {
+        id: nextAuthUser.id || '',
+        name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
+        email: nextAuthUser.email || '',
+        photoURL: nextAuthUser.image,
+        authMethod: authMethodFromProvider,
+        provider: nextAuthUser.provider, // Ensure provider is passed here
+      };
+
+      if (authStatus !== 'authenticated' || JSON.stringify(adaptedUser) !== JSON.stringify(userInfo)) {
+        console.log('[AuthContext] Syncing NextAuth session to context state.');
+        login(adaptedUser, adaptedUser.authMethod, { redirect: false });
+      } else if (authStatus === 'authenticated' && currentAuthMethod !== authMethodFromProvider) {
+        setCurrentAuthMethod(authMethodFromProvider);
+      }
+      return;
+    }
+
+    if (nextAuthStatus === 'loading') {
+      console.log('[AuthContext] NextAuth is loading. Setting context to pending.');
+      if (authStatus !== 'pending') setAuthStatus('pending');
+      return;
+                }
+
+    console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session.');
+                const localUserString = localStorage.getItem('derivAiUser');
+    const localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
+
+                if (localAuthMethod === 'deriv' && localUserString) {
+                    try {
+                        const user = JSON.parse(localUserString) as UserInfo;
+            console.log('[AuthContext] Maintaining Deriv session from localStorage as NextAuth is inactive.');
+                        login(user, 'deriv', { redirect: false });
+                    } catch (e) {
+            console.error('[AuthContext] Error parsing stored Deriv user. Clearing auth data.', e);
+            if (authStatus !== 'unauthenticated') clearAuthData();
+        }
+    } else if (authStatus !== 'unauthenticated') {
+        console.log('[AuthContext] No active NextAuth session and no Deriv localStorage session. Clearing auth data.');
+        clearAuthData();
+    }
+    
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextAuthStatus, nextSession, clearAuthData, router, pathname, userInfo, authStatus]);
 
   const logout = useCallback(async () => {
-    if (currentAuthMethod === 'email' || currentAuthMethod === 'google') {
-      if(isFirebaseInitialized()) {
-        await signOut(auth);
+    console.log(`[AuthContext] logout called. Current method: ${currentAuthMethod}`);
+
+    console.log('[AuthContext] Signing out from NextAuth.');
+    await nextAuthSignOut({ redirect: false });
+
+          clearAuthData();
+            router.push('/auth/login');
+
+  }, [currentAuthMethod, router, clearAuthData]);
+
+  useEffect(() => {
+    if (userInfo) {
+      if (currentAuthMethod === 'deriv') {
+        if (selectedDerivAccountType === 'demo' && paperBalance !== derivDemoBalance) {
+          setDerivDemoBalance(paperBalance); 
+          localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString());
+        }
+      } else {
+        localStorage.setItem(`derivAiPaperBalance_${userInfo.id}`, paperBalance.toString());
       }
-      // onAuthStateChanged will call clearAuthData
-    } else if (currentAuthMethod === 'deriv') {
-      clearAuthData(); // Clear mock Deriv auth data
     } else {
-      clearAuthData(); // General fallback
+      localStorage.setItem('derivAiPaperBalance', paperBalance.toString());
     }
-    if(!pathname.startsWith('/auth')) {
-       router.push('/auth/login');
+  }, [paperBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivDemoBalance, setDerivDemoBalance]);
+
+  useEffect(() => {
+    if (userInfo) {
+      if (currentAuthMethod === 'deriv') {
+        if (selectedDerivAccountType === 'live' && liveBalance !== derivLiveBalanceState) {
+          setDerivLiveBalanceState(liveBalance);
+          localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString());
+        }
+      } else {
+        localStorage.setItem(`derivAiLiveBalance_${userInfo.id}`, liveBalance.toString());
+      }
+    } else {
+      localStorage.setItem('derivAiLiveBalance', liveBalance.toString());
     }
-  }, [currentAuthMethod, router, pathname]);
-
-  // Persist generic paper/live balances to localStorage, namespaced by user ID if available
-  useEffect(() => {
-    const balanceKey = userInfo ? `derivAiPaperBalance_${userInfo.id}` : 'derivAiPaperBalance';
-    localStorage.setItem(balanceKey, paperBalance.toString());
-  }, [paperBalance, userInfo]);
-
-  useEffect(() => {
-    const balanceKey = userInfo ? `derivAiLiveBalance_${userInfo.id}` : 'derivAiLiveBalance';
-    localStorage.setItem(balanceKey, liveBalance.toString());
-  }, [liveBalance, userInfo]);
-
-  // Persist Deriv specific balances (these are only relevant if currentAuthMethod is 'deriv')
-  useEffect(() => {
-    if (currentAuthMethod === 'deriv' && derivDemoBalance !== null) localStorage.setItem('derivAiDerivDemoBalance', derivDemoBalance.toString());
-  }, [derivDemoBalance, currentAuthMethod]);
-  useEffect(() => {
-    if (currentAuthMethod === 'deriv' && derivLiveBalanceState !== null) localStorage.setItem('derivAiDerivLiveBalance', derivLiveBalanceState.toString());
-  }, [derivLiveBalanceState, currentAuthMethod]);
-   useEffect(() => {
-    if (currentAuthMethod === 'deriv' && derivDemoAccountId !== null) localStorage.setItem('derivAiDerivDemoAccountId', derivDemoAccountId);
-  }, [derivDemoAccountId, currentAuthMethod]);
-   useEffect(() => {
-    if (currentAuthMethod === 'deriv' && derivLiveAccountId !== null) localStorage.setItem('derivAiDerivLiveAccountId', derivLiveAccountId);
-  }, [derivLiveAccountId, currentAuthMethod]);
-   useEffect(() => {
-    if (currentAuthMethod === 'deriv' && selectedDerivAccountType !== null) localStorage.setItem('derivAiSelectedDerivAccountType', selectedDerivAccountType);
-  }, [selectedDerivAccountType, currentAuthMethod]);
-
+  }, [liveBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivLiveBalanceState, setDerivLiveBalanceState]);
 
   const switchToDerivDemo = useCallback(() => {
-    if (currentAuthMethod === 'deriv') {
+    if (currentAuthMethod === 'deriv' && derivDemoBalance !== null) {
         setSelectedDerivAccountType('demo');
-        if (derivDemoBalance !== null) setPaperBalance(derivDemoBalance); // Update general paper balance
+        setPaperBalance(derivDemoBalance); 
+        localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
     }
   }, [currentAuthMethod, derivDemoBalance]);
 
   const switchToDerivLive = useCallback(() => {
-    if (currentAuthMethod === 'deriv') {
+    if (currentAuthMethod === 'deriv' && derivLiveBalanceState !== null) {
         setSelectedDerivAccountType('live');
-        if (derivLiveBalanceState !== null) setLiveBalance(derivLiveBalanceState); // Update general live balance
+        setLiveBalance(derivLiveBalanceState); 
+        localStorage.setItem('derivAiSelectedDerivAccountType', 'live');
     }
   }, [currentAuthMethod, derivLiveBalanceState]);
-
 
   return (
     <AuthContext.Provider 
