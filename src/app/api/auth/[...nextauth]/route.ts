@@ -13,6 +13,36 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
       allowDangerousEmailAccountLinking: true,
     }),
+    {
+      id: "deriv",
+      name: "Deriv",
+      type: "oauth",
+      clientId: process.env.DERIV_CLIENT_ID as string,
+      clientSecret: process.env.DERIV_CLIENT_SECRET as string,
+      allowDangerousEmailAccountLinking: true,
+      authorization: {
+        url: "https://oauth.deriv.com/oauth2/authorize",
+        params: { scope: "read user_info" },
+      },
+      token: {
+        url: "https://oauth.deriv.com/oauth2/token",
+        // request: async (context) => { /* custom token request if needed */ const tokens = await fetch(/* ... */); return { tokens }; }
+      },
+      userinfo: {
+        url: "https://oauth.deriv.com/oauth2/userinfo",
+        // request: async (context) => { /* custom userinfo request if needed */ const profile = await fetch(/* ... */); return profile; }
+      },
+      profile(profile: any, tokens: any) { // Added 'any' types for profile and tokens for now
+        // 'profile' is the user data object from Deriv's userinfo endpoint
+        // Ensure the property names match what Deriv API returns
+        return {
+          id: profile.user_id, // or profile.id, or whatever Deriv uses
+          name: profile.name || profile.email, // or profile.full_name
+          email: profile.email,
+          image: profile.picture || null, // or profile.avatar_url
+        };
+      },
+    },
     CredentialsProvider({
       name: "Email & Password",
       credentials: {
