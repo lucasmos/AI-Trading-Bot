@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth } from '@/contexts/auth-context'; // Kept for handleMockLogin
 import type { UserInfo } from '@/types';
-import { signIn } from 'next-auth/react'; // Added
+// import { signIn } from 'next-auth/react'; // Removed as it's no longer used for Deriv direct login
 // import { useRouter } from 'next/navigation'; // Removed
 import { LogIn } from 'lucide-react';
 import Link from 'next/link';
@@ -30,8 +30,16 @@ export default function DerivLoginPage() {
   };
 
   const handleRealDerivLogin = () => {
-    // Call signIn with the provider ID for Deriv
-    signIn('deriv');
+    const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+    if (!derivAppId) {
+      console.error("Deriv App ID (NEXT_PUBLIC_DERIV_APP_ID) is not configured.");
+      // Optionally, show an alert to the user
+      alert("Deriv login is currently unavailable. Please ensure NEXT_PUBLIC_DERIV_APP_ID is set before proceeding.");
+      return;
+    }
+    const derivOauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${derivAppId}`;
+    // Redirect the user to Deriv's OAuth page
+    window.location.href = derivOauthUrl;
   };
 
   return (
