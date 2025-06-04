@@ -21,8 +21,10 @@ import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'l
 import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
+import { useRouter } from 'next/navigation';
 
 export default function VolatilityTradingPage() {
+  const router = useRouter();
   const { 
     authStatus, 
     userInfo,
@@ -56,6 +58,7 @@ export default function VolatilityTradingPage() {
   const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
   const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
 
+  // const router = useRouter(); // already added above
   const { toast } = useToast();
 
   useEffect(() => {
@@ -94,10 +97,22 @@ export default function VolatilityTradingPage() {
   };
 
   const handleStartAiAutoTrade = useCallback(async () => {
-    if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
-      toast({ title: "Login Required", description: "AI Auto-Trading on Real Account requires login.", variant: "destructive" });
+    if (authStatus === 'unauthenticated') {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to start AI auto-trading on volatility indices.",
+        variant: "destructive"
+      });
+      router.push('/auth/login');
       return;
     }
+
+    // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
+    // The old `if (authStatus !== 'authenticated' && paperTradingMode === 'live')` is now covered.
+    // if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
+    //   toast({ title: "Login Required", description: "AI Auto-Trading on Real Account requires login.", variant: "destructive" });
+    //   return;
+    // }
     if (autoTradeTotalStake <= 0) {
       toast({ title: "Invalid Stake", description: "Please enter a valid total stake for AI trading.", variant: "destructive" });
       return;

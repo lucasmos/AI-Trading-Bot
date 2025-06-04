@@ -16,6 +16,7 @@ import { getCandles } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
+import { useRouter } from 'next/navigation';
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR } from '@/lib/technical-analysis';
 import { 
   SUPPORTED_INSTRUMENTS, 
@@ -110,7 +111,7 @@ export default function DashboardPage() {
   const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
   const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
 
-
+  const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -158,24 +159,38 @@ export default function DashboardPage() {
   };
 
   const handleExecuteTrade = async (action: 'CALL' | 'PUT') => {
+    if (authStatus === 'unauthenticated') {
+      toast({ 
+        title: "Authentication Required",
+        description: "Please log in to execute trades.",
+        variant: "destructive" 
+      });
+      router.push('/auth/login');
+      return;
+    }
+
     const { isOpen, statusMessage } = getMarketStatus(currentInstrument);
     if (!isOpen && (FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCryptoCommodityInstrumentType) && !['BTC/USD', 'ETH/USD'].includes(currentInstrument as string))) {
       toast({ 
-        title: "Market Closed", 
-        description: statusMessage, 
+        title: "Market Closed",
+        description: statusMessage,
         variant: "destructive" 
       });
       return;
     }
 
-    if (!isAuthenticated(authStatus, paperTradingMode)) {
-      toast({ 
-        title: "Login Required", 
-        description: "Please login with your Deriv account to use Real Account features.", 
-        variant: "destructive" 
-      });
-      return;
-    }
+    // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
+    // The old `if (!isAuthenticated(authStatus, paperTradingMode))` might still be relevant if paper trading by unauthenticated users is allowed
+    // but live trading is not. The new check blocks ALL actions if unauthenticated.
+    // For now, let's remove the old one as per instruction "Remove or adjust... if it becomes redundant".
+    // if (!isAuthenticated(authStatus, paperTradingMode)) {
+    //   toast({
+    //     title: "Login Required",
+    //     description: "Please login with your Deriv account to use Real Account features.",
+    //     variant: "destructive"
+    //   });
+    //   return;
+    // }
 
     const validationError = validateTradeParameters(stakeAmount, currentBalance, paperTradingMode);
     if (validationError) {
@@ -358,11 +373,25 @@ export default function DashboardPage() {
   };
 
   const fetchAndSetAiRecommendation = useCallback(async () => {
-    if (authStatus === 'unauthenticated' && paperTradingMode === 'live') {
-      toast({title: "Login Required", description: "AI Recommendation for Live Account requires login.", variant: "destructive"});
+    if (authStatus === 'unauthenticated') {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to get AI recommendations.",
+        variant: "destructive"
+      });
+      router.push('/auth/login');
       setAiRecommendation(null);
+      setIsFetchingManualRecommendation(false);
       return;
     }
+
+    // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
+    // The old `if (authStatus === 'unauthenticated' && paperTradingMode === 'live')` is now covered.
+    // if (authStatus === 'unauthenticated' && paperTradingMode === 'live') {
+    //   toast({title: "Login Required", description: "AI Recommendation for Live Account requires login.", variant: "destructive"});
+    //   setAiRecommendation(null);
+    //   return;
+    // }
     if (!FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCryptoCommodityInstrumentType)){
       toast({title: "AI Support Note", description: `AI recommendations for ${currentInstrument} are available on its specific trading page (e.g., Volatility Trading).`, variant: "default"});
       setAiRecommendation(null);
@@ -459,14 +488,26 @@ export default function DashboardPage() {
   };
 
   const startAutomatedTradingSession = useCallback(async () => {
-    if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
+    if (authStatus === 'unauthenticated') {
       toast({
-        title: "Authentication Required for Live Trading",
-        description: "Please log in to start live auto-trading.",
-        variant: "destructive",
+        title: "Authentication Required",
+        description: "Please log in to start AI auto-trading.",
+        variant: "destructive"
       });
+      router.push('/auth/login');
       return;
     }
+
+    // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
+    // The old `if (authStatus !== 'authenticated' && paperTradingMode === 'live')` is now covered.
+    // if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
+    //   toast({
+    //     title: "Authentication Required for Live Trading",
+    //     description: "Please log in to start live auto-trading.",
+    //     variant: "destructive",
+    //   });
+    //   return;
+    // }
     if (autoTradeTotalStake <= 0) {
       toast({ title: "Set Stake", description: "Please set a total stake for auto-trading.", variant: "default" });
       return;
