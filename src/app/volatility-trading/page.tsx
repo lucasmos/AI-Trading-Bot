@@ -23,6 +23,13 @@ import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, cal
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { useRouter } from 'next/navigation';
 
+/**
+ * Renders the AI-driven volatility index trading page, enabling users to configure and manage automated trading sessions with simulated demo or live accounts.
+ *
+ * Provides controls for trading mode, AI strategy selection, account type, and stake allocation. Integrates technical analysis, AI strategy generation, and real-time trade lifecycle management. Displays active trades, trading chart, and session statistics, with persistent profit tracking and backend integration for trade records.
+ *
+ * @remark All trading is simulated; no real funds are used or at risk.
+ */
 export default function VolatilityTradingPage() {
   const router = useRouter();
   const { 

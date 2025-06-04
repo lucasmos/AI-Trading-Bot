@@ -62,6 +62,13 @@ function validateTradeParameters(stake: number, balance: number, mode: PaperTrad
   return null;
 }
 
+/**
+ * Renders the main trading dashboard page, providing manual and AI-assisted trading for Forex, Crypto, and Commodity instruments.
+ *
+ * Manages user authentication, market status, trade execution, AI recommendations, and automated trading sessions. Handles trade lifecycle, balance updates, profits tracking, and UI state for both manual and automated trading modes. Redirects unauthenticated users to the login page when attempting restricted actions.
+ *
+ * @returns The trading dashboard React component.
+ */
 export default function DashboardPage() {
   const { 
     authStatus, 
