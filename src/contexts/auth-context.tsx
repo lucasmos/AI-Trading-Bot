@@ -4,8 +4,8 @@ import type { UserInfo, AuthStatus, AuthMethod } from '@/types';
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { auth, isFirebaseInitialized } from '@/lib/firebase/firebase';
-import { signOut as firebaseSignOutIfStillNeeded } from 'firebase/auth';
+// import { auth, isFirebaseInitialized } from '@/lib/firebase/firebase'; // No longer used
+// import { signOut as firebaseSignOutIfStillNeeded } from 'firebase/auth'; // No longer used
 import { useSession, signOut as nextAuthSignOut } from 'next-auth/react';
 
 interface AuthContextType {
@@ -34,15 +34,28 @@ const DEFAULT_LIVE_BALANCE = 0;
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname(); // Keep pathname if used in dependencies, otherwise can be removed if not directly used
   const { data: nextSession, status: nextAuthStatus } = useSession();
 
   const [authStatus, setAuthStatus] = useState<AuthStatus>('pending');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [currentAuthMethod, setCurrentAuthMethod] = useState<AuthMethod>(null);
 
-  const [paperBalance, setPaperBalance] = useState<number>(DEFAULT_PAPER_BALANCE);
-  const [liveBalance, setLiveBalance] = useState<number>(DEFAULT_LIVE_BALANCE);
+  // Initialize balances from generic localStorage on initial load, then user-specific
+  const [paperBalance, setPaperBalance] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const genericStored = localStorage.getItem('derivAiPaperBalance');
+      return genericStored ? parseFloat(genericStored) : DEFAULT_PAPER_BALANCE;
+    }
+    return DEFAULT_PAPER_BALANCE;
+  });
+  const [liveBalance, setLiveBalance] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const genericStored = localStorage.getItem('derivAiLiveBalance');
+      return genericStored ? parseFloat(genericStored) : DEFAULT_LIVE_BALANCE;
+    }
+    return DEFAULT_LIVE_BALANCE;
+  });
 
   const [derivDemoBalance, setDerivDemoBalance] = useState<number | null>(null);
   const [derivLiveBalanceState, setDerivLiveBalanceState] = useState<number | null>(null);
@@ -55,81 +68,118 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUserInfo(null);
     setCurrentAuthMethod(null);
     setAuthStatus('unauthenticated');
+
+    // Reset Deriv specific states
     setSelectedDerivAccountType(null);
     setDerivDemoBalance(null);
     setDerivLiveBalanceState(null);
     setDerivDemoAccountId(null);
     setDerivLiveAccountId(null);
     
-    localStorage.removeItem('derivAiUser');
-    localStorage.removeItem('derivAiAuthMethod');
+    // Remove generic Deriv state items from localStorage
+    localStorage.removeItem('derivAiUser'); // This might be the user object from mock/previous direct Deriv login
+    localStorage.removeItem('derivAiAuthMethod'); // Old auth method storage
     localStorage.removeItem('derivAiSelectedDerivAccountType');
     localStorage.removeItem('derivAiDerivDemoBalance');
     localStorage.removeItem('derivAiDerivLiveBalance');
     localStorage.removeItem('derivAiDerivDemoAccountId');
     localStorage.removeItem('derivAiDerivLiveAccountId');
 
+    // Reset paper and live balances to default values in context state
     setPaperBalance(DEFAULT_PAPER_BALANCE); 
     setLiveBalance(DEFAULT_LIVE_BALANCE);
-    localStorage.setItem('derivAiPaperBalance', DEFAULT_PAPER_BALANCE.toString());
-    localStorage.setItem('derivAiLiveBalance', DEFAULT_LIVE_BALANCE.toString());
-    console.log('[AuthContext] Cleared all auth data and reset balances to default.');
+
+    // DO NOT write defaults to generic localStorage keys anymore.
+    // User-specific balances will be handled by login/useEffect.
+    // localStorage.removeItem('derivAiPaperBalance'); // Optional: remove generic keys if they exist
+    // localStorage.removeItem('derivAiLiveBalance'); // Optional: remove generic keys if they exist
+
+    console.log('[AuthContext] Cleared session-specific auth data and reset balances in context to default.');
   }, []);
 
   const login = useCallback((user: UserInfo, method?: AuthMethod, options?: { redirect?: boolean | string }) => {
     const authMethodToSet: AuthMethod = method || user.authMethod || null;
-    console.log(`[AuthContext] login (syncing from NextAuth). User ID: ${user.id}, Method: ${authMethodToSet}`);
+    console.log(`[AuthContext] login. User ID: ${user.id}, Method: ${authMethodToSet}`);
     
     setUserInfo(user);
     setCurrentAuthMethod(authMethodToSet);
     setAuthStatus('authenticated');
 
+    // Load user-specific balances or set to default if not found
+    if (user && user.id) {
+      const storedPaperBalance = localStorage.getItem(`derivAiPaperBalance_${user.id}`);
+      if (storedPaperBalance && !isNaN(parseFloat(storedPaperBalance))) {
+        console.log(`[AuthContext] Loaded paper balance for user ${user.id}: ${storedPaperBalance}`);
+        setPaperBalance(parseFloat(storedPaperBalance));
+      } else {
+        console.log(`[AuthContext] No stored paper balance for user ${user.id}, setting to default.`);
+        setPaperBalance(DEFAULT_PAPER_BALANCE);
+      }
+
+      const storedLiveBalance = localStorage.getItem(`derivAiLiveBalance_${user.id}`);
+      if (storedLiveBalance && !isNaN(parseFloat(storedLiveBalance))) {
+        console.log(`[AuthContext] Loaded live balance for user ${user.id}: ${storedLiveBalance}`);
+        setLiveBalance(parseFloat(storedLiveBalance));
+      } else {
+        console.log(`[AuthContext] No stored live balance for user ${user.id}, setting to default.`);
+        setLiveBalance(DEFAULT_LIVE_BALANCE);
+      }
+    } else {
+      // Fallback if user.id is somehow not available (should not happen for authenticated user)
+      console.warn('[AuthContext] User ID not available, setting balances to default.');
+      setPaperBalance(DEFAULT_PAPER_BALANCE);
+      setLiveBalance(DEFAULT_LIVE_BALANCE);
+    }
+
     const isDerivAuthMethod = ['deriv', 'deriv-credentials'].includes(authMethodToSet as string);
     console.log(`[AuthContext] Is Deriv auth method: ${isDerivAuthMethod}`);
 
     if (isDerivAuthMethod) {
-        console.log(`[AuthContext] Deriv login processing for method: ${authMethodToSet}.`);
-        // For 'deriv-credentials', these user.deriv... fields might not be present initially from NextAuth.
-        // They would be defaults unless explicitly passed to the login() function from elsewhere with this data.
-        const demoBal = typeof user.derivDemoBalance === 'number' ? user.derivDemoBalance : DEFAULT_PAPER_BALANCE;
-        const liveBal = typeof user.derivRealBalance === 'number' ? user.derivRealBalance : DEFAULT_LIVE_BALANCE;
-        const demoId = user.derivDemoAccountId || null;
-        const liveId = user.derivRealAccountId || null;
+        console.log(`[AuthContext] Deriv login specific setup for method: ${authMethodToSet}.`);
+        // These are Deriv's own account balances, not the general paper/live balances.
+        // They might come from user object if mock login, or fetched from Deriv API in a real scenario.
+        // For 'deriv-credentials' initiated by NextAuth, these won't be on 'user' object from session.
+        const demoBal = typeof user.derivDemoBalance === 'number' ? user.derivDemoBalance : parseFloat(localStorage.getItem('derivAiDerivDemoBalance') || DEFAULT_PAPER_BALANCE.toString());
+        const liveBal = typeof user.derivRealBalance === 'number' ? user.derivRealBalance : parseFloat(localStorage.getItem('derivAiDerivLiveBalance') || DEFAULT_LIVE_BALANCE.toString());
+        const demoId = user.derivDemoAccountId || localStorage.getItem('derivAiDerivDemoAccountId');
+        const liveId = user.derivRealAccountId || localStorage.getItem('derivAiDerivLiveAccountId');
 
-    setDerivDemoBalance(demoBal);
-    setDerivLiveBalanceState(liveBal);
-    setDerivDemoAccountId(demoId);
-    setDerivLiveAccountId(liveId);
+        setDerivDemoBalance(demoBal);
+        setDerivLiveBalanceState(liveBal);
+        setDerivDemoAccountId(demoId);
+        setDerivLiveAccountId(liveId);
         
-        const initialAccountType = demoId ? 'demo' : (liveId ? 'live' : null);
+        // Determine initial selected account type for Deriv
+        const initialAccountType = localStorage.getItem('derivAiSelectedDerivAccountType') as ('demo' | 'live' | null) || (demoId ? 'demo' : (liveId ? 'live' : null));
         setSelectedDerivAccountType(initialAccountType);
 
+        // If a Deriv account type is selected, it might influence the main paper/live balances
+        // This is where switchToDerivDemo or switchToDerivLive would typically be called,
+        // or their logic replicated if appropriate on login.
         if (initialAccountType === 'demo') {
-    setPaperBalance(demoBal); 
-    setLiveBalance(liveBal);  
+            // setPaperBalance(demoBal); // This would overwrite user-specific paper balance.
+            // Let switchToDerivDemo handle this if user explicitly switches.
+            console.log(`[AuthContext] Deriv demo account selected. Main paper balance remains: ${paperBalance}`);
         } else if (initialAccountType === 'live') {
-            setLiveBalance(liveBal);
-            setPaperBalance(demoBal); 
-        } else {
-            setPaperBalance(DEFAULT_PAPER_BALANCE);
-            setLiveBalance(DEFAULT_LIVE_BALANCE);
+            // setLiveBalance(liveBal); // This would overwrite user-specific live balance.
+            console.log(`[AuthContext] Deriv live account selected. Main live balance remains: ${liveBalance}`);
         }
-        // Persist Deriv specific data
-    localStorage.setItem('derivAiDerivDemoBalance', demoBal.toString());
-    localStorage.setItem('derivAiDerivLiveBalance', liveBal.toString());
+        // Persist generic Deriv specific data (these are not user-specific balances)
+        localStorage.setItem('derivAiDerivDemoBalance', demoBal.toString());
+        localStorage.setItem('derivAiDerivLiveBalance', liveBal.toString());
         if (demoId) localStorage.setItem('derivAiDerivDemoAccountId', demoId); else localStorage.removeItem('derivAiDerivDemoAccountId');
         if (liveId) localStorage.setItem('derivAiDerivLiveAccountId', liveId); else localStorage.removeItem('derivAiDerivLiveAccountId');
         if (initialAccountType) localStorage.setItem('derivAiSelectedDerivAccountType', initialAccountType); else localStorage.removeItem('derivAiSelectedDerivAccountType');
 
     } else {
-        console.log('[AuthContext] NextAuth user login processing for balances.');
-        setPaperBalance(parseFloat(localStorage.getItem(`derivAiPaperBalance_${user.id}`) || DEFAULT_PAPER_BALANCE.toString()));
-        setLiveBalance(parseFloat(localStorage.getItem(`derivAiLiveBalance_${user.id}`) || DEFAULT_LIVE_BALANCE.toString()));
+        // For non-Deriv methods, ensure Deriv specific context states are cleared/reset
+        console.log('[AuthContext] Non-Deriv auth method. Clearing Deriv-specific states.');
         setSelectedDerivAccountType(null); 
         setDerivDemoBalance(null);
         setDerivLiveBalanceState(null);
         setDerivDemoAccountId(null);
         setDerivLiveAccountId(null);
+        // Generic Deriv localStorage items are not cleared here, clearAuthData handles them on logout.
     }
 
     if (options?.redirect) {
@@ -138,122 +188,107 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [router]);
 
+
+  // Main useEffect for syncing with NextAuth session
   useEffect(() => {
     console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
     if (nextAuthStatus === 'authenticated' && nextSession?.user) {
-      console.log('[AuthContext] NextAuth is authenticated. User:', nextSession.user);
+      console.log('[AuthContext] NextAuth is authenticated. User from session:', nextSession.user);
       
-      // Assuming Session type is augmented in a .d.ts file to include id and provider on user
-      const nextAuthUser = nextSession.user as {
-        id?: string;
-        name?: string | null;
-        email?: string | null;
-        image?: string | null;
-        provider?: string; // Added for clarity, should come from session callback
-      };
-
-      const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
+      const nextAuthUser = nextSession.user as UserInfo & { provider?: string }; // Augment with provider
                     
+      const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' :
+                                   nextAuthUser.provider === 'credentials' ? 'credentials' : // Assuming 'Email & Password' is 'credentials'
+                                   nextAuthUser.provider === 'deriv-credentials' ? 'deriv-credentials' :
+                                   (nextAuthUser.provider || 'nextauth') as AuthMethod;
+
+      // Adapt NextAuth user to your UserInfo type
+      // Important: Do not spread nextAuthUser directly if its structure differs significantly or has extra fields
       const adaptedUser: UserInfo = {
-        id: nextAuthUser.id || '',
+        id: nextAuthUser.id || '', // Ensure ID is present
         name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
         email: nextAuthUser.email || '',
-        photoURL: nextAuthUser.image,
+        photoURL: nextAuthUser.image, // NextAuth uses 'image' for photoURL
         authMethod: authMethodFromProvider,
-        provider: nextAuthUser.provider, // Ensure provider is passed here
+        // Include other fields from your UserInfo type if they come from NextAuth session, otherwise they'll be undefined
+        // e.g., derivDemoBalance, derivRealAccountId will not be on nextAuthUser from 'deriv-credentials'
       };
 
-      if (authStatus !== 'authenticated' || JSON.stringify(adaptedUser) !== JSON.stringify(userInfo)) {
-        console.log('[AuthContext] Syncing NextAuth session to context state.');
+      // Check if user info or auth status truly changed to prevent unnecessary re-logins/renders
+      if (authStatus !== 'authenticated' || userInfo?.id !== adaptedUser.id || currentAuthMethod !== adaptedUser.authMethod) {
+        console.log('[AuthContext] Syncing NextAuth session to context state. Adapted User:', adaptedUser);
         login(adaptedUser, adaptedUser.authMethod, { redirect: false });
-      } else if (authStatus === 'authenticated' && currentAuthMethod !== authMethodFromProvider) {
-        setCurrentAuthMethod(authMethodFromProvider);
       }
       return;
     }
 
     if (nextAuthStatus === 'loading') {
-      console.log('[AuthContext] NextAuth is loading. Setting context to pending.');
-      if (authStatus !== 'pending') setAuthStatus('pending');
+      if (authStatus !== 'pending') {
+        console.log('[AuthContext] NextAuth is loading. Setting context to pending.');
+        setAuthStatus('pending');
+      }
       return;
-                }
+    }
 
-    console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session.');
-                const localUserString = localStorage.getItem('derivAiUser');
-    const localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
-
-                if (['deriv', 'deriv-credentials'].includes(localAuthMethod as string) && localUserString) {
-                    try {
-                        const user = JSON.parse(localUserString) as UserInfo;
-            console.log(`[AuthContext] Maintaining ${localAuthMethod} session from localStorage as NextAuth is inactive.`);
-                        login(user, localAuthMethod, { redirect: false });
-                    } catch (e) {
-            console.error(`[AuthContext] Error parsing stored ${localAuthMethod} user. Clearing auth data.`, e);
-            if (authStatus !== 'unauthenticated') clearAuthData();
-        }
-    } else if (authStatus !== 'unauthenticated') {
-        console.log('[AuthContext] No active NextAuth session and no Deriv localStorage session. Clearing auth data.');
+    // Handle unauthenticated state
+    if (authStatus !== 'unauthenticated') {
+        console.log('[AuthContext] NextAuth is unauthenticated. No active session. Clearing auth data.');
         clearAuthData();
     }
     
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextAuthStatus, nextSession, clearAuthData, router, pathname, userInfo, authStatus]);
+  }, [nextAuthStatus, nextSession, clearAuthData, login, authStatus, currentAuthMethod, userInfo]); // Added login, authStatus, currentAuthMethod, userInfo
 
-  const logout = useCallback(async () => {
-    console.log(`[AuthContext] logout called. Current method: ${currentAuthMethod}`);
 
-    console.log('[AuthContext] Signing out from NextAuth.');
-    await nextAuthSignOut({ redirect: false });
-
-          clearAuthData();
-            router.push('/auth/login');
-
-  }, [currentAuthMethod, router, clearAuthData]);
-
+  // useEffect for persisting paperBalance
   useEffect(() => {
-    if (userInfo) {
-      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
-        if (selectedDerivAccountType === 'demo' && paperBalance !== derivDemoBalance) {
-          setDerivDemoBalance(paperBalance); 
-          // This localStorage key might need to be more generic if balances aren't shared between 'deriv' and 'deriv-credentials'
-          localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString());
-        }
-      } else {
-        localStorage.setItem(`derivAiPaperBalance_${userInfo.id}`, paperBalance.toString());
-      }
-    } else {
-      localStorage.setItem('derivAiPaperBalance', paperBalance.toString());
+    if (userInfo && userInfo.id && authStatus === 'authenticated') {
+      console.log(`[AuthContext] Persisting paperBalance for user ${userInfo.id}: ${paperBalance}`);
+      localStorage.setItem(`derivAiPaperBalance_${userInfo.id}`, paperBalance.toString());
     }
-  }, [paperBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivDemoBalance, setDerivDemoBalance]);
+    // If Deriv demo balance should mirror paper balance when a Deriv demo account is active
+    if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) &&
+        selectedDerivAccountType === 'demo' &&
+        paperBalance !== derivDemoBalance && // Avoid loop if already same
+        derivDemoBalance !== null) { // Only if derivDemoBalance is initialized
+      console.log(`[AuthContext] Mirroring paperBalance to derivDemoBalance: ${paperBalance}`);
+      setDerivDemoBalance(paperBalance);
+      localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString()); // Generic key for current Deriv demo state
+    }
+  }, [paperBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivDemoBalance, authStatus]);
 
+  // useEffect for persisting liveBalance
   useEffect(() => {
-    if (userInfo) {
-      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
-        if (selectedDerivAccountType === 'live' && liveBalance !== derivLiveBalanceState) {
-          setDerivLiveBalanceState(liveBalance);
-          // This localStorage key might need to be more generic
-          localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString());
-        }
-      } else {
-        localStorage.setItem(`derivAiLiveBalance_${userInfo.id}`, liveBalance.toString());
-      }
-    } else {
-      localStorage.setItem('derivAiLiveBalance', liveBalance.toString());
+    if (userInfo && userInfo.id && authStatus === 'authenticated') {
+      console.log(`[AuthContext] Persisting liveBalance for user ${userInfo.id}: ${liveBalance}`);
+      localStorage.setItem(`derivAiLiveBalance_${userInfo.id}`, liveBalance.toString());
     }
-  }, [liveBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivLiveBalanceState, setDerivLiveBalanceState]);
+    // If Deriv live balance should mirror live balance when a Deriv live account is active
+    if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) &&
+        selectedDerivAccountType === 'live' &&
+        liveBalance !== derivLiveBalanceState && // Avoid loop if already same
+        derivLiveBalanceState !== null) { // Only if derivLiveBalanceState is initialized
+      console.log(`[AuthContext] Mirroring liveBalance to derivLiveBalanceState: ${liveBalance}`);
+      setDerivLiveBalanceState(liveBalance);
+      localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString()); // Generic key for current Deriv live state
+    }
+  }, [liveBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivLiveBalanceState, authStatus]);
+
 
   const switchToDerivDemo = useCallback(() => {
     if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivDemoBalance !== null) {
+        console.log(`[AuthContext] Switching to Deriv Demo Account. Balance: ${derivDemoBalance}`);
         setSelectedDerivAccountType('demo');
-        setPaperBalance(derivDemoBalance); 
+        setPaperBalance(derivDemoBalance); // Update main paper balance to reflect Deriv demo
         localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
     }
   }, [currentAuthMethod, derivDemoBalance]);
 
   const switchToDerivLive = useCallback(() => {
     if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivLiveBalanceState !== null) {
+        console.log(`[AuthContext] Switching to Deriv Live Account. Balance: ${derivLiveBalanceState}`);
         setSelectedDerivAccountType('live');
-        setLiveBalance(derivLiveBalanceState); 
+        setLiveBalance(derivLiveBalanceState); // Update main live balance to reflect Deriv live
         localStorage.setItem('derivAiSelectedDerivAccountType', 'live');
     }
   }, [currentAuthMethod, derivLiveBalanceState]);
