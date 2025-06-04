@@ -1,7 +1,7 @@
 import type { 
   ForexCryptoCommodityInstrumentType, 
   VolatilityInstrumentType,
-  TradingInstrument 
+  InstrumentType
 } from '../types'; // Adjust path if your types file is elsewhere relative to src/config
 
 /**
@@ -13,7 +13,10 @@ export const FOREX_CRYPTO_COMMODITY_INSTRUMENTS: ForexCryptoCommodityInstrumentT
   'GBP/USD', 
   'BTC/USD', 
   'XAU/USD', 
-  'ETH/USD'
+  'ETH/USD',
+  'Palladium/USD',
+  'Platinum/USD',
+  'Silver/USD',
 ];
 
 /**
@@ -25,14 +28,14 @@ export const VOLATILITY_INSTRUMENTS: VolatilityInstrumentType[] = [
   'Volatility 25 Index',
   'Volatility 50 Index',
   'Volatility 75 Index',
-  'Volatility 100 Index'
+  'Volatility 100 Index',
 ];
 
 /**
  * Represents a supported instrument with its type.
  */
 export interface SupportedInstrument {
-  id: TradingInstrument;
+  id: InstrumentType;
   name: string; // User-friendly name
   type: 'Forex' | 'Crypto' | 'Commodity' | 'Volatility';
   defaultDecimalPlaces: number;
@@ -52,6 +55,9 @@ export const SUPPORTED_INSTRUMENTS: SupportedInstrument[] = [
   { id: 'ETH/USD', name: 'ETH/USD', type: 'Crypto', defaultDecimalPlaces: 2 },
   // Commodities
   { id: 'XAU/USD', name: 'Gold (XAU/USD)', type: 'Commodity', defaultDecimalPlaces: 2 },
+  { id: 'Palladium/USD', name: 'Palladium/USD', type: 'Commodity', defaultDecimalPlaces: 2 },
+  { id: 'Platinum/USD', name: 'Platinum/USD', type: 'Commodity', defaultDecimalPlaces: 2 },
+  { id: 'Silver/USD', name: 'Silver/USD', type: 'Commodity', defaultDecimalPlaces: 4 },
   // Volatility Indices
   { id: 'Volatility 10 Index', name: 'Volatility 10 Index', type: 'Volatility', defaultDecimalPlaces: 3 },
   { id: 'Volatility 25 Index', name: 'Volatility 25 Index', type: 'Volatility', defaultDecimalPlaces: 3 },
@@ -63,13 +69,13 @@ export const SUPPORTED_INSTRUMENTS: SupportedInstrument[] = [
 /**
  * Default instrument to be selected when the application loads or when an invalid instrument is chosen.
  */
-export const DEFAULT_INSTRUMENT: TradingInstrument = FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0];
+export const DEFAULT_INSTRUMENT: InstrumentType = FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0];
 
 /**
  * Helper function to get a specific supported instrument object.
- * @param instrumentId The ID of the instrument (TradingInstrument).
+ * @param instrumentId The ID of the instrument (InstrumentType).
  * @returns The SupportedInstrument object or undefined if not found.
  */
-export function getSupportedInstrument(instrumentId: TradingInstrument): SupportedInstrument | undefined {
+export function getSupportedInstrument(instrumentId: InstrumentType): SupportedInstrument | undefined {
   return SUPPORTED_INSTRUMENTS.find(inst => inst.id === instrumentId);
 } 

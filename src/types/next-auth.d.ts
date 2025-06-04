@@ -9,6 +9,8 @@ declare module "next-auth" {
     user: {
       /** The user's id. */
       id: string;
+      provider?: string;
+      derivAccountId?: string;
     } & DefaultSession["user"]; // Keep existing properties like name, email, image
   }
 
@@ -19,6 +21,8 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     /** Add your custom properties here. */
     // id: string; // id is already part of DefaultUser
+    provider?: string;
+    derivAccountId?: string;
   }
 }
 
@@ -27,5 +31,7 @@ declare module "next-auth/jwt" {
   interface JWT extends DefaultJWT {
     /** OpenID ID Token */
     id?: string; // Add id to the JWT token as well
+    provider?: string;
+    derivAccountId?: string;
   }
 } 

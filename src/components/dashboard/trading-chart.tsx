@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, ComposedChart, Legend } from "recharts";
-import type { TradingInstrument, PriceTick, CandleData } from '@/types';
+import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getCandles } from '@/services/deriv';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
@@ -57,7 +57,7 @@ const chartConfig = {
 };
 
 interface SingleInstrumentChartDisplayProps {
-  instrument: TradingInstrument;
+  instrument: InstrumentType;
 }
 
 interface ChartDataPoint {
@@ -291,35 +291,45 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 }
 
 interface TradingChartProps {
-  instrument: TradingInstrument;
-  onInstrumentChange: (instrument: TradingInstrument) => void;
-  instrumentsToShow: TradingInstrument[]; // Added prop to specify which instruments to show
+  instrument: InstrumentType;
+  onInstrumentChange: (instrument: InstrumentType) => void;
+  instrumentsToShow: InstrumentType[]; // Added prop to specify which instruments to show
+  isMarketOpen: boolean; // New prop
+  marketStatusMessage: string | null; // New prop
 }
 
-export function TradingChart({ instrument, onInstrumentChange, instrumentsToShow }: TradingChartProps) {
+export function TradingChart({ instrument, onInstrumentChange, instrumentsToShow, isMarketOpen, marketStatusMessage }: TradingChartProps) {
   return (
-    <Card className="shadow-lg col-span-1 md:col-span-2 min-h-[950px]">
+    <Card className="shadow-lg col-span-1 md:col-span-2 min-h-[900px]">
       <CardHeader>
         <CardTitle>Market Watch</CardTitle>
         <CardDescription>Live price action for selected instruments.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs value={instrument} onValueChange={(value) => onInstrumentChange(value as TradingInstrument)} className="w-full">
+        <Tabs value={instrument} onValueChange={(value) => onInstrumentChange(value as InstrumentType)} className="w-full">
           <TabsList 
-            className="w-full justify-start overflow-x-auto whitespace-nowrap mb-4 pb-2 hide-scrollbar"
-          > 
+            className="w-full justify-start overflow-x-auto whitespace-nowrap scrollbar-hide mb-4"
+            style={{ WebkitOverflowScrolling: 'touch' }} // For iOS Safari smooth scrolling
+          >
             {instrumentsToShow.map((inst) => (
-              <TabsTrigger key={inst} value={inst} className="flex-shrink-0">
+              <TabsTrigger key={inst} value={inst}>
                 {inst}
               </TabsTrigger>
             ))}
           </TabsList>
           
-          {instrumentsToShow.map((inst) => (
-            <TabsContent key={inst} value={inst} className="mt-0">
-              <SingleInstrumentChartDisplay instrument={inst} /> 
-            </TabsContent>
-          ))}
+          {isMarketOpen ? (
+            instrumentsToShow.map((inst) => (
+              <TabsContent key={inst} value={inst} className="w-full">
+                <SingleInstrumentChartDisplay instrument={inst} />
+              </TabsContent>
+            ))
+          ) : (
+            <div className="text-center py-20 text-muted-foreground">
+              <p className="text-lg font-semibold">Market Closed</p>
+              <p>{marketStatusMessage || "This market is currently closed."}</p>
+            </div>
+          )}
         </Tabs>
       </CardContent>
     </Card>

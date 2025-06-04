@@ -30,14 +30,20 @@ export default function DerivLoginPage() {
 
   const handleRealDerivLogin = () => {
     const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
-    if (!derivAppId) {
-      console.error("Deriv App ID is not configured.");
-      // Optionally, show a toast or alert to the user
+    const nextAuthUrl = process.env.NEXT_PUBLIC_NEXTAUTH_URL; // Get NEXTAUTH_URL
+
+    if (!derivAppId || !nextAuthUrl) {
+      console.error("Deriv App ID or NEXTAUTH_URL is not configured.");
       alert("Deriv login is currently unavailable. Please try again later.");
       return;
     }
-    const derivOauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${derivAppId}`;
-    router.push(derivOauthUrl); // Or window.location.href = derivOauthUrl;
+
+    // Construct the redirect_uri for our custom Deriv OAuth callback API route
+    const redirectUri = `${nextAuthUrl}/api/auth/deriv/callback`;
+
+    // Construct the Deriv OAuth URL as per their documentation
+    const derivOauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${derivAppId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    router.push(derivOauthUrl); // Redirect to Deriv OAuth
   };
 
   return (

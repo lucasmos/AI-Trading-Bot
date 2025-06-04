@@ -2,7 +2,7 @@
 
 import type { UserInfo, AuthStatus, AuthMethod } from '@/types';
 import type { ReactNode } from 'react';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { auth, isFirebaseInitialized } from '@/lib/firebase/firebase';
 import { signOut as firebaseSignOutIfStillNeeded } from 'firebase/auth';
@@ -49,6 +49,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [derivDemoAccountId, setDerivDemoAccountId] = useState<string | null>(null);
   const [derivLiveAccountId, setDerivLiveAccountId] = useState<string | null>(null);
   const [selectedDerivAccountType, setSelectedDerivAccountType] = useState<'demo' | 'live' | null>(null);
+
+  // Ref to track the last user ID processed by NextAuth session to prevent infinite loops
+  const lastProcessedNextAuthUserId = useRef<string | undefined | null>(undefined);
 
   const clearAuthData = useCallback(() => {
     console.log('[AuthContext] clearAuthData called.');
@@ -135,64 +138,105 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
+
+    // Case 1: NextAuth is authenticated
     if (nextAuthStatus === 'authenticated' && nextSession?.user) {
-      console.log('[AuthContext] NextAuth is authenticated. User:', nextSession.user);
-      
-      // Assuming Session type is augmented in a .d.ts file to include id and provider on user
       const nextAuthUser = nextSession.user as {
         id?: string;
         name?: string | null;
         email?: string | null;
         image?: string | null;
-        provider?: string; // Added for clarity, should come from session callback
+        provider?: string;
+        derivDemoAccountId?: string | null;
+        derivRealAccountId?: string | null;
+        derivDemoBalance?: number | null;
+        derivRealBalance?: number | null;
       };
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
-                    
+
       const adaptedUser: UserInfo = {
         id: nextAuthUser.id || '',
         name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
         email: nextAuthUser.email || '',
         photoURL: nextAuthUser.image,
         authMethod: authMethodFromProvider,
-        provider: nextAuthUser.provider, // Ensure provider is passed here
+        provider: nextAuthUser.provider,
+        derivDemoAccountId: nextAuthUser.derivDemoAccountId,
+        derivRealAccountId: nextAuthUser.derivRealAccountId,
+        derivDemoBalance: nextAuthUser.derivDemoBalance,
+        derivRealBalance: nextAuthUser.derivRealBalance,
       };
 
-      if (authStatus !== 'authenticated' || JSON.stringify(adaptedUser) !== JSON.stringify(userInfo)) {
-        console.log('[AuthContext] Syncing NextAuth session to context state.');
+      // Only call login if the NextAuth user ID has genuinely changed
+      // or if we're transitioning from an unauthenticated state to an authenticated one with a new user.
+      if (lastProcessedNextAuthUserId.current !== adaptedUser.id || authStatus !== 'authenticated') {
+        console.log('[AuthContext] Syncing AuthContext state with NextAuth session due to change.', {
+          currentAuthStatus: authStatus,
+          currentUserId: userInfo?.id,
+          currentAuthMethod: currentAuthMethod,
+          nextAuthUserStatus: 'authenticated',
+          nextAuthUserId: adaptedUser.id,
+          nextAuthMethod: adaptedUser.authMethod,
+        });
         login(adaptedUser, adaptedUser.authMethod, { redirect: false });
-      } else if (authStatus === 'authenticated' && currentAuthMethod !== authMethodFromProvider) {
-        setCurrentAuthMethod(authMethodFromProvider);
+        lastProcessedNextAuthUserId.current = adaptedUser.id; // Mark this user ID as processed
+      } else {
+        console.log('[AuthContext] NextAuth session is authenticated and AuthContext is already in sync.');
       }
-      return;
+      return; // Exit early to avoid further checks
     }
 
+    // Case 2: NextAuth is loading
     if (nextAuthStatus === 'loading') {
       console.log('[AuthContext] NextAuth is loading. Setting context to pending.');
-      if (authStatus !== 'pending') setAuthStatus('pending');
-      return;
-                }
+      if (authStatus !== 'pending') { // Only update if necessary
+        setAuthStatus('pending');
+      }
+      // Clear last processed user ID when NextAuth is loading/unauthenticated to ensure re-processing on next auth
+      lastProcessedNextAuthUserId.current = null;
+      return; // Exit early
+    }
 
-    console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session.');
-                const localUserString = localStorage.getItem('derivAiUser');
+    // Case 3: NextAuth is unauthenticated (and not loading)
+    console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session as fallback.');
+    const localUserString = localStorage.getItem('derivAiUser');
     const localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
 
-                if (localAuthMethod === 'deriv' && localUserString) {
-                    try {
-                        const user = JSON.parse(localUserString) as UserInfo;
-            console.log('[AuthContext] Maintaining Deriv session from localStorage as NextAuth is inactive.');
-                        login(user, 'deriv', { redirect: false });
-                    } catch (e) {
-            console.error('[AuthContext] Error parsing stored Deriv user. Clearing auth data.', e);
-            if (authStatus !== 'unauthenticated') clearAuthData();
+    if (localAuthMethod === 'deriv' && localUserString) {
+      try {
+        const user = JSON.parse(localUserString) as UserInfo;
+        // Only call login if this localStorage user is new or AuthContext state is different
+        if (lastProcessedNextAuthUserId.current !== user.id || authStatus !== 'authenticated') {
+            console.log('[AuthContext] Maintaining Deriv session from localStorage.');
+            login(user, 'deriv', { redirect: false });
+            lastProcessedNextAuthUserId.current = user.id; // Update ref
+        } else {
+            console.log('[AuthContext] LocalStorage Deriv session is already active in AuthContext.');
         }
-    } else if (authStatus !== 'unauthenticated') {
+      } catch (e) {
+        console.error('[AuthContext] Error parsing stored Deriv user. Clearing auth data.', e);
+        if (authStatus !== 'unauthenticated') { // Only clear if necessary
+            clearAuthData();
+        }
+        lastProcessedNextAuthUserId.current = null; // Clear ref on error/clear
+      }
+    } else {
+      // If no local storage session and not already unauthenticated, clear data.
+      if (authStatus !== 'unauthenticated') {
         console.log('[AuthContext] No active NextAuth session and no Deriv localStorage session. Clearing auth data.');
         clearAuthData();
+      }
+      lastProcessedNextAuthUserId.current = null; // Clear ref
     }
-    
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextAuthStatus, nextSession, clearAuthData, router, pathname, userInfo, authStatus]);
+
+  // ESLint will complain about missing dependencies (userInfo, authStatus, currentAuthMethod).
+  // We explicitly exclude them because their state is updated by `login` or `setAuthStatus/setUserInfo/setCurrentAuthMethod`
+  // within this very `useEffect`, which would create an infinite loop.
+  // The effect reacts to external changes (nextAuthStatus, nextSession) and stable callbacks (login, clearAuthData).
+  // The internal state (userInfo, authStatus, currentAuthMethod) is read for conditional logic but does not trigger the effect.
+  // This is a known pattern for preventing infinite loops in useEffect where state is updated by the effect.
+  }, [nextAuthStatus, nextSession, login, clearAuthData]);
 
   const logout = useCallback(async () => {
     console.log(`[AuthContext] logout called. Current method: ${currentAuthMethod}`);

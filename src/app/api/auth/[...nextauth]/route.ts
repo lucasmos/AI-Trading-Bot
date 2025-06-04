@@ -4,6 +4,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from '@/lib/db'; // Assuming your Prisma client is exported from here
 import bcrypt from 'bcryptjs'; // Added for password hashing
+// import { authorizeDeriv, getDerivAccountSettings, getDerivAccountList } from '@/services/deriv'; // Removed: Not using direct API token for login
+
+interface DerivAccount {
+  loginid: string;
+  is_default: 0 | 1;
+  currency: string;
+  // Add other properties if needed based on Deriv API response
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -59,38 +67,134 @@ export const authOptions: NextAuthOptions = {
           // You can add other properties you want in the session user object here
         };
       }
-    })
+    }),
+    // Custom Deriv OAuth Provider
+    // Removed for manual authorization flow
+    // {
+    //   id: "deriv", // This is the ID you will use with signIn('deriv')
+    //   name: "Deriv",
+    //   type: "oauth",
+    //   clientId: process.env.NEXT_PUBLIC_DERIV_APP_ID as string,
+    //   allowDangerousEmailAccountLinking: true,
+    //   authorization: {
+    //     url: "https://oauth.deriv.com/oauth2/authorize", // Reset to base URL
+    //     params: { 
+    //       scope: "read", 
+    //       brand: "deriv", 
+    //       app_id: process.env.NEXT_PUBLIC_DERIV_APP_ID as string, // Explicitly set app_id here
+    //       "login_id": process.env.NEXT_PUBLIC_DERIV_ACCOUNT_ID 
+    //     }
+    //   },
+    //   token: {
+    //     // Deriv doesn't provide a standard token endpoint for public apps that returns JSON like other OAuth providers.
+    //     // Instead, the tokens are in the redirect URI. We need to extract them here.
+    //     async request({ params }) {
+    //       console.log('[NextAuth Deriv Provider] Token callback received params:', params);
+    //       // The 'code' parameter in NextAuth's OAuth provider usually contains the authorization code.
+    //       // For Deriv, it appears to be the full redirect_uri with tokens.
+    //       const redirectUrl = params.code as string; // This is actually the URL where Deriv redirects after auth
+    //
+    //       if (!redirectUrl) {
+    //         console.error('[NextAuth Deriv Provider] No redirect URL (code) found in token callback params.');
+    //         throw new Error('No Deriv redirect URL received.');
+    //       }
+    //
+    //       const urlSearchParams = new URLSearchParams(redirectUrl.split('?')[1]);
+    //       const derivToken = urlSearchParams.get('token1'); // Assuming 'token1' is the primary token
+    //
+    //       if (!derivToken) {
+    //         console.error('[NextAuth Deriv Provider] No token1 found in Deriv redirect URL:', redirectUrl);
+    //         throw new Error('Deriv session token not found in redirect URL.');
+    //       }
+    //
+    //       console.log('[NextAuth Deriv Provider] Extracted Deriv token:', derivToken);
+    //       return { tokens: { access_token: derivToken } };
+    //     },
+    //   },
+    //   userinfo: { // This is where NextAuth fetches the user profile
+    //     url: `${process.env.NEXTAUTH_URL}/api/deriv-profile`, // Our custom API route to fetch Deriv user info
+    //     async request({ tokens, provider }) {
+    //       // Pass the Deriv access token to our custom API route
+    //       const response = await fetch((provider as any).userinfo.url, {
+    //         headers: {
+    //           'Authorization': `Bearer ${tokens.access_token}`,
+    //         },
+    //       });
+    //       const profile = await response.json();
+    //       return profile;
+    //     },
+    //   },
+    //   profile(profile) {
+    //     console.log('[NextAuth Deriv Provider] Profile callback received:', profile);
+    //     // This maps the profile data returned from our /api/deriv-profile route to NextAuth's User structure
+    //     const mappedProfile = {
+    //       id: profile.derivUserId || profile.email,
+    //       name: profile.name || profile.email,
+    //       email: profile.email,
+    //       image: profile.image || null,
+    //       provider: 'deriv',
+    //       derivAccountId: profile.derivAccountId,
+    //       derivDemoAccountId: profile.derivDemoAccountId,
+    //       derivDemoBalance: profile.derivDemoBalance,
+    //       derivRealAccountId: profile.derivRealAccountId,
+    //       derivRealBalance: profile.derivRealBalance,
+    //     };
+    //     console.log('[NextAuth Deriv Provider] Profile callback returning:', mappedProfile);
+    //     return mappedProfile;
+    //   },
+    // },
   ],
   session: {
     strategy: 'jwt', // Using JWT for session strategy
   },
   callbacks: {
     async jwt({ token, user, account }) {
-      // Persist the user ID and role (if any) to the token
+      console.log('[NextAuth Callbacks] JWT callback - before:', { token, user, account });
+      // Persist the user ID, provider, and Deriv specific account details to the token
       if (user) {
         token.id = user.id;
-        // token.role = user.role; // Example if you have roles
+        token.provider = user.provider; // Directly use user.provider from the profile callback
+        token.derivAccountId = (user as any).derivAccountId;
+        (token as any).derivDemoAccountId = (user as any).derivDemoAccountId;
+        (token as any).derivDemoBalance = (user as any).derivDemoBalance;
+        (token as any).derivRealAccountId = (user as any).derivRealAccountId;
+        (token as any).derivRealBalance = (user as any).derivRealBalance;
       }
       if (account) {
         token.accessToken = account.access_token; // Store access token from provider if needed
-        token.provider = account.provider; // Add provider to the token
+        // The provider from account might be generic 'oauth', prefer our custom 'deriv' if available from user
+        if (!token.provider) {
+          token.provider = account.provider;
+        }
       }
+      console.log('[NextAuth Callbacks] JWT callback - after:', token);
       return token;
     },
     async session({ session, token }) {
-      // Send properties to the client, like an access_token and user ID from the token
+      console.log('[NextAuth Callbacks] Session callback - before:', { session, token });
+      // Send properties to the client, like user ID, provider, and Deriv specific account details from the token
       if (token.id && session.user) {
         (session.user as any).id = token.id as string;
       }
       if (token.provider && session.user) {
         (session.user as any).provider = token.provider as string; // Add provider to session user
       }
-      // if (token.role && session.user) {
-      //   (session.user as any).role = token.role; // Example
-      // }
-      // if (token.accessToken && session) {
-      //  (session as any).accessToken = token.accessToken;
-      // }
+      if (token.derivAccountId && session.user) {
+        (session.user as any).derivAccountId = token.derivAccountId as string; // Add derivAccountId to session user
+      }
+      if ((token as any).derivDemoAccountId && session.user) {
+        (session.user as any).derivDemoAccountId = (token as any).derivDemoAccountId as string;
+      }
+      if ((token as any).derivDemoBalance && session.user) {
+        (session.user as any).derivDemoBalance = (token as any).derivDemoBalance as number;
+      }
+      if ((token as any).derivRealAccountId && session.user) {
+        (session.user as any).derivRealAccountId = (token as any).derivRealAccountId as string;
+      }
+      if ((token as any).derivRealBalance && session.user) {
+        (session.user as any).derivRealBalance = (token as any).derivRealBalance as number;
+      }
+      console.log('[NextAuth Callbacks] Session callback - after:', session);
       return session;
     },
   },

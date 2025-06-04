@@ -46,9 +46,9 @@
     - [ ] Notify users of completed trades (manual and AI).
     - [ ] Alert users to significant market movements or AI trading events.
     - [ ] Allow users to customize notification preferences.
-- [ ] **Enhanced Trade History Filtering and Export:**
-    - [ ] Add advanced filtering options to the trade history page (by date range, asset, trade type).
-    - [ ] Implement functionality to export trade history (e.g., as CSV).
+- [x] **Enhanced Trade History Filtering and Export:**
+    - [x] Add advanced filtering options to the trade history page (by date range, asset, trade type).
+    - [x] Implement functionality to export trade history (e.g., as CSV).
 
 ### UI/UX Improvements
 - [ ] **Dashboard Overview:**

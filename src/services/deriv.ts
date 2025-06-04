@@ -1,13 +1,13 @@
 // import WebSocket from 'ws'; // Removed: 'ws' is for Node.js, browser has native WebSocket
 // Types import - ensuring CandleData is recognized
-import type { TradingInstrument, PriceTick, CandleData } from '@/types';
+import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
 const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
 // Define the instrument map
-const DERIV_INSTRUMENT_MAP: Partial<Record<TradingInstrument, string>> = {
+const DERIV_INSTRUMENT_MAP: Partial<Record<InstrumentType, string>> = {
   'Volatility 10 Index': 'R_10',
   'Volatility 25 Index': 'R_25',
   'Volatility 50 Index': 'R_50',
@@ -51,7 +51,7 @@ export interface Tick {
 /**
  * Maps user-friendly instrument names to Deriv API symbols.
  */
-const instrumentToDerivSymbol = (instrument: TradingInstrument): string => {
+const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
   switch (instrument) {
     case 'EUR/USD':
       return 'frxEURUSD';
@@ -63,6 +63,12 @@ const instrumentToDerivSymbol = (instrument: TradingInstrument): string => {
       return 'frxXAUUSD'; // Gold vs USD
     case 'ETH/USD':
       return 'cryETHUSD'; // Ethereum vs USD
+    case 'Palladium/USD':
+      return 'frxXPDUSD';
+    case 'Platinum/USD':
+      return 'frxXPTUSD';
+    case 'Silver/USD':
+      return 'frxXAGUSD';
     case 'Volatility 10 Index':
       return 'R_10';
     case 'Volatility 25 Index':
@@ -91,7 +97,7 @@ const instrumentToDerivSymbol = (instrument: TradingInstrument): string => {
  * @returns A promise that resolves to an array of CandleData.
  */
 export async function getCandles(
-  instrument: TradingInstrument,
+  instrument: InstrumentType,
   count: number = 120,
   granularity: number = 60
 ): Promise<CandleData[]> {
@@ -190,6 +196,129 @@ export async function getCandles(
 }
 
 /**
+ * Authorizes with the Deriv API using a given token.
+ * @param token The Deriv API token.
+ * @returns The authorization response.
+ */
+export async function authorizeDeriv(token: string): Promise<any> {
+  const ws = new WebSocket(DERIV_API_URL);
+  return new Promise((resolve, reject) => {
+    ws.onopen = () => {
+      console.log('[DerivService/authorizeDeriv] Sending authorize request.');
+      ws.send(JSON.stringify({ authorize: token }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        console.log('[DerivService/authorizeDeriv] Received response:', response);
+        if (response.error) {
+          console.error('[DerivService/authorizeDeriv] API Error:', response.error);
+          reject(new Error(response.error.message || 'Authorization failed'));
+        } else if (response.msg_type === 'authorize') {
+          resolve(response);
+        }
+      } catch (e) {
+        console.error('[DerivService/authorizeDeriv] Error processing message:', e);
+        reject(e);
+      } finally {
+        ws.close();
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.error('[DerivService/authorizeDeriv] WebSocket Error:', event);
+      reject(new Error('WebSocket error during authorization'));
+      ws.close();
+    };
+  });
+}
+
+/**
+ * Fetches the list of accounts for the authorized user from Deriv API.
+ * @param token The Deriv API token.
+ * @returns The account_list response.
+ */
+export async function getDerivAccountList(token: string): Promise<any> {
+  const ws = new WebSocket(DERIV_API_URL);
+  return new Promise((resolve, reject) => {
+    ws.onopen = () => {
+      console.log('[DerivService/getDerivAccountList] Sending account_list request.');
+      ws.send(JSON.stringify({ authorize: token })); // Authorize first
+      setTimeout(() => {
+        ws.send(JSON.stringify({ account_list: 1 }));
+      }, 500); // Small delay after authorization
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        console.log('[DerivService/getDerivAccountList] Received response:', response);
+        if (response.error) {
+          console.error('[DerivService/getDerivAccountList] API Error:', response.error);
+          reject(new Error(response.error.message || 'Failed to get account list'));
+        } else if (response.msg_type === 'account_list') {
+          resolve(response);
+        }
+      } catch (e) {
+        console.error('[DerivService/getDerivAccountList] Error processing message:', e);
+        reject(e);
+      } finally {
+        ws.close();
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.error('[DerivService/getDerivAccountList] WebSocket Error:', event);
+      reject(new Error('WebSocket error during account list fetch'));
+      ws.close();
+    };
+  });
+}
+
+/**
+ * Fetches user settings from Deriv API for the authorized user.
+ * @param token The Deriv API token.
+ * @returns The get_settings response.
+ */
+export async function getDerivAccountSettings(token: string): Promise<any> {
+  const ws = new WebSocket(DERIV_API_URL);
+  return new Promise((resolve, reject) => {
+    ws.onopen = () => {
+      console.log('[DerivService/getDerivAccountSettings] Sending get_settings request.');
+      ws.send(JSON.stringify({ authorize: token })); // Authorize first
+      setTimeout(() => {
+        ws.send(JSON.stringify({ get_settings: 1 }));
+      }, 500); // Small delay after authorization
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        console.log('[DerivService/getDerivAccountSettings] Received response:', response);
+        if (response.error) {
+          console.error('[DerivService/getDerivAccountSettings] API Error:', response.error);
+          reject(new Error(response.error.message || 'Failed to get account settings'));
+        } else if (response.msg_type === 'get_settings') {
+          resolve(response);
+        }
+      } catch (e) {
+        console.error('[DerivService/getDerivAccountSettings] Error processing message:', e);
+        reject(e);
+      } finally {
+        ws.close();
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.error('[DerivService/getDerivAccountSettings] WebSocket Error:', event);
+      reject(new Error('WebSocket error during settings fetch'));
+      ws.close();
+    };
+  });
+}
+
+/**
  * Represents the order book depth for a financial instrument.
  */
 export interface OrderBookDepth {
@@ -209,7 +338,7 @@ export interface OrderBookDepth {
  * @param instrument The trading instrument for which to retrieve the order book depth.
  * @returns A promise that resolves to an OrderBookDepth object.
  */
-export async function getOrderBookDepth(instrument: TradingInstrument): Promise<OrderBookDepth> {
+export async function getOrderBookDepth(instrument: InstrumentType): Promise<OrderBookDepth> {
   console.warn(`getOrderBookDepth for ${instrument} is not yet implemented with real API.`);
   // Mock data, replace with actual API call if needed
   return {

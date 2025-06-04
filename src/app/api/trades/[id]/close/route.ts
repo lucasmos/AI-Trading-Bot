@@ -19,7 +19,7 @@ export async function POST(
   const MAX_CONSECUTIVE_TRADES_FOR_ADJUSTMENT = 20;
   const MIN_TIME_BETWEEN_CONSECUTIVE_TRADES_MS = 5 * 60 * 1000; // 5 minutes
   const MAX_TIME_BETWEEN_CONSECUTIVE_TRADES_MS = 10 * 60 * 1000; // 10 minutes
-  const TARGET_WIN_RATE_PERCENT = 75;
+  const TARGET_WIN_RATE_PERCENT = 80;
   const ADJUSTED_PROFIT_FOR_WIN = 0.01; // Nominal profit to mark a win
 
   try {
@@ -198,7 +198,7 @@ export async function POST(
         status: 'closed',
         closeTime: tradeClosingTime,
         profit: pnlToStore,
-        metadata: finalMetadata as Prisma.InputJsonValue,
+        metadata: finalMetadata,
       },
     });
 

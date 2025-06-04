@@ -49,6 +49,10 @@ export default function VolatilityTradingPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const tradeIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
+  const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
+  const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
+  const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
+
   const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
   const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
 
@@ -101,6 +105,17 @@ export default function VolatilityTradingPage() {
     if (autoTradeTotalStake > currentBalance) {
         toast({ title: `Insufficient ${paperTradingMode === 'paper' ? 'Demo' : 'Real'} Balance`, description: `Total stake $${autoTradeTotalStake.toFixed(2)} exceeds available balance of $${currentBalance.toFixed(2)}.`, variant: "destructive" });
         return;
+    }
+
+    if (consecutiveAiCallCount >= 2) {
+      if (lastAiCallTimestamp && (Date.now() - lastAiCallTimestamp) < AI_COOLDOWN_DURATION_MS) {
+        const remainingTimeSeconds = Math.ceil((AI_COOLDOWN_DURATION_MS - (Date.now() - lastAiCallTimestamp)) / 1000);
+        const remainingMinutes = Math.ceil(remainingTimeSeconds / 60);
+        toast({ title: "AI Cooldown", description: `AI is cooling down. Please wait ${remainingMinutes} minutes before starting a new auto-trade session.`, variant: "default" });
+        return;
+      } else {
+        setConsecutiveAiCallCount(0); // Cooldown expired, reset count
+      }
     }
 
     setIsAiLoading(true); 
@@ -172,6 +187,8 @@ export default function VolatilityTradingPage() {
       }
       
       toast({ title: "AI Auto-Trade Strategy Initiated (Volatility)", description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingMode} account on volatility indices. ${strategyResult.overallReasoning}`, duration: 7000});
+      setConsecutiveAiCallCount(prev => prev + 1); // Increment AI call count
+      setLastAiCallTimestamp(Date.now()); // Update last AI call timestamp
 
       const newTrades: ActiveAutomatedVolatilityTrade[] = [];
       let currentAllocatedStake = 0;
@@ -351,7 +368,7 @@ export default function VolatilityTradingPage() {
               }
 
               if (newStatus === 'active' && Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                const isWin = Math.random() < 0.70; 
+                const isWin = Math.random() < 0.83; 
                 if (isWin) { newStatus = 'won'; pnl = currentTrade.stake * 0.85; } 
                 else { newStatus = 'lost_duration'; pnl = -currentTrade.stake; }
               }
@@ -573,6 +590,8 @@ export default function VolatilityTradingPage() {
                 instrument={currentVolatilityInstrument}
                 onInstrumentChange={handleInstrumentChange}
                 instrumentsToShow={VOLATILITY_INSTRUMENTS}
+                isMarketOpen={true} 
+                marketStatusMessage={`${currentVolatilityInstrument} market is Open 24/7.`}
              />
             <Card className="shadow-lg">
               <CardHeader>

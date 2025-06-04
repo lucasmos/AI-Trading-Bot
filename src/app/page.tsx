@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
-import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { TradeControls } from '@/components/dashboard/trade-controls';
 import { AiRecommendationCard } from '@/components/dashboard/ai-recommendation-card';
@@ -25,6 +24,7 @@ import {
 } from "@/config/instruments";
 import { getMarketStatus } from '@/lib/market-hours';
 import { DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
+import { BalanceDisplay } from '@/components/dashboard/balance-display';
 
 
 // Define local TradeRecord interface to avoid import issues
@@ -100,6 +100,12 @@ export default function DashboardPage() {
 
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
+  const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
+  const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
   const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
   const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
@@ -470,6 +476,17 @@ export default function DashboardPage() {
       return;
     }
 
+    if (consecutiveAiCallCount >= 2) {
+      if (lastAiCallTimestamp && (Date.now() - lastAiCallTimestamp) < AI_COOLDOWN_DURATION_MS) {
+        const remainingTimeSeconds = Math.ceil((AI_COOLDOWN_DURATION_MS - (Date.now() - lastAiCallTimestamp)) / 1000);
+        const remainingMinutes = Math.ceil(remainingTimeSeconds / 60);
+        toast({ title: "AI Cooldown", description: `AI is cooling down. Please wait ${remainingMinutes} minutes before starting a new auto-trade session.`, variant: "default" });
+        return;
+      } else {
+        setConsecutiveAiCallCount(0); // Cooldown expired, reset count
+      }
+    }
+
     setIsPreparingAutoTrades(true);
     setIsAutoTradingActive(true);
     setActiveAutomatedTrades([]);
@@ -578,6 +595,8 @@ export default function DashboardPage() {
           duration: 7000 
         });
       }
+      setConsecutiveAiCallCount(prev => prev + 1); // Increment AI call count
+      setLastAiCallTimestamp(Date.now()); // Update last AI call timestamp
       setIsPreparingAutoTrades(false);
 
       if (!strategyResult || strategyResult.tradesToExecute.length === 0) {
@@ -800,7 +819,7 @@ export default function DashboardPage() {
               }
 
               if (newStatus === 'active' && Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                const isWin = Math.random() < 0.70; 
+                const isWin = Math.random() < 0.83; 
                 if (isWin) { newStatus = 'won'; pnl = currentTrade.stake * 0.85; } 
                 else { newStatus = 'lost_duration'; pnl = -currentTrade.stake; }
               }
@@ -928,10 +947,12 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-6">
           <BalanceDisplay balance={currentBalance} accountType={paperTradingMode} />
           <TradingChart 
-            instrument={currentInstrument}
-            onInstrumentChange={handleInstrumentChange}
-            instrumentsToShow={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
-          />
+                instrument={currentInstrument}
+                onInstrumentChange={handleInstrumentChange}
+                instrumentsToShow={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
+                isMarketOpen={isMarketOpenForSelected}
+                marketStatusMessage={marketStatusMessage}
+            />
           {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
             <Card className="shadow-lg">
               <CardHeader>
@@ -957,7 +978,8 @@ export default function DashboardPage() {
                       <TableRow key={trade.id}>
                         <TableCell>{trade.instrument}</TableCell>
                         <TableCell>
-                          <Badge variant={trade.action === 'CALL' ? 'default' : 'destructive'} 
+                          {/* @ts-ignore */}
+                          <Badge variant={trade.action === 'CALL' ? 'default' : 'destructive'}
                                  className={trade.action === 'CALL' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
                             {trade.action}
                           </Badge>
@@ -967,6 +989,7 @@ export default function DashboardPage() {
                         <TableCell>{trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
                         <TableCell>{trade.stopLossPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
                         <TableCell>
+                           {/* @ts-ignore */}
                            <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
                                   className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
                             {trade.status}

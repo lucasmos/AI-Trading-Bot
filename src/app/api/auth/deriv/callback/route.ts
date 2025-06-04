@@ -1,5 +1,3 @@
-'use client'; // This directive is not applicable for API routes, removing it.
-
 import { NextResponse, NextRequest } from 'next/server';
 import WebSocket from 'ws'; // Import WebSocket
 import type { UserInfo } from '@/types'; // Assuming UserInfo might be useful for structuring data
@@ -13,30 +11,44 @@ interface DerivAccount {
 }
 
 interface DerivAuthorizeResponse {
-  authorize: {
-    email?: string;
-    user_id?: string;
-    loginid?: string;
-    currency?: string;
-    balance?: number;
-    landing_company_name?: string;
-    landing_company_shortcode?: string;
-    full_name?: string;
-    account_list?: Array<{
-      loginid: string;
-      is_virtual?: number;
-      icon?: string;
-      balance?: number;
-      currency?: string;
-    }>;
-    // ... other fields from Deriv's authorize response
-  };
-  error?: {
-    code: string;
-    message: string;
-  };
-  echo_req: any;
-  msg_type: string;
+    authorize?: {
+        account_list: Array<{
+            account_type: string;
+            created_at: number;
+            currency: string;
+            is_disabled: 0 | 1;
+            is_virtual: 0 | 1;
+            landing_company_name: string;
+            loginid: string;
+            balance?: number;
+            token?: string; // Tokens are available for other accounts in the list
+        }>;
+        balance: number;
+        country: string;
+        currency: string;
+        email: string;
+        fullname?: string;
+        is_virtual: 0 | 1;
+        landing_company_fullname: string;
+        landing_company_name: string;
+        local_currencies: Record<string, any>; // Adjust type if schema is known
+        loginid: string;
+        preferred_language: string;
+        scopes: string[];
+        trading: Record<string, any>; // Adjust type if schema is known
+        upgradeable_landing_companies: string[];
+        user_id: string; // Deriv's user_id is a string
+    };
+    echo_req: {
+        authorize: string;
+        req_id: number;
+    };
+    msg_type: 'authorize';
+    req_id: number;
+    error?: {
+        code: string;
+        message: string;
+    };
 }
 
 export async function GET(request: NextRequest) {
@@ -71,6 +83,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
+    let _tempRedirectUrl: URL | null = null; // To store the final redirect URL
 
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => {
@@ -97,8 +110,7 @@ export async function GET(request: NextRequest) {
             // Extract necessary user information
             const userId = derivUser.user_id;
             const email = derivUser.email;
-            const name = derivUser.full_name || derivUser.loginid;
-            const loginid = derivUser.loginid; // The primary login ID of the authorized account
+            const name = derivUser.fullname || derivUser.loginid;
             
             // Find demo and real accounts from account_list for more detailed info
             let derivDemoAccountId: string | undefined;
@@ -142,7 +154,7 @@ export async function GET(request: NextRequest) {
                 userId: userId,      // Deriv User ID as the primary ID
                 email: email,        // Deriv Email
                 name: name || 'Deriv User', // Deriv Full Name or LoginID
-                // Potentially add other fields if your handle-users endpoint supports them e.g. auth_method: 'deriv'
+                authMethod: 'deriv', // Explicitly set authMethod to deriv
               }),
             });
 
@@ -155,46 +167,42 @@ export async function GET(request: NextRequest) {
             }
             console.log('[Deriv Callback] Successfully handled user in DB.');
 
-            // Step 2: Redirect to a client-side finalization page with user details
-            // These details will be used by the client to call AuthContext.login()
-            const finalizeUrl = new URL('/auth/deriv/finalize', request.nextUrl.origin);
-            finalizeUrl.searchParams.set('derivUserId', userId);
-            finalizeUrl.searchParams.set('email', email);
-            if (name) finalizeUrl.searchParams.set('name', name);
-            if (loginid) finalizeUrl.searchParams.set('loginid', loginid);
-            if (derivDemoAccountId) finalizeUrl.searchParams.set('derivDemoAccountId', derivDemoAccountId);
-            if (typeof derivDemoBalance === 'number') finalizeUrl.searchParams.set('derivDemoBalance', derivDemoBalance.toString());
-            if (derivRealAccountId) finalizeUrl.searchParams.set('derivRealAccountId', derivRealAccountId);
-            if (typeof derivRealBalance === 'number') finalizeUrl.searchParams.set('derivRealBalance', derivRealBalance.toString());
-            // Add other necessary params like account currency etc.
-            
-            ws.close();
-            resolve(); // Resolve the main promise
-            // Perform redirect outside, after promise resolves/rejects
-            // Cannot use NextResponse directly inside WebSocket event handlers if they don't return it up.
+            // Step 2: Store user info in localStorage and redirect to client-side page
+            // The AuthContext on the client-side will pick this up.
+            const userInfoForClient: UserInfo = {
+                id: userId,
+                name: name,
+                email: email,
+                authMethod: 'deriv',
+                derivDemoAccountId: derivDemoAccountId,
+                derivRealAccountId: derivRealAccountId,
+                derivDemoBalance: derivDemoBalance,
+                derivRealBalance: derivRealBalance,
+            };
+            localStorage.setItem('derivAiUser', JSON.stringify(userInfoForClient));
+            localStorage.setItem('derivAiAuthMethod', 'deriv');
 
-            // Store redirect URL to use after promise is done
-            (request as any)._tempRedirectUrl = finalizeUrl.toString(); 
-            return; // Exit onmessage handler
+            _tempRedirectUrl = new URL('/', request.nextUrl.origin); // Redirect to home or dashboard after successful login
+            ws.close();
+            resolve();
           }
-        } catch (parseError) {
-          console.error('[Deriv Callback] Error parsing WebSocket message or during processing:', parseError);
+        } catch (innerError) {
+          console.error('[Deriv Callback] Error in WebSocket message processing:', innerError);
           ws.close();
-          reject(parseError); // Reject the main promise
+          reject(innerError);
         }
       };
 
       ws.onerror = (error) => {
         console.error('[Deriv Callback] WebSocket error:', error);
-        ws.close(); // Ensure closed on error
-        reject(error); // Reject the main promise
+        ws.close();
+        reject(new Error('WebSocket connection error.'));
       };
 
       ws.onclose = (event) => {
         console.log('[Deriv Callback] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
         // If promise hasn't resolved or rejected yet (e.g. closed prematurely without expected message)
         // It might be good to reject here if not already handled.
-        // However, typical flow is resolve/reject in onmessage or onerror.
       };
 
       // Timeout for the entire WebSocket interaction
@@ -208,8 +216,8 @@ export async function GET(request: NextRequest) {
     });
 
     // If we reached here, the promise resolved, and _tempRedirectUrl should be set.
-    if ((request as any)._tempRedirectUrl) {
-      return NextResponse.redirect((request as any)._tempRedirectUrl);
+    if (_tempRedirectUrl) {
+      return NextResponse.redirect(_tempRedirectUrl);
     }
     // Fallback if something went wrong with setting temp redirect URL but promise resolved (should not happen)
     console.error('[Deriv Callback] Promise resolved but no redirect URL was set.');

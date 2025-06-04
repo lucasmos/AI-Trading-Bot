@@ -1,4 +1,4 @@
-import type { ForexCryptoCommodityInstrumentType, TradingInstrument } from '@/types';
+import type { ForexCryptoCommodityInstrumentType, InstrumentType } from '@/types';
 
 /**
  * Checks if a given UTC date and time falls within typical Forex trading hours.
@@ -41,11 +41,11 @@ function isGenerallyForexMarketOpen(date: Date): boolean {
  * @returns An object with `isOpen` (boolean) and a `message` (string).
  */
 export function getMarketStatus(
-  instrument: TradingInstrument,
+  instrument: InstrumentType,
   currentDate: Date = new Date() // Default to now
 ): { isOpen: boolean; statusMessage: string } {
-  const forexCommodityInstruments: ForexCryptoCommodityInstrumentType[] = ['EUR/USD', 'GBP/USD', 'XAU/USD'];
-  const cryptoInstruments: ForexCryptoCommodityInstrumentType[] = ['BTC/USD', 'ETH/USD'];
+  const forexCommodityInstruments: InstrumentType[] = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'Palladium/USD', 'Platinum/USD', 'Silver/USD'];
+  const cryptoInstruments: InstrumentType[] = ['BTC/USD', 'ETH/USD'];
 
   if (forexCommodityInstruments.includes(instrument as ForexCryptoCommodityInstrumentType)) {
     const isOpen = isGenerallyForexMarketOpen(currentDate);
@@ -65,18 +65,16 @@ export function getMarketStatus(
   // Assuming all other instruments are Volatility Indices from Deriv
   // or any other instrument type considered 24/7.
   // Add more specific checks if other non-24/7 types are introduced.
-  if (instrument.startsWith('Volatility')) {
+  if (instrument.startsWith('Volatility') || instrument.startsWith('Boom') || instrument.startsWith('Crash') || instrument.startsWith('Jump')) {
      return {
         isOpen: true,
         statusMessage: `${instrument} market is Open 24/7.`
         };
   }
   
-  // Fallback for any other unhandled but potentially valid TradingInstrument
-  // This might include other Forex pairs if ForexCryptoCommodityInstrumentType is expanded
-  // and not explicitly in forexCommodityInstruments or cryptoInstruments arrays above.
+  // Fallback for any other unhandled but potentially valid InstrumentType
   // We'll assume they are Forex-like if not Volatility or known Crypto.
-  const isForexLike = !instrument.startsWith('Volatility') && !cryptoInstruments.includes(instrument as ForexCryptoCommodityInstrumentType);
+  const isForexLike = !(instrument.startsWith('Volatility') || instrument.startsWith('Boom') || instrument.startsWith('Crash') || instrument.startsWith('Jump')) && !cryptoInstruments.includes(instrument as ForexCryptoCommodityInstrumentType);
   if (isForexLike) {
     const isOpen = isGenerallyForexMarketOpen(currentDate);
      return {
@@ -87,7 +85,7 @@ export function getMarketStatus(
 
   // Default for truly unknown or if logic needs refinement for new types
   return {
-    isOpen: true, // Default to open to avoid blocking unnecessarily if type is new/unhandled
-    statusMessage: `${instrument} market status is undetermined, assumed Open.`
+    isOpen: false, // Default to closed for unhandled to prevent unexpected live trading
+    statusMessage: `${instrument} market status is undetermined, assumed Closed.`
   };
 } 

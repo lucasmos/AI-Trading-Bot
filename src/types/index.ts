@@ -5,14 +5,30 @@ export type VolatilityInstrumentType =
   | 'Volatility 25 Index'
   | 'Volatility 50 Index'
   | 'Volatility 75 Index'
-  | 'Volatility 100 Index';
+  | 'Volatility 100 Index'
+  | 'Boom 500 Index'
+  | 'Boom 600 Index'
+  | 'Boom 900 Index'
+  | 'Boom 1000 Index'
+  | 'Crash 500 Index'
+  | 'Crash 600 Index'
+  | 'Crash 900 Index'
+  | 'Crash 1000 Index'
+  | 'Jump 10 Index'
+  | 'Jump 25 Index'
+  | 'Jump 50 Index'
+  | 'Jump 75 Index'
+  | 'Jump 100 Index';
 
 export type ForexCryptoCommodityInstrumentType =
   | 'EUR/USD'
   | 'GBP/USD'
   | 'BTC/USD'
   | 'XAU/USD' // Gold
-  | 'ETH/USD'; // Ethereum
+  | 'ETH/USD'
+  | 'Palladium/USD'
+  | 'Platinum/USD'
+  | 'Silver/USD';
 
 export type VolatilityIndexInstrumentType = string; // Refined later
 
@@ -135,8 +151,8 @@ export interface UserInfo {
   derivPreferredLanguage?: string | null;
   derivAccountList?: DerivAccount[];
   derivActiveAccount?: DerivAccountShort | null;
-  derivDemoBalance?: number;
-  derivRealBalance?: number;
+  derivDemoBalance?: number | null;
+  derivRealBalance?: number | null;
   derivActiveLoginId?: string | null;
   derivDemoAccountId?: string | null;
   derivRealAccountId?: string | null;
