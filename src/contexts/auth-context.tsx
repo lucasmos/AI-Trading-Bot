@@ -64,18 +64,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setDerivDemoAccountId(null);
     setDerivLiveAccountId(null);
     
-    localStorage.removeItem('derivAiUser');
-    localStorage.removeItem('derivAiAuthMethod');
-    localStorage.removeItem('derivAiSelectedDerivAccountType');
-    localStorage.removeItem('derivAiDerivDemoBalance');
-    localStorage.removeItem('derivAiDerivLiveBalance');
-    localStorage.removeItem('derivAiDerivDemoAccountId');
-    localStorage.removeItem('derivAiDerivLiveAccountId');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('derivAiUser');
+      localStorage.removeItem('derivAiAuthMethod');
+      localStorage.removeItem('derivAiSelectedDerivAccountType');
+      localStorage.removeItem('derivAiDerivDemoBalance');
+      localStorage.removeItem('derivAiDerivLiveBalance');
+      localStorage.removeItem('derivAiDerivDemoAccountId');
+      localStorage.removeItem('derivAiDerivLiveAccountId');
+    }
 
     setPaperBalance(DEFAULT_PAPER_BALANCE); 
     setLiveBalance(DEFAULT_LIVE_BALANCE);
-    localStorage.setItem('derivAiPaperBalance', DEFAULT_PAPER_BALANCE.toString());
-    localStorage.setItem('derivAiLiveBalance', DEFAULT_LIVE_BALANCE.toString());
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('derivAiPaperBalance', DEFAULT_PAPER_BALANCE.toString());
+      localStorage.setItem('derivAiLiveBalance', DEFAULT_LIVE_BALANCE.toString());
+    }
     console.log('[AuthContext] Cleared all auth data and reset balances to default.');
   }, []);
 
@@ -118,16 +122,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setLiveBalance(DEFAULT_LIVE_BALANCE);
         }
         // Persist Deriv specific data
-    localStorage.setItem('derivAiDerivDemoBalance', demoBal.toString());
-    localStorage.setItem('derivAiDerivLiveBalance', liveBal.toString());
-        if (demoId) localStorage.setItem('derivAiDerivDemoAccountId', demoId); else localStorage.removeItem('derivAiDerivDemoAccountId');
-        if (liveId) localStorage.setItem('derivAiDerivLiveAccountId', liveId); else localStorage.removeItem('derivAiDerivLiveAccountId');
-        if (initialAccountType) localStorage.setItem('derivAiSelectedDerivAccountType', initialAccountType); else localStorage.removeItem('derivAiSelectedDerivAccountType');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('derivAiDerivDemoBalance', demoBal.toString());
+      localStorage.setItem('derivAiDerivLiveBalance', liveBal.toString());
+      if (demoId) localStorage.setItem('derivAiDerivDemoAccountId', demoId); else localStorage.removeItem('derivAiDerivDemoAccountId');
+      if (liveId) localStorage.setItem('derivAiDerivLiveAccountId', liveId); else localStorage.removeItem('derivAiDerivLiveAccountId');
+      if (initialAccountType) localStorage.setItem('derivAiSelectedDerivAccountType', initialAccountType); else localStorage.removeItem('derivAiSelectedDerivAccountType');
+    }
 
     } else {
         console.log('[AuthContext] NextAuth user login processing for balances.');
-        setPaperBalance(parseFloat(localStorage.getItem(`derivAiPaperBalance_${user.id}`) || DEFAULT_PAPER_BALANCE.toString()));
-        setLiveBalance(parseFloat(localStorage.getItem(`derivAiLiveBalance_${user.id}`) || DEFAULT_LIVE_BALANCE.toString()));
+        if (typeof window !== 'undefined') {
+          setPaperBalance(parseFloat(localStorage.getItem(`derivAiPaperBalance_${user.id}`) || DEFAULT_PAPER_BALANCE.toString()));
+          setLiveBalance(parseFloat(localStorage.getItem(`derivAiLiveBalance_${user.id}`) || DEFAULT_LIVE_BALANCE.toString()));
+        } else {
+          setPaperBalance(DEFAULT_PAPER_BALANCE);
+          setLiveBalance(DEFAULT_LIVE_BALANCE);
+        }
         setSelectedDerivAccountType(null); 
         setDerivDemoBalance(null);
         setDerivLiveBalanceState(null);
@@ -205,10 +216,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Case 3: NextAuth is unauthenticated (and not loading)
     console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session as fallback.');
-    const localUserString = localStorage.getItem('derivAiUser');
-    const localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
+    let localUserString = null;
+    let localAuthMethod: AuthMethod = null;
 
-    if (['deriv', 'deriv-credentials'].includes(localAuthMethod as string) && localUserString) {
+    if (typeof window !== 'undefined') {
+      localUserString = localStorage.getItem('derivAiUser');
+      localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
+    }
+
+    if (typeof window !== 'undefined' && ['deriv', 'deriv-credentials'].includes(localAuthMethod as string) && localUserString) {
       try {
         const user = JSON.parse(localUserString) as UserInfo;
         // Only call login if this localStorage user is new or AuthContext state is different
@@ -247,42 +263,57 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     console.log(`[AuthContext] logout called. Current method: ${currentAuthMethod}`);
 
     console.log('[AuthContext] Signing out from NextAuth.');
-    await nextAuthSignOut({ redirect: false });
+    await nextAuthSignOut({ redirect: false }); // This should be safe.
 
-          clearAuthData();
-            router.push('/auth/login');
+    clearAuthData(); // This manipulates state and localStorage, ensure it's robust.
+                     // localStorage access should ideally also be guarded by `typeof window !== 'undefined'`,
+                     // but `clearAuthData` might already handle this or NextAuth's signOut does it.
+                     // For now, focus on router.push.
 
+    if (typeof window !== 'undefined') {
+      console.log('[AuthContext] Client environment detected, redirecting to login page.');
+      router.push('/auth/login');
+    } else {
+      console.log('[AuthContext] Server environment detected, skipping client-side redirect during logout.');
+      // On the server, a redirect might need to be handled differently,
+      // but for the _not-found page prerender, not redirecting is likely fine.
+      // The goal here is to prevent `router.push` from causing issues during SSR.
+    }
   }, [currentAuthMethod, router, clearAuthData]);
 
   useEffect(() => {
-    if (userInfo) {
-      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
-        if (selectedDerivAccountType === 'demo' && paperBalance !== derivDemoBalance) {
-          setDerivDemoBalance(paperBalance); 
-          // This localStorage key might need to be more generic if balances aren't shared between 'deriv' and 'deriv-credentials'
-          localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString());
+    if (typeof window !== 'undefined') {
+      if (userInfo) {
+        if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
+          if (selectedDerivAccountType === 'demo' && paperBalance !== derivDemoBalance) {
+            setDerivDemoBalance(paperBalance);
+            // This localStorage key might need to be more generic if balances aren't shared between 'deriv' and 'deriv-credentials'
+            localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString());
+          }
+        } else {
+          localStorage.setItem(`derivAiPaperBalance_${userInfo.id}`, paperBalance.toString());
         }
       } else {
-        localStorage.setItem(`derivAiPaperBalance_${userInfo.id}`, paperBalance.toString());
+        localStorage.setItem('derivAiPaperBalance', paperBalance.toString());
       }
-    } else {
-      localStorage.setItem('derivAiPaperBalance', paperBalance.toString());
     }
   }, [paperBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivDemoBalance, setDerivDemoBalance]);
 
   useEffect(() => {
-    if (userInfo) {
-      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
-        if (selectedDerivAccountType === 'live' && liveBalance !== derivLiveBalanceState) {
-          setDerivLiveBalanceState(liveBalance);
-          // This localStorage key might need to be more generic
-          localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString());
+    if (typeof window !== 'undefined') {
+      if (userInfo) {
+        if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
+          if (selectedDerivAccountType === 'live' && liveBalance !== derivLiveBalanceState) {
+            setDerivLiveBalanceState(liveBalance);
+            // This localStorage key might need to be more generic
+            localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString());
+          }
+        } else {
+          localStorage.setItem(`derivAiLiveBalance_${userInfo.id}`, liveBalance.toString());
         }
       } else {
-        localStorage.setItem(`derivAiLiveBalance_${userInfo.id}`, liveBalance.toString());
+        localStorage.setItem('derivAiLiveBalance', liveBalance.toString());
       }
-    } else {
-      localStorage.setItem('derivAiLiveBalance', liveBalance.toString());
     }
   }, [liveBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivLiveBalanceState, setDerivLiveBalanceState]);
 
@@ -290,7 +321,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivDemoBalance !== null) {
         setSelectedDerivAccountType('demo');
         setPaperBalance(derivDemoBalance); 
-        localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
+        }
     }
   }, [currentAuthMethod, derivDemoBalance]);
 
@@ -298,7 +331,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivLiveBalanceState !== null) {
         setSelectedDerivAccountType('live');
         setLiveBalance(derivLiveBalanceState); 
-        localStorage.setItem('derivAiSelectedDerivAccountType', 'live');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('derivAiSelectedDerivAccountType', 'live');
+        }
     }
   }, [currentAuthMethod, derivLiveBalanceState]);
 

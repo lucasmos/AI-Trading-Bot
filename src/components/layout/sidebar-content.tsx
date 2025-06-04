@@ -23,23 +23,19 @@ import { isFirebaseInitialized } from '@/lib/firebase/firebase';
 import { Badge } from '@/components/ui/badge';
 
 export function SidebarContentComponent() {
-  const { 
-    authStatus, 
-    userInfo, 
-    logout, 
-    currentAuthMethod, 
-    derivDemoAccountId, 
-    derivLiveAccountId, 
-    selectedDerivAccountType,
-    switchToDerivDemo,
-    switchToDerivLive
-  } = useAuth();
+  const auth = useAuth();
   const { isMobile, open, setOpen, openMobile, setOpenMobile } = useSidebar(); 
   const pathname = usePathname();
   const router = useRouter();
 
   const handleLogout = async () => {
-    await logout();
+    if (auth && auth.logout) {
+      await auth.logout();
+    } else {
+      console.error("[SidebarContentComponent] Logout function is not available on auth context.");
+      // Potentially fall back to a simple window.location redirect if appropriate
+      // or notify the user that logout failed.
+    }
   };
 
   const handleMenuClick = () => {
@@ -52,8 +48,8 @@ export function SidebarContentComponent() {
     }
   };
 
-  const canSwitchToDemo = currentAuthMethod === 'deriv' && derivDemoAccountId && selectedDerivAccountType !== 'demo';
-  const canSwitchToLive = currentAuthMethod === 'deriv' && derivLiveAccountId && selectedDerivAccountType !== 'live';
+  const canSwitchToDemo = auth.currentAuthMethod === 'deriv' && auth.derivDemoAccountId && auth.selectedDerivAccountType !== 'demo';
+  const canSwitchToLive = auth.currentAuthMethod === 'deriv' && auth.derivLiveAccountId && auth.selectedDerivAccountType !== 'live';
 
   return (
     <Sidebar side="left" variant="sidebar" collapsible="icon">
@@ -200,52 +196,52 @@ export function SidebarContentComponent() {
       </SidebarContent>
       <Separator className="bg-sidebar-border" />
       <SidebarFooter className="p-4">
-        {authStatus === 'authenticated' && userInfo ? (
+        {auth.authStatus === 'authenticated' && auth.userInfo ? (
           <div className="flex flex-col gap-3 items-start group-data-[collapsible=icon]:items-center">
             <div className="flex items-center gap-3 w-full">
               <Avatar className="h-10 w-10">
-                {userInfo.photoURL ? (
-                  <AvatarImage src={userInfo.photoURL} alt={userInfo.name || 'User'} />
+                {auth.userInfo.photoURL ? (
+                  <AvatarImage src={auth.userInfo.photoURL} alt={auth.userInfo.name || 'User'} />
                 ) : (
-                  <AvatarImage src={`https://avatar.vercel.sh/${userInfo.id}.png?text=${userInfo.name?.substring(0,2).toUpperCase() || 'U'}`} alt={userInfo.name || 'User'} />
+                  <AvatarImage src={`https://avatar.vercel.sh/${auth.userInfo.id}.png?text=${auth.userInfo.name?.substring(0,2).toUpperCase() || 'U'}`} alt={auth.userInfo.name || 'User'} />
                 )}
-                <AvatarFallback>{userInfo.name?.substring(0, 2).toUpperCase() || 'U'}</AvatarFallback>
+                <AvatarFallback>{auth.userInfo.name?.substring(0, 2).toUpperCase() || 'U'}</AvatarFallback>
               </Avatar>
               <div className="group-data-[collapsible=icon]:hidden flex-grow">
-                <p className="text-sm font-medium text-sidebar-foreground truncate" title={userInfo.name || ''}>{userInfo.name || 'Anonymous User'}</p>
-                {userInfo.email && <p className="text-xs text-sidebar-foreground/70 truncate" title={userInfo.email}>{userInfo.email}</p>}
+                <p className="text-sm font-medium text-sidebar-foreground truncate" title={auth.userInfo.name || ''}>{auth.userInfo.name || 'Anonymous User'}</p>
+                {auth.userInfo.email && <p className="text-xs text-sidebar-foreground/70 truncate" title={auth.userInfo.email}>{auth.userInfo.email}</p>}
                 
-                {currentAuthMethod === 'deriv' ? (
+                {auth.currentAuthMethod === 'deriv' ? (
                   <div className="text-xs text-sidebar-foreground/70 mt-0.5">
                     <div className='flex items-center'>
                        <span className="mr-1">Deriv:</span>
-                        {selectedDerivAccountType === 'demo' && derivDemoAccountId && (
-                            <Badge variant="outline" className="border-sky-500 text-sky-500">Demo: {derivDemoAccountId}</Badge>
+                        {auth.selectedDerivAccountType === 'demo' && auth.derivDemoAccountId && (
+                            <Badge variant="outline" className="border-sky-500 text-sky-500">Demo: {auth.derivDemoAccountId}</Badge>
                         )}
-                        {selectedDerivAccountType === 'live' && derivLiveAccountId && (
-                            <Badge variant="outline" className="border-green-500 text-green-500">Real: {derivLiveAccountId}</Badge>
+                        {auth.selectedDerivAccountType === 'live' && auth.derivLiveAccountId && (
+                            <Badge variant="outline" className="border-green-500 text-green-500">Real: {auth.derivLiveAccountId}</Badge>
                         )}
-                         {!selectedDerivAccountType && (
+                         {!auth.selectedDerivAccountType && (
                             <Badge variant="secondary">Account</Badge>
                         )}
                     </div>
                   </div>
                 ) : (
                   <p className="text-xs text-sidebar-foreground/50 capitalize">
-                    {currentAuthMethod ? `${currentAuthMethod} Account` : 'Logged In'}
+                    {auth.currentAuthMethod ? `${auth.currentAuthMethod} Account` : 'Logged In'}
                   </p>
                 )}
               </div>
             </div>
 
-            {currentAuthMethod === 'deriv' && (derivDemoAccountId || derivLiveAccountId) && (
+            {auth.currentAuthMethod === 'deriv' && (auth.derivDemoAccountId || auth.derivLiveAccountId) && (
               <div className="group-data-[collapsible=icon]:hidden w-full space-y-1 mt-1">
                 {canSwitchToDemo && (
                   <Button 
                     variant="ghost" 
                     size="sm" 
                     className="w-full justify-start text-xs h-auto py-1 px-2 hover:bg-sidebar-accent"
-                    onClick={() => {switchToDerivDemo(); handleMenuClick();}}
+                    onClick={() => {auth.switchToDerivDemo(); handleMenuClick();}}
                   >
                     <Eye className="mr-2 h-3.5 w-3.5 text-sky-500" /> Switch to Demo
                   </Button>
@@ -255,7 +251,7 @@ export function SidebarContentComponent() {
                     variant="ghost" 
                     size="sm" 
                     className="w-full justify-start text-xs h-auto py-1 px-2 hover:bg-sidebar-accent"
-                    onClick={() => {switchToDerivLive(); handleMenuClick();}}
+                    onClick={() => {auth.switchToDerivLive(); handleMenuClick();}}
                   >
                     <EyeOff className="mr-2 h-3.5 w-3.5 text-green-500" /> Switch to Real
                   </Button>
@@ -267,9 +263,15 @@ export function SidebarContentComponent() {
               variant="ghost" 
               size="sm" 
               className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:aspect-square"
-              onClick={() => {
-                handleLogout();
-                handleMenuClick(); 
+              onClick={async () => {
+                if (auth && auth.logout) {
+                  await auth.logout();
+                } else {
+                   console.error("[SidebarContentComponent] Logout function not available for button click.");
+                }
+                if (typeof handleMenuClick === 'function') {
+                   handleMenuClick();
+                }
               }}
               aria-label="Logout"
             >
