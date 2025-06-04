@@ -36,22 +36,10 @@ export function SidebarContentComponent() {
   } = useAuth();
   const { isMobile, open, setOpen, openMobile, setOpenMobile } = useSidebar(); 
   const pathname = usePathname();
-  const router = useRouter();
+  // const router = useRouter(); // router is not explicitly used in this component after changes
 
-  const handleLogout = async () => {
-    if (typeof logout === 'function') {
-      await logout();
-      // The router.push('/auth/login') is handled inside the logout() from AuthContext now.
-    } else {
-      // This case should ideally not happen at runtime if AuthProvider is correctly set up,
-      // but this guard helps during build or unexpected scenarios.
-      console.error('[SidebarContent] logout function is not available or not a function.');
-      // Optionally, could redirect or show a generic error if encountered at runtime,
-      // but for build-time prerendering, the console error is sufficient to indicate an issue
-      // if this path were taken. The main goal is to prevent the ReferenceError.
-      // If router is available here and needed: router.push('/auth/login?error=logout_unavailable');
-    }
-  };
+  // The separate handleLogout function is removed.
+  // const handleLogout = async () => { ... };
 
   const handleMenuClick = () => {
     if (isMobile) {
@@ -279,8 +267,24 @@ export function SidebarContentComponent() {
               size="sm" 
               className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:aspect-square"
               onClick={() => {
-                handleLogout();
-                handleMenuClick(); 
+                if (typeof logout === 'function') {
+                  console.log('[SidebarContent] Logout button clicked, logout function is valid.');
+                  logout()
+                    .then(() => {
+                      console.log('[SidebarContent] logout() promise resolved.');
+                      // Redirection is handled by logout() in AuthContext
+                    })
+                    .catch((err) => {
+                      console.error('[SidebarContent] Error during logout execution:', err);
+                    })
+                    .finally(() => {
+                      // Ensure menu closes after logout attempt.
+                      handleMenuClick();
+                    });
+                } else {
+                  console.error('[SidebarContent] Logout button clicked, but logout function is not available or not a function.');
+                  handleMenuClick(); // Still attempt to close menu
+                }
               }}
               aria-label="Logout"
             >
