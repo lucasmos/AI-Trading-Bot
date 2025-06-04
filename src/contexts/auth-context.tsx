@@ -87,8 +87,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setCurrentAuthMethod(authMethodToSet);
     setAuthStatus('authenticated');
 
-    if (authMethodToSet === 'deriv') {
-        console.log('[AuthContext] Deriv login processing.');
+    const isDerivAuthMethod = ['deriv', 'deriv-credentials'].includes(authMethodToSet as string);
+    console.log(`[AuthContext] Is Deriv auth method: ${isDerivAuthMethod}`);
+
+    if (isDerivAuthMethod) {
+        console.log(`[AuthContext] Deriv login processing for method: ${authMethodToSet}.`);
+        // For 'deriv-credentials', these user.deriv... fields might not be present initially from NextAuth.
+        // They would be defaults unless explicitly passed to the login() function from elsewhere with this data.
         const demoBal = typeof user.derivDemoBalance === 'number' ? user.derivDemoBalance : DEFAULT_PAPER_BALANCE;
         const liveBal = typeof user.derivRealBalance === 'number' ? user.derivRealBalance : DEFAULT_LIVE_BALANCE;
         const demoId = user.derivDemoAccountId || null;
@@ -203,19 +208,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const localUserString = localStorage.getItem('derivAiUser');
     const localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
 
-    if (localAuthMethod === 'deriv' && localUserString) {
+    if (['deriv', 'deriv-credentials'].includes(localAuthMethod as string) && localUserString) {
       try {
         const user = JSON.parse(localUserString) as UserInfo;
         // Only call login if this localStorage user is new or AuthContext state is different
-        if (lastProcessedNextAuthUserId.current !== user.id || authStatus !== 'authenticated') {
-            console.log('[AuthContext] Maintaining Deriv session from localStorage.');
-            login(user, 'deriv', { redirect: false });
+        if (lastProcessedNextAuthUserId.current !== user.id || authStatus !== 'authenticated' || currentAuthMethod !== localAuthMethod) {
+            console.log(`[AuthContext] Maintaining ${localAuthMethod} session from localStorage.`);
+            login(user, localAuthMethod, { redirect: false });
             lastProcessedNextAuthUserId.current = user.id; // Update ref
         } else {
             console.log('[AuthContext] LocalStorage Deriv session is already active in AuthContext.');
         }
       } catch (e) {
-        console.error('[AuthContext] Error parsing stored Deriv user. Clearing auth data.', e);
+        console.error(`[AuthContext] Error parsing stored ${localAuthMethod} user. Clearing auth data.`, e);
         if (authStatus !== 'unauthenticated') { // Only clear if necessary
             clearAuthData();
         }
@@ -251,9 +256,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (userInfo) {
-      if (currentAuthMethod === 'deriv') {
+      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
         if (selectedDerivAccountType === 'demo' && paperBalance !== derivDemoBalance) {
           setDerivDemoBalance(paperBalance); 
+          // This localStorage key might need to be more generic if balances aren't shared between 'deriv' and 'deriv-credentials'
           localStorage.setItem('derivAiDerivDemoBalance', paperBalance.toString());
         }
       } else {
@@ -266,9 +272,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (userInfo) {
-      if (currentAuthMethod === 'deriv') {
+      if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
         if (selectedDerivAccountType === 'live' && liveBalance !== derivLiveBalanceState) {
           setDerivLiveBalanceState(liveBalance);
+          // This localStorage key might need to be more generic
           localStorage.setItem('derivAiDerivLiveBalance', liveBalance.toString());
         }
       } else {
@@ -280,7 +287,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [liveBalance, userInfo, currentAuthMethod, selectedDerivAccountType, derivLiveBalanceState, setDerivLiveBalanceState]);
 
   const switchToDerivDemo = useCallback(() => {
-    if (currentAuthMethod === 'deriv' && derivDemoBalance !== null) {
+    if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivDemoBalance !== null) {
         setSelectedDerivAccountType('demo');
         setPaperBalance(derivDemoBalance); 
         localStorage.setItem('derivAiSelectedDerivAccountType', 'demo');
@@ -288,7 +295,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [currentAuthMethod, derivDemoBalance]);
 
   const switchToDerivLive = useCallback(() => {
-    if (currentAuthMethod === 'deriv' && derivLiveBalanceState !== null) {
+    if (['deriv', 'deriv-credentials'].includes(currentAuthMethod as string) && derivLiveBalanceState !== null) {
         setSelectedDerivAccountType('live');
         setLiveBalance(derivLiveBalanceState); 
         localStorage.setItem('derivAiSelectedDerivAccountType', 'live');

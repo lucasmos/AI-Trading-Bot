@@ -2,15 +2,17 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useAuth } from '@/contexts/auth-context';
+import { useAuth } from '@/contexts/auth-context'; // Kept for handleMockLogin
 import type { UserInfo } from '@/types';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Ensure this is uncommented and present
+// import { signIn } from 'next-auth/react'; // Removed as it's no longer used for Deriv direct login
+// import { useRouter } from 'next/navigation'; // Removed
 import { LogIn } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DerivLoginPage() {
   const { login } = useAuth(); // Use login from AuthContext
-  const router = useRouter();
+  const router = useRouter(); // Ensure this is present
 
   const handleMockLogin = () => {
     // Simulate a successful Deriv OAuth login

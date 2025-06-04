@@ -22,6 +22,134 @@ export const authOptions: NextAuthOptions = {
       allowDangerousEmailAccountLinking: true,
     }),
     CredentialsProvider({
+      id: "deriv-credentials",
+      name: "Deriv Custom Auth",
+      credentials: {
+        derivUserId: { label: "Deriv User ID", type: "text" },
+        email: { label: "Email", type: "email" },
+        name: { label: "Name", type: "text" },
+        accessToken: { label: "Deriv Access Token", type: "text" }
+      },
+      async authorize(credentials, req) {
+        console.log('[Deriv CredentialsProvider] Received credentials:', JSON.stringify(credentials, null, 2));
+
+        if (!credentials || !credentials.derivUserId || !credentials.email || !credentials.accessToken) {
+          console.error('[Deriv CredentialsProvider] Missing essential credentials.');
+          return null;
+        }
+
+        try {
+          let user = await prisma.user.findUnique({ where: { email: credentials.email } });
+
+          if (user) {
+            console.log(`[Deriv CredentialsProvider] User found by email: ${user.id}`);
+            const existingAccount = await prisma.account.findUnique({
+              where: {
+                provider_providerAccountId: {
+                  provider: 'deriv-credentials',
+                  providerAccountId: credentials.derivUserId,
+                },
+              },
+            });
+
+            if (!existingAccount) {
+              console.log(`[Deriv CredentialsProvider] Linking Deriv account ${credentials.derivUserId} to existing user ${user.id}`);
+              await prisma.account.create({
+                data: {
+                  userId: user.id,
+                  type: 'oauth', // Using 'oauth' as type for consistency, or 'deriv-custom-token'
+                  provider: 'deriv-credentials',
+                  providerAccountId: credentials.derivUserId,
+                  access_token: credentials.accessToken,
+                },
+              });
+            } else {
+              console.log(`[Deriv CredentialsProvider] Deriv account ${credentials.derivUserId} already linked to user ${user.id}.`);
+              if (existingAccount.access_token !== credentials.accessToken) {
+                console.log(`[Deriv CredentialsProvider] Updating access token for account ${existingAccount.id}`);
+                await prisma.account.update({
+                  where: { id: existingAccount.id },
+                  data: { access_token: credentials.accessToken }
+                });
+              }
+            }
+
+            if (credentials.name && user.name !== credentials.name) {
+              console.log(`[Deriv CredentialsProvider] Updating name for user ${user.id}`);
+              user = await prisma.user.update({
+                where: { id: user.id },
+                data: { name: credentials.name },
+              });
+            }
+          } else {
+            console.log(`[Deriv CredentialsProvider] No user found by email ${credentials.email}. Checking by providerAccountId.`);
+            const account = await prisma.account.findUnique({
+              where: {
+                provider_providerAccountId: {
+                  provider: 'deriv-credentials',
+                  providerAccountId: credentials.derivUserId,
+                },
+              },
+              include: { user: true },
+            });
+
+            if (account) {
+              user = account.user;
+              console.log(`[Deriv CredentialsProvider] User found via account: ${user.id}`);
+              let userDataToUpdate: { email?: string, name?: string } = {};
+              if (credentials.email && user.email !== credentials.email) {
+                userDataToUpdate.email = credentials.email;
+              }
+              if (credentials.name && user.name !== credentials.name) {
+                userDataToUpdate.name = credentials.name;
+              }
+              if (Object.keys(userDataToUpdate).length > 0) {
+                console.log(`[Deriv CredentialsProvider] Updating user data for user ${user.id}:`, userDataToUpdate);
+                user = await prisma.user.update({ where: { id: user.id }, data: userDataToUpdate });
+              }
+              if (account.access_token !== credentials.accessToken) {
+                console.log(`[Deriv CredentialsProvider] Updating access token for account ${account.id}`);
+                await prisma.account.update({
+                  where: { id: account.id },
+                  data: { access_token: credentials.accessToken }
+                });
+              }
+            } else {
+              console.log(`[Deriv CredentialsProvider] No existing user or account. Creating new user for email ${credentials.email}.`);
+              user = await prisma.user.create({
+                data: {
+                  email: credentials.email,
+                  name: credentials.name,
+                  // emailVerified: new Date(), // Optional: consider if email is verified
+                },
+              });
+              console.log(`[Deriv CredentialsProvider] New user created: ${user.id}. Linking Deriv account.`);
+              await prisma.account.create({
+                data: {
+                  userId: user.id,
+                  type: 'oauth', // Or 'deriv-custom-token'
+                  provider: 'deriv-credentials',
+                  providerAccountId: credentials.derivUserId,
+                  access_token: credentials.accessToken,
+                },
+              });
+            }
+          }
+
+          if (user) {
+            console.log(`[Deriv CredentialsProvider] Authorize successful for user: ${user.id}, email: ${user.email}`);
+            return { id: user.id, email: user.email, name: user.name, image: user.image };
+          } else {
+            console.error('[Deriv CredentialsProvider] User could not be found or created.');
+            return null;
+          }
+        } catch (error) {
+          console.error('[Deriv CredentialsProvider] Error in authorize function:', error);
+          return null;
+        }
+      }
+    }),
+    CredentialsProvider({
       name: "Email & Password",
       credentials: {
         email: { label: "Email", type: "email", placeholder: "your@email.com" },
