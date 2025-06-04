@@ -39,7 +39,18 @@ export function SidebarContentComponent() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await logout();
+    if (typeof logout === 'function') {
+      await logout();
+      // The router.push('/auth/login') is handled inside the logout() from AuthContext now.
+    } else {
+      // This case should ideally not happen at runtime if AuthProvider is correctly set up,
+      // but this guard helps during build or unexpected scenarios.
+      console.error('[SidebarContent] logout function is not available or not a function.');
+      // Optionally, could redirect or show a generic error if encountered at runtime,
+      // but for build-time prerendering, the console error is sufficient to indicate an issue
+      // if this path were taken. The main goal is to prevent the ReferenceError.
+      // If router is available here and needed: router.push('/auth/login?error=logout_unavailable');
+    }
   };
 
   const handleMenuClick = () => {

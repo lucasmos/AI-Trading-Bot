@@ -466,7 +466,10 @@ export default function VolatilityTradingPage() {
       <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><Activity className="h-8 w-8 text-primary" />AI Volatility Index Trading</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1">
+        <div className="md:col-span-1 space-y-6"> {/* Added space-y-6 here */}
+          {/* Inserted BalanceDisplay */}
+          <BalanceDisplay balance={currentBalance} accountType={paperTradingMode} />
+
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" />AI Auto-Trading Controls</CardTitle>
