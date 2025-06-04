@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 import WebSocket from 'ws';
 
-const FALLBACK_APP_ID = 'YOUR_FALLBACK_APP_ID'; // Define it once if used in comparison
+const FALLBACK_APP_ID = 'YOUR_FALLBACK_APP_ID'; /**
+ * Handles POST requests to authorize a user with the Deriv WebSocket API using an access token.
+ *
+ * Validates service configuration, parses the request body for a Deriv access token, and establishes a WebSocket connection to Deriv. Sends an authorization request and returns user details on success, or a structured error response on failure, timeout, or unexpected conditions.
+ *
+ * @param request - The incoming HTTP request containing a JSON body with a `derivAccessToken` field.
+ * @returns A JSON response with the user's Deriv ID, email, and name on successful authorization, or a structured error object with an appropriate HTTP status code on failure.
+ *
+ * @remark Returns HTTP 500 if the Deriv App ID is missing or invalid, HTTP 400 for missing or invalid parameters, HTTP 504 for Deriv API timeouts, HTTP 401 for invalid tokens, and HTTP 500 for other errors or unexpected responses.
+ */
 
 export async function POST(request: Request) {
   const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
