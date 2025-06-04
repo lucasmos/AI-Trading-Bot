@@ -480,6 +480,7 @@ export default function VolatilityTradingPage() {
 
   return (
     <div className="container mx-auto py-2 space-y-6">
+      <BalanceDisplay balance={currentBalance} accountType={paperTradingMode} />
       <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><Activity className="h-8 w-8 text-primary" />AI Volatility Index Trading</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
