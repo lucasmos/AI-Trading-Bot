@@ -28,6 +28,19 @@ const nextConfig: NextConfig = {
   // Ensure NEXT_PUBLIC_ environment variables are available client-side
   // This is usually handled automatically by Next.js for variables prefixed with NEXT_PUBLIC_
   // No explicit env key needed here unless there's a specific non-standard requirement.
+  webpack: (config) => {
+    config.module.rules.push({
+      test: /\.handlebars$/,
+      loader: 'handlebars-loader',
+    });
+
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'handlebars': 'handlebars/dist/handlebars.runtime.js',
+    };
+    // Important: return the modified config
+    return config;
+  },
 };
 
 export default nextConfig;
