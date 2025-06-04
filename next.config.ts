@@ -36,7 +36,6 @@ const nextConfig: NextConfig = {
 
     config.resolve.alias = {
       ...config.resolve.alias,
-      'handlebars': 'handlebars/dist/handlebars.runtime.js',
     };
     // Important: return the modified config
     return config;
