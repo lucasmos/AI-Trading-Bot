@@ -3,7 +3,25 @@
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
+let derivApiWsUrl: string;
+const wsBaseUrl = 'wss://ws.derivws.com/websockets/v3';
+
+if (process.env.NEXT_PUBLIC_DERIV_WS_URL) {
+  derivApiWsUrl = process.env.NEXT_PUBLIC_DERIV_WS_URL;
+  console.log(`[DerivService] Using custom WebSocket URL: ${derivApiWsUrl}`);
+} else if (process.env.NEXT_PUBLIC_DERIV_APP_ID) {
+  derivApiWsUrl = `${wsBaseUrl}?app_id=${process.env.NEXT_PUBLIC_DERIV_APP_ID}`;
+  console.log(`[DerivService] Using WebSocket URL constructed with NEXT_PUBLIC_DERIV_APP_ID: ${derivApiWsUrl}`);
+} else {
+  // This case should ideally not happen in a configured production environment.
+  // Deriv might require an app_id for any meaningful interaction.
+  console.error("[DerivService] CRITICAL: NEXT_PUBLIC_DERIV_WS_URL and NEXT_PUBLIC_DERIV_APP_ID are not set. WebSocket connections may fail or be limited.");
+  derivApiWsUrl = `${wsBaseUrl}?app_id=1089`; // Fallback to a generic public app_id if absolutely necessary, though proper configuration is key.
+                                             // Using a known public/generic app_id like 1089 (Deriv P2P) or 16929 (example from their docs) is better than none,
+                                             // but the user's own app_id (80447) should be used via NEXT_PUBLIC_DERIV_APP_ID.
+                                             // The console error should prompt correct configuration.
+}
+const DERIV_API_URL = derivApiWsUrl;
 const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
 // Define the instrument map
