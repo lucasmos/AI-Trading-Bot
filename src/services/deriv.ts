@@ -3,7 +3,12 @@
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
+const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+if (!derivAppId) {
+  throw new Error("NEXT_PUBLIC_DERIV_APP_ID is not set in environment variables. Please configure it.");
+}
+const baseWsUrl = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3';
+const DERIV_API_URL = `${baseWsUrl}?app_id=${derivAppId}`;
 const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
 // Define the instrument map

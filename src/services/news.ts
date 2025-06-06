@@ -41,7 +41,12 @@ interface NewsApiResponse {
   articles: NewsArticle[];
 }
 
-const NEWS_API_KEY = 'ffd4683b2bcf448fbda2bc554f35943c';
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
+
+if (!NEWS_API_KEY) {
+  throw new Error("NEWS_API_KEY is not set in environment variables. Please configure it for news services to function.");
+}
+
 const NEWS_API_BASE_URL = 'https://newsapi.org/v2/everything';
 
 /**
