@@ -41,9 +41,11 @@ export const authOptions: NextAuthOptions = {
         try {
           let user = await prisma.user.findUnique({ where: { email: credentials.email } });
 
-          if (user) {
-            console.log(`[Deriv CredentialsProvider] User found by email: ${user.id}`);
-            const existingAccount = await prisma.account.findUnique({
+          if (user) { // User with this email exists
+            console.log(`[Deriv CredentialsProvider] User found by email: ${user.id}. Preserving this ID.`);
+
+            // Check if this Deriv account (credentials.derivUserId) is already linked to ANY user.
+            const accountLinkedToDerivId = await prisma.account.findUnique({
               where: {
                 provider_providerAccountId: {
                   provider: 'deriv-credentials',
@@ -52,95 +54,102 @@ export const authOptions: NextAuthOptions = {
               },
             });
 
-            if (!existingAccount) {
-              console.log(`[Deriv CredentialsProvider] Linking Deriv account ${credentials.derivUserId} to existing user ${user.id}`);
+            if (accountLinkedToDerivId) {
+              // Deriv ID is already linked. Check if it's linked to the CURRENT user (found by email).
+              if (accountLinkedToDerivId.userId === user.id) {
+                // Yes, it's linked to the correct user. Update token if necessary.
+                console.log(`[Deriv CredentialsProvider] Deriv ID ${credentials.derivUserId} already linked to this user ${user.id}.`);
+                if (accountLinkedToDerivId.access_token !== credentials.accessToken) {
+                  await prisma.account.update({
+                    where: { id: accountLinkedToDerivId.id },
+                    data: { access_token: credentials.accessToken },
+                  });
+                  console.log(`[Deriv CredentialsProvider] Access token updated for user ${user.id}.`);
+                }
+              } else {
+                // Conflict: This Deriv ID is linked to a DIFFERENT user.
+                // Email (credentials.email) belongs to user A (user.id), but Deriv ID (credentials.derivUserId)
+                // is linked to user B (accountLinkedToDerivId.userId).
+                console.error(`[Deriv CredentialsProvider] Conflict: Deriv User ID ${credentials.derivUserId} is already linked to user ${accountLinkedToDerivId.userId}, but email ${credentials.email} is associated with user ${user.id}. Cannot proceed.`);
+                return null;
+              }
+            } else {
+              // Deriv ID is not linked to any user yet. Link it to this user (found by email).
+              console.log(`[Deriv CredentialsProvider] Deriv ID ${credentials.derivUserId} not linked. Linking to user ${user.id}.`);
               await prisma.account.create({
                 data: {
                   userId: user.id,
-                  type: 'oauth', // Using 'oauth' as type for consistency, or 'deriv-custom-token'
+                  type: 'oauth', // Consistent with NextAuth adapter, or choose 'credentials'
                   provider: 'deriv-credentials',
                   providerAccountId: credentials.derivUserId,
                   access_token: credentials.accessToken,
                 },
               });
-            } else {
-              console.log(`[Deriv CredentialsProvider] Deriv account ${credentials.derivUserId} already linked to user ${user.id}.`);
-              if (existingAccount.access_token !== credentials.accessToken) {
-                console.log(`[Deriv CredentialsProvider] Updating access token for account ${existingAccount.id}`);
-                await prisma.account.update({
-                  where: { id: existingAccount.id },
-                  data: { access_token: credentials.accessToken }
-                });
-              }
             }
 
+            // Optionally update the user's name if provided from Deriv and different
             if (credentials.name && user.name !== credentials.name) {
-              console.log(`[Deriv CredentialsProvider] Updating name for user ${user.id}`);
+              console.log(`[Deriv CredentialsProvider] Updating name for user ${user.id} to ${credentials.name}.`);
               user = await prisma.user.update({
                 where: { id: user.id },
                 data: { name: credentials.name },
               });
             }
-          } else {
-            console.log(`[Deriv CredentialsProvider] No user found by email ${credentials.email}. Checking by providerAccountId.`);
-            const account = await prisma.account.findUnique({
-              where: {
-                provider_providerAccountId: {
-                  provider: 'deriv-credentials',
-                  providerAccountId: credentials.derivUserId,
-                },
-              },
-              include: { user: true },
+          } else { // No user found with this email, so create a new user
+            console.log(`[Deriv CredentialsProvider] No user found by email ${credentials.email}.`);
+
+            // Safeguard: Check if this Deriv ID (credentials.derivUserId) is already linked to another user.
+            // This prevents linking one Deriv account to multiple application users if emails differ.
+            const accountByDerivId = await prisma.account.findUnique({
+                where: {
+                    provider_providerAccountId: {
+                        provider: 'deriv-credentials',
+                        providerAccountId: credentials.derivUserId,
+                    }
+                }
             });
 
-            if (account) {
-              user = account.user;
-              console.log(`[Deriv CredentialsProvider] User found via account: ${user.id}`);
-              let userDataToUpdate: { email?: string, name?: string } = {};
-              if (credentials.email && user.email !== credentials.email) {
-                userDataToUpdate.email = credentials.email;
-              }
-              if (credentials.name && user.name !== credentials.name) {
-                userDataToUpdate.name = credentials.name;
-              }
-              if (Object.keys(userDataToUpdate).length > 0) {
-                console.log(`[Deriv CredentialsProvider] Updating user data for user ${user.id}:`, userDataToUpdate);
-                user = await prisma.user.update({ where: { id: user.id }, data: userDataToUpdate });
-              }
-              if (account.access_token !== credentials.accessToken) {
-                console.log(`[Deriv CredentialsProvider] Updating access token for account ${account.id}`);
-                await prisma.account.update({
-                  where: { id: account.id },
-                  data: { access_token: credentials.accessToken }
-                });
-              }
-            } else {
-              console.log(`[Deriv CredentialsProvider] No existing user or account. Creating new user for email ${credentials.email}.`);
-              user = await prisma.user.create({
-                data: {
-                  email: credentials.email,
-                  name: credentials.name,
-                  // emailVerified: new Date(), // Optional: consider if email is verified
-                },
-              });
-              console.log(`[Deriv CredentialsProvider] New user created: ${user.id}. Linking Deriv account.`);
-              await prisma.account.create({
-                data: {
-                  userId: user.id,
-                  type: 'oauth', // Or 'deriv-custom-token'
-                  provider: 'deriv-credentials',
-                  providerAccountId: credentials.derivUserId,
-                  access_token: credentials.accessToken,
-                },
-              });
+            if (accountByDerivId) {
+                // This Deriv ID is already linked to some user.
+                // Since no user was found by credentials.email, this means the linked user has a different email.
+                // This is a conflict: we can't create a new user with credentials.email and link an already-associated Deriv ID.
+                console.error(`[Deriv CredentialsProvider] Error: Deriv User ID ${credentials.derivUserId} is already linked to user ${accountByDerivId.userId} (who has a different email). Cannot create new user with email ${credentials.email} and link this Deriv ID.`);
+                return null;
             }
+
+            // Create new user (ID will be auto-generated by Prisma)
+            console.log(`[Deriv CredentialsProvider] Creating new user for email ${credentials.email}.`);
+            user = await prisma.user.create({
+              data: {
+                email: credentials.email,
+                name: credentials.name,
+                emailVerified: new Date(), // Email from Deriv can be considered verified
+              },
+            });
+            console.log(`[Deriv CredentialsProvider] New user created: ${user.id}. Linking Deriv account ${credentials.derivUserId}.`);
+            // Link the new Deriv account to this new user
+            await prisma.account.create({
+              data: {
+                userId: user.id,
+                type: 'oauth',
+                provider: 'deriv-credentials',
+                providerAccountId: credentials.derivUserId,
+                access_token: credentials.accessToken,
+              },
+            });
           }
 
           if (user) {
             console.log(`[Deriv CredentialsProvider] Authorize successful for user: ${user.id}, email: ${user.email}`);
-            return { id: user.id, email: user.email, name: user.name, image: user.image };
+            return {
+              id: user.id, // This MUST be the stable Prisma User ID
+              email: user.email,
+              name: user.name,
+              image: user.image, // Will be null if new user or existing user didn't have one
+            };
           } else {
-            console.error('[Deriv CredentialsProvider] User could not be found or created.');
+            // This case should ideally not be reached if logic above is correct, but as a fallback:
+            console.error('[Deriv CredentialsProvider] User object is null after processing.');
             return null;
           }
         } catch (error) {
@@ -277,52 +286,92 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, account }) {
-      console.log('[NextAuth Callbacks] JWT callback - before:', { token, user, account });
-      // Persist the user ID, provider, and Deriv specific account details to the token
-      if (user) {
+      console.log('[NextAuth Callbacks] JWT callback - Input:', { token: {...token}, user, account });
+
+      // On initial sign-in, `user` and `account` objects are passed.
+      if (account && user) { // This block runs on sign-in or linking
         token.id = user.id;
-        token.provider = user.provider; // Directly use user.provider from the profile callback
-        token.derivAccountId = (user as any).derivAccountId;
-        (token as any).derivDemoAccountId = (user as any).derivDemoAccountId;
-        (token as any).derivDemoBalance = (user as any).derivDemoBalance;
-        (token as any).derivRealAccountId = (user as any).derivRealAccountId;
-        (token as any).derivRealBalance = (user as any).derivRealBalance;
-      }
-      if (account) {
-        token.accessToken = account.access_token; // Store access token from provider if needed
-        // The provider from account might be generic 'oauth', prefer our custom 'deriv' if available from user
-        if (!token.provider) {
-          token.provider = account.provider;
+        token.email = user.email; // Ensure email is in token
+        token.name = user.name;   // Ensure name is in token
+        token.picture = user.image; // Ensure image is in token (might be null)
+        token.provider = account.provider;
+
+        if (account.provider === 'deriv-credentials') {
+          token.derivAccessToken = account.access_token;
+          token.derivUserId = account.providerAccountId; // This is the original Deriv User ID
+
+          // Clear Google-specific token if switching/linking to Deriv
+          delete token.googleAccessToken;
+          // Clear any other provider specific tokens if necessary
+        } else if (account.provider === 'google') {
+          token.googleAccessToken = account.access_token; // Store Google access token if needed
+
+          // Clear Deriv-specific tokens if switching/linking to Google
+          delete token.derivAccessToken;
+          delete token.derivUserId;
+          // Clear any other provider specific tokens
         }
+        // TODO: Handle other providers if they exist
       }
-      console.log('[NextAuth Callbacks] JWT callback - after:', token);
+      // For subsequent JWT reads, `user` and `account` are undefined.
+      // Token already has id, email, name, picture from previous runs.
+
+      console.log('[NextAuth Callbacks] JWT callback - Output:', {...token});
       return token;
     },
     async session({ session, token }) {
-      console.log('[NextAuth Callbacks] Session callback - before:', { session, token });
-      // Send properties to the client, like user ID, provider, and Deriv specific account details from the token
+      console.log('[NextAuth Callbacks] Session callback - Input:', { session: {...session}, token: {...token} });
+
+      // Standard user properties
       if (token.id && session.user) {
-        (session.user as any).id = token.id as string;
+        session.user.id = token.id as string;
       }
+      if (token.email && session.user) {
+        session.user.email = token.email as string;
+      }
+      if (token.name && session.user) {
+        session.user.name = token.name as string;
+      }
+      if (token.picture && session.user) { // picture can be null
+        session.user.image = token.picture as string | null;
+      } else if (session.user) {
+        session.user.image = null; // Ensure it's explicitly null if not in token
+      }
+
+      // Provider-specific properties
       if (token.provider && session.user) {
-        (session.user as any).provider = token.provider as string; // Add provider to session user
+        (session.user as any).provider = token.provider as string;
       }
-      if (token.derivAccountId && session.user) {
-        (session.user as any).derivAccountId = token.derivAccountId as string; // Add derivAccountId to session user
+
+      if (token.provider === 'deriv-credentials') {
+        if (token.derivAccessToken && session.user) {
+          (session.user as any).derivAccessToken = token.derivAccessToken as string;
+        }
+        if (token.derivUserId && session.user) {
+          (session.user as any).derivUserId = token.derivUserId as string;
+        }
+        // Explicitly nullify other provider tokens in session
+        if (session.user) {
+          delete (session.user as any).googleAccessToken;
+        }
+      } else if (token.provider === 'google') {
+        if (token.googleAccessToken && session.user) {
+          (session.user as any).googleAccessToken = token.googleAccessToken as string;
+        }
+        // Explicitly nullify other provider tokens in session
+        if (session.user) {
+          delete (session.user as any).derivAccessToken;
+          delete (session.user as any).derivUserId;
+        }
       }
-      if ((token as any).derivDemoAccountId && session.user) {
-        (session.user as any).derivDemoAccountId = (token as any).derivDemoAccountId as string;
-      }
-      if ((token as any).derivDemoBalance && session.user) {
-        (session.user as any).derivDemoBalance = (token as any).derivDemoBalance as number;
-      }
-      if ((token as any).derivRealAccountId && session.user) {
-        (session.user as any).derivRealAccountId = (token as any).derivRealAccountId as string;
-      }
-      if ((token as any).derivRealBalance && session.user) {
-        (session.user as any).derivRealBalance = (token as any).derivRealBalance as number;
-      }
-      console.log('[NextAuth Callbacks] Session callback - after:', session);
+
+      // The other Deriv fields (derivDemoAccountId, derivDemoBalance etc.) are NOT in the token
+      // based on the current plan. AuthContext will handle them being null or fetching them.
+      // However, if they were somehow added to the token by a previous version or different flow,
+      // this is where they'd be transferred to session.user if desired.
+      // For now, we only add what we've explicitly put in the token.
+
+      console.log('[NextAuth Callbacks] Session callback - Output:', {...session});
       return session;
     },
   },
