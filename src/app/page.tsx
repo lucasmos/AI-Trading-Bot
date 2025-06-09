@@ -67,9 +67,9 @@ export default function DashboardPage() {
     authStatus, 
     userInfo,
     paperBalance, 
-    // setPaperBalance, // Direct setPaperBalance from context might not be used here now
+    setPaperBalance, // Ensure this is available from useAuth
     liveBalance, 
-    // setLiveBalance, // Direct setLiveBalance from context might not be used here now
+    setLiveBalance, // Ensure this is available from useAuth
     selectedDerivAccountType,
     switchToDerivDemo,
     switchToDerivLive,
@@ -385,8 +385,11 @@ export default function DashboardPage() {
           console.warn("[Dashboard] Database trade not created or ID missing, cannot close in DB. Trade outcome simulated locally only.");
         }
         
-        // setCurrentBalance(prev => parseFloat((prev + pnl).toFixed(2))); // Needs refactor for AuthContext
-        console.warn("[DashboardPage] setCurrentBalance after trade needs refactor to update AuthContext balances.");
+        if (paperTradingModeForControls === 'live') {
+          setLiveBalance(prev => parseFloat((prev + pnl).toFixed(2)));
+        } else {
+          setPaperBalance(prev => parseFloat((prev + pnl).toFixed(2)));
+        }
         toast({
           title: `Trade ${outcome === "won" ? "Won" : "Lost"}`,
           description: `P/L: $${pnl.toFixed(2)}`,
@@ -824,8 +827,11 @@ export default function DashboardPage() {
           }
           
           setTimeout(() => {
-            // setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2))); // Needs refactor for AuthContext
-            console.warn("[DashboardPage] setCurrentBalance after manual stop needs refactor to update AuthContext balances.");
+            if (paperTradingModeForControls === 'live') {
+              setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            } else {
+              setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            }
             setProfitsClaimable(prevProfits => ({
               totalNetProfit: prevProfits.totalNetProfit + pnl,
               tradeCount: prevProfits.tradeCount + 1,
@@ -972,8 +978,11 @@ export default function DashboardPage() {
                 }
                 
                 setTimeout(() => { 
-                  // setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2))); // Needs refactor for AuthContext
-                  console.warn("[DashboardPage] setCurrentBalance after auto-trade needs refactor to update AuthContext balances.");
+                  if (paperTradingModeForControls === 'live') {
+                    setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  } else {
+                    setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  }
                   setProfitsClaimable(prevProfits => ({
                     totalNetProfit: prevProfits.totalNetProfit + pnl,
                     tradeCount: prevProfits.tradeCount + 1,
@@ -1012,7 +1021,7 @@ export default function DashboardPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingModeForControls, toast, isPreparingAutoTrades, userInfo, tradingMode, selectedAiStrategyId]); // Removed setCurrentBalance, setProfitsClaimable, added paperTradingModeForControls
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingModeForControls, toast, isPreparingAutoTrades, userInfo, tradingMode, selectedAiStrategyId, setPaperBalance, setLiveBalance]); // Added setPaperBalance, setLiveBalance to deps
 
 
   return (
