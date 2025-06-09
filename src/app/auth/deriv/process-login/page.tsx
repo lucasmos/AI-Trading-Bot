@@ -1,12 +1,13 @@
 // src/app/auth/deriv/process-login/page.tsx
 'use client';
 
-import { useEffect } from 'react';
+import React, { useEffect, Suspense } from 'react'; // Ensure Suspense is imported
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { useToast } from '@/hooks/use-toast'; // Assuming this hook exists
+import { useToast } from '@/hooks/use-toast';
 
-export default function ProcessDerivLoginPage() {
+// This component contains the original logic that uses useSearchParams
+function ProcessDerivLoginLogic() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -16,7 +17,7 @@ export default function ProcessDerivLoginPage() {
     const email = searchParams.get('email');
     const name = searchParams.get('name');
     const accessToken = searchParams.get('accessToken');
-    const error = searchParams.get('error'); // Potential error from the callback
+    const error = searchParams.get('error');
 
     if (error) {
       toast({
@@ -24,14 +25,14 @@ export default function ProcessDerivLoginPage() {
         description: `Failed during Deriv callback: ${error}`,
         variant: 'destructive',
       });
-      router.replace('/auth/login?error=deriv_callback_failed');
+      router.replace(`/auth/login?error=deriv_callback_failed&details=${encodeURIComponent(error)}`);
       return;
     }
 
     if (derivUserId && email && name && accessToken) {
       const performSignIn = async () => {
         const result = await signIn('deriv-credentials', {
-          redirect: false, // Handle redirect manually
+          redirect: false,
           derivUserId,
           email,
           name,
@@ -43,7 +44,7 @@ export default function ProcessDerivLoginPage() {
             title: 'Deriv Account Linked',
             description: 'Successfully connected your Deriv account.',
           });
-          router.replace('/'); // Redirect to homepage or dashboard
+          router.replace('/');
         } else {
           toast({
             title: 'Deriv Linking Failed',
@@ -53,10 +54,8 @@ export default function ProcessDerivLoginPage() {
           router.replace(`/auth/login?error=${result?.error || 'deriv_linking_failed'}`);
         }
       };
-
       performSignIn();
-    } else {
-      // Handle missing parameters, maybe redirect to login with an error
+    } else if (!error) { // Only show this if no other error was processed
       toast({
         title: 'Deriv Login Error',
         description: 'Incomplete information received from Deriv. Please try again.',
@@ -64,8 +63,8 @@ export default function ProcessDerivLoginPage() {
       });
       router.replace('/auth/login?error=deriv_missing_params');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, router, toast]); // Ensure all dependencies using searchParams are listed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, router, toast]); // searchParams, router, toast are dependencies
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
@@ -75,5 +74,21 @@ export default function ProcessDerivLoginPage() {
         {/* You can add a spinner here */}
       </div>
     </div>
+  );
+}
+
+// This is the new page component
+export default function ProcessDerivLoginPage() {
+  // The 'use client' directive is at the top of this file,
+  // making the whole page a client component that uses Suspense.
+
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+        <p className="text-lg font-semibold">Loading Deriv login processor...</p>
+      </div>
+    }>
+      <ProcessDerivLoginLogic />
+    </Suspense>
   );
 }
