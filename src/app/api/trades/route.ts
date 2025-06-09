@@ -8,17 +8,18 @@ export async function POST(request: Request) {
   let requestBody: any;
   try {
     requestBody = await request.json();
-    // email and name are no longer strictly needed here for user creation, 
-    // as /api/auth/verify should handle user reconciliation.
-    const { userId, symbol, type, amount, price, metadata, aiStrategyId } = requestBody;
+    const {
+      userId, symbol, type, amount, price, metadata, aiStrategyId,
+      derivContractId, status, purchaseTime, durationSeconds, loginidUsed
+    } = requestBody;
 
     console.log('[Create Trade API] Attempting to create trade with data:', {
       userId, symbol, type, amount, price,
       metadata: metadata ? 'provided' : 'not provided',
-      aiStrategyId
+      aiStrategyId, derivContractId, status, purchaseTime, durationSeconds, loginidUsed
     });
 
-    if (!userId || !symbol || !type || !amount || !price) {
+    if (!userId || !symbol || !type || !amount || !price) { // Basic validation, derivContractId is optional here
       console.error('[Create Trade API] Missing required fields for trade creation.');
       return NextResponse.json(
         { error: 'Missing required fields for trade creation' },
@@ -64,10 +65,15 @@ export async function POST(request: Request) {
         amount,
         price,
         totalValue,
-        status: 'open', // Default status for a new trade
-        openTime: new Date(),
+        status: status || 'open',
+        openTime: purchaseTime ? new Date(purchaseTime) : new Date(),
         metadata: metadata || {},
         aiStrategyId,
+
+        // New fields for Deriv integration
+        derivContractId: derivContractId ? parseInt(derivContractId.toString(), 10) : null,
+        durationSeconds: durationSeconds ? parseInt(durationSeconds.toString(), 10) : null,
+        loginidUsed: loginidUsed || null,
       },
     });
 

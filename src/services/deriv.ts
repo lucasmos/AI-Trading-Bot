@@ -358,3 +358,233 @@ export async function getOrderBookDepth(instrument: InstrumentType): Promise<Ord
   };
 }
 
+// --- New Additions Start Here ---
+
+export interface DerivProposalRequest {
+  proposal: 1;
+  subscribe?: 1;
+  amount: number;
+  basis: 'payout' | 'stake';
+  contract_type: 'CALL' | 'PUT' | 'DIGITMATCH' | 'DIGITDIFF' | string;
+  currency: string;
+  symbol: string;
+  duration: number;
+  duration_unit: 's' | 'm' | 'h' | 'd' | 't';
+  barrier?: string | number;
+  loginid?: string;
+}
+
+export interface DerivProposalResponse {
+  echo_req: DerivProposalRequest & { [key: string]: any };
+  proposal?: {
+    ask_price: number;
+    display_value: string;
+    id: string;
+    longcode: string;
+    payout: number;
+    spot: number;
+    spot_time: number;
+  };
+  subscription?: {
+    id: string;
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+  msg_type: 'proposal' | string;
+}
+
+export interface DerivBuyRequest {
+  buy: string;
+  price: number;
+  loginid?: string;
+}
+
+export interface DerivBuyResponse {
+  echo_req: DerivBuyRequest & { [key: string]: any };
+  buy?: {
+    contract_id: number;
+    longcode: string;
+    payout: number;
+    purchase_time: number;
+    shortcode: string;
+    start_time: number;
+    buy_price: number;
+    transaction_id: number;
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+  msg_type: 'buy' | string;
+}
+
+// --- Interfaces for getContractUpdateInfo ---
+export interface DerivOpenContractRequest {
+  proposal_open_contract: 1;
+  contract_id: number;
+  subscribe?: 0 | 1;
+}
+
+export interface DerivOpenContractResponse {
+  echo_req: DerivOpenContractRequest & { [key: string]: any };
+  proposal_open_contract?: {
+    contract_id: number;
+    buy_price: number;
+    sell_price?: number;
+    profit?: number;
+    status: 'open' | 'sold' | 'won' | 'lost' | 'cancelled' | string;
+    is_valid_to_sell?: 0 | 1;
+    is_expired?: 0 | 1;
+    is_settleable?: 0 | 1;
+    profit_percentage?: number;
+    sell_time?: number;
+    validation_error?: string;
+  };
+  subscription?: {
+    id: string;
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+  msg_type: 'proposal_open_contract' | string;
+}
+
+
+const DERIV_SERVICE_TIMEOUT_MS = 20000;
+
+async function makeDerivApiRequest<TResponse>(
+  userAccessToken: string,
+  requestPayload: object,
+  expectedResponseType: string
+): Promise<TResponse> {
+  if (!userAccessToken) {
+    return Promise.reject(new Error('User access token is required for Deriv API request.'));
+  }
+  if (!process.env.NEXT_PUBLIC_DERIV_APP_ID) {
+    console.error("CRITICAL: NEXT_PUBLIC_DERIV_APP_ID is not set for Deriv API URL construction in makeDerivApiRequest.");
+    return Promise.reject(new Error('Deriv App ID is not configured.'));
+  }
+
+  const ws = new WebSocket(DERIV_API_URL);
+
+  return new Promise<TResponse>((resolve, reject) => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    let authorized = false;
+
+    const cleanupAndReject = (error: Error) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+      reject(error);
+    };
+
+    const cleanupAndResolve = (data: TResponse) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+         ws.close();
+      }
+      resolve(data);
+    };
+
+    ws.onopen = () => {
+      console.log(`[DerivService/makeDerivApiRequest] WebSocket open. Authorizing for ${expectedResponseType} request.`);
+      ws.send(JSON.stringify({ authorize: userAccessToken }));
+    };
+
+    ws.onmessage = (event) => {
+      const rawData = event.data.toString();
+      try {
+        const response = JSON.parse(rawData);
+
+        if (response.error) {
+          console.error(`[DerivService/makeDerivApiRequest] API Error for ${expectedResponseType}:`, response.error);
+          cleanupAndReject(new Error(`Deriv API Error (${response.error.code}): ${response.error.message}`));
+          return;
+        }
+
+        if (response.msg_type === 'authorize') {
+          if (response.authorize) {
+            console.log(`[DerivService/makeDerivApiRequest] Authorized for ${expectedResponseType}. Sending actual request.`);
+            authorized = true;
+            ws.send(JSON.stringify(requestPayload));
+          } else {
+            console.error(`[DerivService/makeDerivApiRequest] Authorization failed for ${expectedResponseType}:`, response);
+            cleanupAndReject(new Error('Deriv authorization failed.'));
+          }
+        } else if (response.msg_type === expectedResponseType) {
+          console.log(`[DerivService/makeDerivApiRequest] Received expected response type ${expectedResponseType}:`, response);
+          cleanupAndResolve(response as TResponse);
+        } else {
+          console.log(`[DerivService/makeDerivApiRequest] Received other message type ${response.msg_type} for ${expectedResponseType}, ignoring. Full response:`, response);
+        }
+      } catch (e) {
+        console.error(`[DerivService/makeDerivApiRequest] Error processing message for ${expectedResponseType}:`, e, "Raw data:", rawData);
+        cleanupAndReject(e instanceof Error ? e : new Error('Failed to process message from Deriv.'));
+      }
+    };
+
+    ws.onerror = (errorEvent) => {
+      console.error(`[DerivService/makeDerivApiRequest] WebSocket error for ${expectedResponseType}:`, errorEvent);
+      cleanupAndReject(new Error('WebSocket connection error.'));
+    };
+
+    ws.onclose = (event) => {
+      console.log(`[DerivService/makeDerivApiRequest] WebSocket closed for ${expectedResponseType}. Code: ${event.code}, Reason: ${event.reason ? event.reason.toString() : 'N/A'}`);
+    };
+
+    timeoutId = setTimeout(() => {
+      console.warn(`[DerivService/makeDerivApiRequest] Interaction timed out for ${expectedResponseType} after ${DERIV_SERVICE_TIMEOUT_MS}ms.`);
+      cleanupAndReject(new Error(`Deriv API interaction for ${expectedResponseType} timed out.`));
+    }, DERIV_SERVICE_TIMEOUT_MS);
+  });
+}
+
+export async function getTradeProposal(
+  userAccessToken: string,
+  request: DerivProposalRequest
+): Promise<DerivProposalResponse> {
+  console.log('[DerivService/getTradeProposal] Requesting trade proposal:', request);
+  return makeDerivApiRequest<DerivProposalResponse>(userAccessToken, { ...request, proposal: 1 }, 'proposal');
+}
+
+export async function buyContract(
+  userAccessToken: string,
+  request: DerivBuyRequest
+): Promise<DerivBuyResponse> {
+  console.log('[DerivService/buyContract] Requesting to buy contract:', request);
+  return makeDerivApiRequest<DerivBuyResponse>(userAccessToken, { ...request, buy: request.buy }, 'buy');
+}
+
+/**
+ * Fetches the current status and details of an open contract from Deriv API.
+ * @param userAccessToken The user's Deriv API token.
+ * @param contractId The ID of the contract to check.
+ * @returns A promise that resolves to the contract status response.
+ */
+export async function getContractUpdateInfo(
+  userAccessToken: string,
+  contractId: number
+): Promise<DerivOpenContractResponse> {
+  console.log(`[DerivService/getContractUpdateInfo] Requesting update for contract ID: ${contractId}`);
+  const requestPayload: DerivOpenContractRequest = {
+    proposal_open_contract: 1,
+    contract_id: contractId,
+    // subscribe: 0, // For a one-time fetch. Remove or set to 1 for streaming.
+  };
+  // The generic handler will wait for a msg_type matching 'proposal_open_contract'.
+  return makeDerivApiRequest<DerivOpenContractResponse>(userAccessToken, requestPayload, 'proposal_open_contract');
+}
+
+// TODO: Implement getContractOutcome (or similar for proposal_open_contract) - This comment was part of the previous addition.
+// export async function getContractOutcome(userAccessToken: string, contractId: number): Promise<any> {
+//   console.log('[DerivService/getContractOutcome] Requesting outcome for contract:', contractId);
+//   const payload = { proposal_open_contract: 1, contract_id: contractId, subscribe: 0 };
+//   return makeDerivApiRequest<any>(userAccessToken, payload, 'proposal_open_contract');
+// }
