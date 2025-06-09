@@ -23,9 +23,14 @@ interface DerivAuthorizeResponse {
 }
 
 export async function GET(request: NextRequest) {
+  console.log('[Deriv Callback] GET function started.'); // <<< NEW LOG
+
   const { searchParams } = new URL(request.url);
+  console.log('[Deriv Callback] Extracted searchParams.'); // <<< NEW LOG
+
   const baseRedirectPath = '/auth/deriv/process-login';
   let redirectUrl = new URL(baseRedirectPath, request.nextUrl.origin);
+  console.log('[Deriv Callback] Initial redirectUrl constructed.'); // <<< NEW LOG
 
   console.log('[Deriv Callback] Received callback with params:', Object.fromEntries(searchParams.entries()));
 
