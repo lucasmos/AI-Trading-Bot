@@ -1,10 +1,8 @@
+// src/app/api/auth/deriv/callback/route.ts (with added logging)
 import { NextResponse, NextRequest } from 'next/server';
 import WebSocket from 'ws';
 
-// Ensure UserInfo is not imported if not used, or define it if needed for internal structuring.
-// import type { UserInfo } from '@/types';
-
-const DERIV_API_TIMEOUT_MS = 20000; // 20 seconds timeout for API requests
+const DERIV_API_TIMEOUT_MS = 20000; // 20 seconds timeout
 
 interface DerivAccount {
   account?: string;
@@ -14,22 +12,14 @@ interface DerivAccount {
 
 interface DerivAuthorizeResponse {
     authorize?: {
-        account_list: Array<{
-            loginid: string;
-            is_virtual: 0 | 1;
-            balance?: number;
-            // other fields omitted for brevity
-        }>;
+        account_list: Array<{ loginid: string; is_virtual: 0 | 1; balance?: number; }>;
         email: string;
         fullname?: string;
-        user_id: string; // Deriv's user_id is a string
-        loginid: string; // The primary loginid for this token
-        // other fields omitted for brevity
+        user_id: string;
+        loginid: string;
     };
-    error?: {
-        code: string;
-        message: string;
-    };
+    error?: { code: string; message: string; };
+    // msg_type: 'authorize'; // This was removed as per subtask_report from 2024-07-16T09:58:47.815Z, keeping it removed.
 }
 
 export async function GET(request: NextRequest) {
@@ -41,8 +31,8 @@ export async function GET(request: NextRequest) {
 
   const derivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
   if (!derivAppId) {
-    console.error('[Deriv Callback] Deriv App ID (NEXT_PUBLIC_DERIV_APP_ID) is not configured.');
-    redirectUrl.searchParams.set('error', 'config_error');
+    console.error('[Deriv Callback] CRITICAL: Deriv App ID (NEXT_PUBLIC_DERIV_APP_ID) is not configured.');
+    redirectUrl.searchParams.set('error', 'config_error_missing_deriv_app_id');
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -64,98 +54,107 @@ export async function GET(request: NextRequest) {
   }
 
   const firstToken = accounts[0].token;
-  console.log('[Deriv Callback] Attempting to authorize with token:', firstToken);
+  console.log(`[Deriv Callback] Attempting to authorize with token: ${firstToken.substring(0, 5)}... (token truncated for log)`);
 
   try {
+    console.log(`[Deriv Callback] Connecting to WebSocket: wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
     const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
 
-    // This promise will resolve with the final redirect URL (to process-login)
     const finalRedirectUrl = await new Promise<URL>((resolve, reject) => {
-      ws.onopen = () => {
-        console.log('[Deriv Callback] WebSocket connection opened.');
-        ws.send(JSON.stringify({ authorize: firstToken, req_id: 1 }));
+      let timeoutId: NodeJS.Timeout | null = null;
+
+      const cleanupAndReject = (error: Error) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+        reject(error);
       };
 
-      ws.onmessage = (event) => {
+      ws.on('open', () => {
+        console.log('[Deriv Callback] WebSocket connection opened.');
+        const authMessage = JSON.stringify({ authorize: firstToken, req_id: 1 });
+        console.log('[Deriv Callback] Sending authorize message:', authMessage);
+        ws.send(authMessage);
+      });
+
+      ws.on('message', (data) => {
+        const rawData = data.toString();
+        console.log('[Deriv Callback] Received raw WebSocket message:', rawData);
         try {
-          const response = JSON.parse(event.data.toString()) as DerivAuthorizeResponse;
-          console.log('[Deriv Callback] Received WebSocket message:', response);
+          const response = JSON.parse(rawData) as DerivAuthorizeResponse; // Explicitly cast
+          console.log('[Deriv Callback] Parsed WebSocket message:', response);
 
           if (response.error) {
-            console.error('[Deriv Callback] Deriv API error:', response.error);
-            ws.close();
-            // Reject will be caught by outer try/catch, which then redirects with error
-            reject(new Error(`Deriv API Error: ${response.error.message} (Code: ${response.error.code})`));
+            console.error('[Deriv Callback] Deriv API error in message:', response.error);
+            cleanupAndReject(new Error(`Deriv API Error: ${response.error.message} (Code: ${response.error.code})`));
             return;
           }
 
-          if (response.msg_type === 'authorize' && response.authorize) {
+          // Check if msg_type is present and is 'authorize', or if authorize object exists
+          // Deriv's authorize response should contain the 'authorize' object on success.
+          if (response.authorize) { // Removed check for response.msg_type === 'authorize'
             const derivUser = response.authorize;
             console.log('[Deriv Callback] Authorization successful. User data:', derivUser);
 
             const userId = derivUser.user_id;
             const email = derivUser.email;
-            // Use fullname if available, otherwise use the loginid (e.g., VRTCxxxx, CRxxxx)
             const name = derivUser.fullname || derivUser.loginid || 'Deriv User';
 
-            if (!userId || !email || !firstToken) { // firstToken check is redundant here but good for safety
-              console.error('[Deriv Callback] Missing essential user_id, email, or token from Deriv response.');
-              ws.close();
-              reject(new Error('Missing essential data from Deriv.'));
+            if (!userId || !email) {
+              console.error('[Deriv Callback] Missing essential user_id or email from Deriv response.');
+              cleanupAndReject(new Error('Missing essential user_id or email from Deriv.'));
               return;
             }
 
-            // Construct success redirect URL to the processing page
             const successRedirect = new URL(baseRedirectPath, request.nextUrl.origin);
             successRedirect.searchParams.set('derivUserId', userId);
             successRedirect.searchParams.set('email', email);
-            successRedirect.searchParams.set('name', name); // Name is already URL safe from source or fallback
+            successRedirect.searchParams.set('name', name);
             successRedirect.searchParams.set('accessToken', firstToken);
 
-            ws.close();
+            if (timeoutId) clearTimeout(timeoutId);
+            ws.close(); // Close WebSocket on successful processing
             resolve(successRedirect);
+          } else {
+            console.warn('[Deriv Callback] Received message is not the expected authorize response or is missing authorize object:', response);
+            // Not necessarily an error to reject immediately, could be other message types.
+            // However, for this flow, we only expect 'authorize' or an error.
+            // If it's not 'authorize' and not an 'error' message, it could lead to timeout.
+            // Consider if other message types should be handled or ignored. For now, let it timeout if not authorize.
           }
         } catch (innerError) {
-          console.error('[Deriv Callback] Error in WebSocket message processing:', innerError);
-          ws.close();
-          reject(innerError instanceof Error ? innerError : new Error('WebSocket message processing error'));
+          console.error('[Deriv Callback] Error parsing WebSocket message JSON:', innerError, 'Raw data:', rawData);
+          cleanupAndReject(innerError instanceof Error ? innerError : new Error('WebSocket message JSON parsing error'));
         }
-      };
+      });
 
-      ws.onerror = (errorEvent) => { // error is typically an Event, not Error object
-        console.error('[Deriv Callback] WebSocket error event:', errorEvent);
-        ws.close();
-        reject(new Error('WebSocket connection error.'));
-      };
+      ws.on('error', (err) => { // More specific error event from 'ws'
+        console.error('[Deriv Callback] WebSocket error event (ws.on("error")):', err);
+        cleanupAndReject(err); // err is an Error object
+      });
 
-      ws.onclose = (event) => {
-        console.log('[Deriv Callback] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
-        // If promise hasn't resolved (e.g. closed prematurely without expected message), reject.
-        // This is a bit tricky because resolve/reject might have already been called.
-        // A common pattern is to use a flag, but for now, this might lead to unhandled rejections if already resolved.
-      };
+      ws.on('unexpected-response', (req, res) => {
+        console.error(`[Deriv Callback] WebSocket unexpected response. Status: ${res.statusCode}, Message: ${res.statusMessage}`);
+        cleanupAndReject(new Error(`WebSocket unexpected response: ${res.statusCode}`));
+      });
 
-      // Timeout for the entire WebSocket interaction
-      const timeoutId = setTimeout(() => {
-        if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
-           console.warn('[Deriv Callback] WebSocket interaction timed out.');
-           ws.close(); // Attempt to close before rejecting
-           reject(new Error('Deriv API interaction timed out.'));
-        }
+      ws.on('close', (code, reason) => {
+        console.log(`[Deriv Callback] WebSocket connection closed. Code: ${code}, Reason: ${reason ? reason.toString() : 'No reason given'}`);
+        // If the promise hasn't been settled by a message or error, this might indicate a premature close.
+        // The timeout will eventually catch this if it wasn't an explicit cleanupAndReject call.
+      });
+
+      timeoutId = setTimeout(() => {
+        console.warn('[Deriv Callback] WebSocket interaction timed out after', DERIV_API_TIMEOUT_MS, 'ms.');
+        cleanupAndReject(new Error('Deriv API interaction timed out.'));
       }, DERIV_API_TIMEOUT_MS);
-
-      // Clear timeout if promise resolves or rejects earlier
-      // This requires the promise to be wrapped or timeout cleared in resolve/reject paths.
-      // For simplicity, let's assume the timeout will just cause a race.
-      // A better way:
-      // const promiseWithTimeout = new Promise((res, rej) => { ... ws stuff ...; clearTimout(timeoutId); res() ...})
-      // For now, this structure is kept as is, but timeout handling could be improved.
     });
 
     return NextResponse.redirect(finalRedirectUrl);
 
   } catch (error) {
-    console.error('[Deriv Callback] Error in Deriv OAuth flow processing:', error);
+    console.error('[Deriv Callback] Error in Deriv OAuth flow processing (outer catch):', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown processing error';
     redirectUrl.searchParams.set('error', encodeURIComponent(errorMessage));
     return NextResponse.redirect(redirectUrl);
