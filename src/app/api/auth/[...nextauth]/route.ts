@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from '@/lib/db'; // Assuming your Prisma client is exported from here
 import bcrypt from 'bcryptjs'; // Added for password hashing
+import WebSocket from 'ws'; // Added for Deriv account details fetching
 // import { authorizeDeriv, getDerivAccountSettings, getDerivAccountList } from '@/services/deriv'; // Removed: Not using direct API token for login
 
 interface DerivAccount {
@@ -38,13 +39,32 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // Helper Interfaces for Deriv WebSocket response
+        interface DerivAccountDetails {
+            loginid: string;
+            is_virtual?: 0 | 1;
+            balance?: number;
+            currency?: string;
+        }
+
+        interface DerivAuthorizeResponseData {
+            account_list?: DerivAccountDetails[];
+            email?: string;
+            fullname?: string;
+            user_id?: string;
+            loginid?: string;
+            // other fields from authorize response if needed
+        }
+
+        const DERIV_ACCOUNT_DETAILS_TIMEOUT_MS = 20000;
+
+
         try {
           let user = await prisma.user.findUnique({ where: { email: credentials.email } });
 
           if (user) { // User with this email exists
             console.log(`[Deriv CredentialsProvider] User found by email: ${user.id}. Preserving this ID.`);
 
-            // Check if this Deriv account (credentials.derivUserId) is already linked to ANY user.
             const accountLinkedToDerivId = await prisma.account.findUnique({
               where: {
                 provider_providerAccountId: {
@@ -55,9 +75,7 @@ export const authOptions: NextAuthOptions = {
             });
 
             if (accountLinkedToDerivId) {
-              // Deriv ID is already linked. Check if it's linked to the CURRENT user (found by email).
               if (accountLinkedToDerivId.userId === user.id) {
-                // Yes, it's linked to the correct user. Update token if necessary.
                 console.log(`[Deriv CredentialsProvider] Deriv ID ${credentials.derivUserId} already linked to this user ${user.id}.`);
                 if (accountLinkedToDerivId.access_token !== credentials.accessToken) {
                   await prisma.account.update({
@@ -67,19 +85,15 @@ export const authOptions: NextAuthOptions = {
                   console.log(`[Deriv CredentialsProvider] Access token updated for user ${user.id}.`);
                 }
               } else {
-                // Conflict: This Deriv ID is linked to a DIFFERENT user.
-                // Email (credentials.email) belongs to user A (user.id), but Deriv ID (credentials.derivUserId)
-                // is linked to user B (accountLinkedToDerivId.userId).
                 console.error(`[Deriv CredentialsProvider] Conflict: Deriv User ID ${credentials.derivUserId} is already linked to user ${accountLinkedToDerivId.userId}, but email ${credentials.email} is associated with user ${user.id}. Cannot proceed.`);
                 return null;
               }
             } else {
-              // Deriv ID is not linked to any user yet. Link it to this user (found by email).
               console.log(`[Deriv CredentialsProvider] Deriv ID ${credentials.derivUserId} not linked. Linking to user ${user.id}.`);
               await prisma.account.create({
                 data: {
                   userId: user.id,
-                  type: 'oauth', // Consistent with NextAuth adapter, or choose 'credentials'
+                  type: 'oauth',
                   provider: 'deriv-credentials',
                   providerAccountId: credentials.derivUserId,
                   access_token: credentials.accessToken,
@@ -87,7 +101,6 @@ export const authOptions: NextAuthOptions = {
               });
             }
 
-            // Optionally update the user's name if provided from Deriv and different
             if (credentials.name && user.name !== credentials.name) {
               console.log(`[Deriv CredentialsProvider] Updating name for user ${user.id} to ${credentials.name}.`);
               user = await prisma.user.update({
@@ -98,8 +111,6 @@ export const authOptions: NextAuthOptions = {
           } else { // No user found with this email, so create a new user
             console.log(`[Deriv CredentialsProvider] No user found by email ${credentials.email}.`);
 
-            // Safeguard: Check if this Deriv ID (credentials.derivUserId) is already linked to another user.
-            // This prevents linking one Deriv account to multiple application users if emails differ.
             const accountByDerivId = await prisma.account.findUnique({
                 where: {
                     provider_providerAccountId: {
@@ -110,24 +121,19 @@ export const authOptions: NextAuthOptions = {
             });
 
             if (accountByDerivId) {
-                // This Deriv ID is already linked to some user.
-                // Since no user was found by credentials.email, this means the linked user has a different email.
-                // This is a conflict: we can't create a new user with credentials.email and link an already-associated Deriv ID.
                 console.error(`[Deriv CredentialsProvider] Error: Deriv User ID ${credentials.derivUserId} is already linked to user ${accountByDerivId.userId} (who has a different email). Cannot create new user with email ${credentials.email} and link this Deriv ID.`);
                 return null;
             }
 
-            // Create new user (ID will be auto-generated by Prisma)
             console.log(`[Deriv CredentialsProvider] Creating new user for email ${credentials.email}.`);
             user = await prisma.user.create({
               data: {
                 email: credentials.email,
                 name: credentials.name,
-                emailVerified: new Date(), // Email from Deriv can be considered verified
+                emailVerified: new Date(),
               },
             });
             console.log(`[Deriv CredentialsProvider] New user created: ${user.id}. Linking Deriv account ${credentials.derivUserId}.`);
-            // Link the new Deriv account to this new user
             await prisma.account.create({
               data: {
                 userId: user.id,
@@ -139,21 +145,123 @@ export const authOptions: NextAuthOptions = {
             });
           }
 
-          if (user) {
-            console.log(`[Deriv CredentialsProvider] Authorize successful for user: ${user.id}, email: ${user.email}`);
-            return {
-              id: user.id, // This MUST be the stable Prisma User ID
-              email: user.email,
-              name: user.name,
-              image: user.image, // Will be null if new user or existing user didn't have one
-            };
-          } else {
-            // This case should ideally not be reached if logic above is correct, but as a fallback:
-            console.error('[Deriv CredentialsProvider] User object is null after processing.');
+          if (!user) { // Should not happen if logic above is correct
+            console.error('[Deriv CredentialsProvider] User object is null after primary processing. This should not occur.');
             return null;
           }
+
+          // --- New logic to fetch additional Deriv details ---
+          let additionalDerivData = {
+            derivActualUserId: null as string | null,
+            derivEmail: null as string | null,
+            derivFullname: null as string | null,
+            derivLoginId: null as string | null,
+            derivDemoAccountId: null as string | null,
+            derivDemoBalance: null as number | null,
+            derivRealAccountId: null as string | null,
+            derivRealBalance: null as number | null,
+          };
+
+          const derivAppIdForWS = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+          if (!derivAppIdForWS) {
+            console.error('[Deriv CredentialsProvider] NEXT_PUBLIC_DERIV_APP_ID is not set. Cannot fetch additional Deriv account details.');
+          } else {
+            console.log(`[Deriv CredentialsProvider] Attempting to fetch additional details for Deriv User ID (from credentials): ${credentials.derivUserId} using token.`);
+            try {
+              await new Promise<void>((resolve, reject) => {
+                const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppIdForWS}`);
+                let timeoutId: NodeJS.Timeout | null = null;
+
+                const cleanupAndResolve = () => {
+                  if (timeoutId) clearTimeout(timeoutId);
+                  if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+                  resolve();
+                };
+
+                const cleanupAndReject = (error: Error) => {
+                  if (timeoutId) clearTimeout(timeoutId);
+                  if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+                  reject(error);
+                };
+
+                ws.on('open', () => {
+                  console.log('[Deriv CredentialsProvider] WS open for details. Sending authorize.');
+                  ws.send(JSON.stringify({ authorize: credentials.accessToken, req_id: 2 })); // Using req_id 2
+                });
+
+                ws.on('message', (data) => {
+                  const rawData = data.toString();
+                  console.log('[Deriv CredentialsProvider] WS message for details:', rawData.substring(0, 300) + (rawData.length > 300 ? '...' : ''));
+                  try {
+                    const response = JSON.parse(rawData) as { authorize?: DerivAuthorizeResponseData, error?: any, msg_type?: string };
+                    if (response.error) {
+                      console.error('[Deriv CredentialsProvider] WS Error from Deriv for details:', response.error);
+                      cleanupAndReject(new Error(response.error.message || 'Deriv API error fetching details'));
+                      return;
+                    }
+
+                    if (response.msg_type === 'authorize' && response.authorize) {
+                      const derivUser = response.authorize;
+                      additionalDerivData.derivActualUserId = derivUser.user_id || null;
+                      additionalDerivData.derivEmail = derivUser.email || null;
+                      additionalDerivData.derivFullname = derivUser.fullname || null;
+                      additionalDerivData.derivLoginId = derivUser.loginid || null;
+
+                      if (derivUser.account_list && derivUser.account_list.length > 0) {
+                        const demoAccount = derivUser.account_list.find(acc => acc.is_virtual === 1 && acc.loginid?.startsWith('VRTC'));
+                        const realAccount = derivUser.account_list.find(acc => acc.is_virtual === 0 && acc.loginid?.startsWith('CR'));
+
+                        if (demoAccount) {
+                          additionalDerivData.derivDemoAccountId = demoAccount.loginid;
+                          additionalDerivData.derivDemoBalance = demoAccount.balance ?? null;
+                        }
+                        if (realAccount) {
+                          additionalDerivData.derivRealAccountId = realAccount.loginid;
+                          additionalDerivData.derivRealBalance = realAccount.balance ?? null;
+                        }
+                      }
+                      console.log('[Deriv CredentialsProvider] Successfully fetched additional Deriv details.');
+                      cleanupAndResolve();
+                    }
+                  } catch (e) {
+                    console.error('[Deriv CredentialsProvider] WS Error parsing details message:', e);
+                    cleanupAndReject(e instanceof Error ? e : new Error('Error parsing Deriv details response'));
+                  }
+                });
+
+                ws.on('error', (err) => {
+                  console.error('[Deriv CredentialsProvider] WS Error for details:', err);
+                  cleanupAndReject(err);
+                });
+                ws.on('close', (code, reason) => {
+                    console.log(`[Deriv CredentialsProvider] WS for details closed. Code: ${code}, Reason: ${reason ? reason.toString() : 'N/A'}`);
+                    // If promise is still pending, it means it wasn't resolved by a message. Could be premature close.
+                    // The timeout will handle this.
+                });
+
+                timeoutId = setTimeout(() => {
+                  console.warn('[Deriv CredentialsProvider] WS for details timed out.');
+                  cleanupAndReject(new Error('Timeout fetching Deriv account details'));
+                }, DERIV_ACCOUNT_DETAILS_TIMEOUT_MS);
+              });
+            } catch (wsError) {
+              console.error('[Deriv CredentialsProvider] Failed to fetch additional Deriv details via WebSocket:', wsError);
+              // additionalDerivData will retain its default null values
+            }
+          }
+
+          console.log(`[Deriv CredentialsProvider] Authorize successful for user: ${user.id}, email: ${user.email}. Returning combined data.`);
+          return {
+            id: user.id,
+            email: user.email, // The email used for User record matching/creation
+            name: user.name,   // This might have been updated by credentials.name earlier
+            image: user.image, // Existing image or null
+            // Spread the fetched Deriv details
+            ...additionalDerivData
+          };
+
         } catch (error) {
-          console.error('[Deriv CredentialsProvider] Error in authorize function:', error);
+          console.error('[Deriv CredentialsProvider] Error in authorize function (outer try/catch):', error);
           return null;
         }
       }
@@ -285,93 +393,94 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt', // Using JWT for session strategy
   },
   callbacks: {
-    async jwt({ token, user, account }) {
-      console.log('[NextAuth Callbacks] JWT callback - Input:', { token: {...token}, user, account });
+    async jwt({ token, user, account, profile }) { // Added profile for potential future use, not strictly needed here yet
+      console.log('[NextAuth Callbacks] JWT - Input:', { user, account: account ? {provider: account.provider, type: account.type} : null });
 
-      // On initial sign-in, `user` and `account` objects are passed.
       if (account && user) { // This block runs on sign-in or linking
         token.id = user.id;
-        token.email = user.email; // Ensure email is in token
-        token.name = user.name;   // Ensure name is in token
-        token.picture = user.image; // Ensure image is in token (might be null)
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image; // user.image can be null
         token.provider = account.provider;
 
         if (account.provider === 'deriv-credentials') {
-          token.derivAccessToken = account.access_token;
-          token.derivUserId = account.providerAccountId; // This is the original Deriv User ID
+          // The user object comes from our updated 'authorize' function
+          token.derivAccessToken = (user as any).derivAccessToken;
+          token.derivActualUserId = (user as any).derivActualUserId; // Verified User ID from Deriv API
+          token.derivEmail = (user as any).derivEmail;         // Email from Deriv API
+          token.derivFullname = (user as any).derivFullname;      // Fullname from Deriv API
+          token.derivLoginId = (user as any).derivLoginId;       // Login ID from Deriv API for this token
+          token.derivDemoAccountId = (user as any).derivDemoAccountId;
+          token.derivDemoBalance = (user as any).derivDemoBalance;
+          token.derivRealAccountId = (user as any).derivRealAccountId;
+          token.derivRealBalance = (user as any).derivRealBalance;
 
-          // Clear Google-specific token if switching/linking to Deriv
+          // Clear Google-specific token if present
           delete token.googleAccessToken;
-          // Clear any other provider specific tokens if necessary
         } else if (account.provider === 'google') {
-          token.googleAccessToken = account.access_token; // Store Google access token if needed
+          token.googleAccessToken = account.access_token;
 
-          // Clear Deriv-specific tokens if switching/linking to Google
+          // Clear Deriv-specific tokens
           delete token.derivAccessToken;
-          delete token.derivUserId;
-          // Clear any other provider specific tokens
+          delete token.derivActualUserId;
+          delete token.derivEmail;
+          delete token.derivFullname;
+          delete token.derivLoginId;
+          delete token.derivDemoAccountId;
+          delete token.derivDemoBalance;
+          delete token.derivRealAccountId;
+          delete token.derivRealBalance;
         }
-        // TODO: Handle other providers if they exist
       }
-      // For subsequent JWT reads, `user` and `account` are undefined.
-      // Token already has id, email, name, picture from previous runs.
-
-      console.log('[NextAuth Callbacks] JWT callback - Output:', {...token});
+      // For subsequent JWT reads, token should already have these details.
+      // console.log('[NextAuth Callbacks] JWT - Output:', token); // Be careful logging tokens in prod
       return token;
     },
     async session({ session, token }) {
-      console.log('[NextAuth Callbacks] Session callback - Input:', { session: {...session}, token: {...token} });
+      // console.log('[NextAuth Callbacks] Session - Input token:', token);
+      // console.log('[NextAuth Callbacks] Session - Input session:', session);
 
-      // Standard user properties
-      if (token.id && session.user) {
-        session.user.id = token.id as string;
-      }
-      if (token.email && session.user) {
-        session.user.email = token.email as string;
-      }
-      if (token.name && session.user) {
-        session.user.name = token.name as string;
-      }
-      if (token.picture && session.user) { // picture can be null
-        session.user.image = token.picture as string | null;
-      } else if (session.user) {
-        session.user.image = null; // Ensure it's explicitly null if not in token
-      }
+      // Transfer common properties from token to session.user
+      if (token.id && session.user) session.user.id = token.id as string;
+      if (token.email && session.user) session.user.email = token.email as string; // Ensure email is part of session.user
+      if (token.name && session.user) session.user.name = token.name as string;
+      if (session.user) session.user.image = token.picture as string | null; // token.picture can be null
 
-      // Provider-specific properties
       if (token.provider && session.user) {
         (session.user as any).provider = token.provider as string;
       }
 
       if (token.provider === 'deriv-credentials') {
-        if (token.derivAccessToken && session.user) {
-          (session.user as any).derivAccessToken = token.derivAccessToken as string;
-        }
-        if (token.derivUserId && session.user) {
-          (session.user as any).derivUserId = token.derivUserId as string;
-        }
-        // Explicitly nullify other provider tokens in session
         if (session.user) {
+          (session.user as any).derivAccessToken = token.derivAccessToken as string | undefined;
+          (session.user as any).derivActualUserId = token.derivActualUserId as string | undefined;
+          (session.user as any).derivEmail = token.derivEmail as string | undefined;
+          (session.user as any).derivFullname = token.derivFullname as string | undefined;
+          (session.user as any).derivLoginId = token.derivLoginId as string | undefined;
+          (session.user as any).derivDemoAccountId = token.derivDemoAccountId as string | undefined;
+          (session.user as any).derivDemoBalance = token.derivDemoBalance as number | null | undefined;
+          (session.user as any).derivRealAccountId = token.derivRealAccountId as string | undefined;
+          (session.user as any).derivRealBalance = token.derivRealBalance as number | null | undefined;
+
           delete (session.user as any).googleAccessToken;
         }
       } else if (token.provider === 'google') {
         if (token.googleAccessToken && session.user) {
-          (session.user as any).googleAccessToken = token.googleAccessToken as string;
+          (session.user as any).googleAccessToken = token.googleAccessToken as string | undefined;
         }
-        // Explicitly nullify other provider tokens in session
         if (session.user) {
           delete (session.user as any).derivAccessToken;
-          delete (session.user as any).derivUserId;
+          delete (session.user as any).derivActualUserId;
+          delete (session.user as any).derivEmail;
+          delete (session.user as any).derivFullname;
+          delete (session.user as any).derivLoginId;
+          delete (session.user as any).derivDemoAccountId;
+          delete (session.user as any).derivDemoBalance;
+          delete (session.user as any).derivRealAccountId;
+          delete (session.user as any).derivRealBalance;
         }
       }
-
-      // The other Deriv fields (derivDemoAccountId, derivDemoBalance etc.) are NOT in the token
-      // based on the current plan. AuthContext will handle them being null or fetching them.
-      // However, if they were somehow added to the token by a previous version or different flow,
-      // this is where they'd be transferred to session.user if desired.
-      // For now, we only add what we've explicitly put in the token.
-
-      console.log('[NextAuth Callbacks] Session callback - Output:', {...session});
+      // console.log('[NextAuth Callbacks] Session - Output session:', session);
       return session;
     },
   },

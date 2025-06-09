@@ -106,22 +106,24 @@ const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
 export async function getCandles(
   instrument: InstrumentType,
   count: number = 120,
-  granularity: number = 60
+  granularity: number = 60,
+  userAccessToken?: string // <<< NEW OPTIONAL PARAMETER
 ): Promise<CandleData[]> {
   // Get the correct symbol for the Deriv API
   const symbol = instrumentToDerivSymbol(instrument);
   const decimalPlaces = getInstrumentDecimalPlaces(instrument);
 
-  const ws = new WebSocket(DERIV_API_URL);
+  const ws = new WebSocket(DERIV_API_URL); // DERIV_API_URL uses NEXT_PUBLIC_DERIV_APP_ID
 
   return new Promise((resolve, reject) => {
     ws.onopen = () => {
-      // First authorize if we have a token
-      if (DERIV_API_TOKEN) {
-        ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
+      const tokenToUse = userAccessToken || DERIV_API_TOKEN; // Use user's token if provided, else global
+
+      if (tokenToUse) {
+        console.log(`[DerivService/getCandles] Authorizing with token: ${typeof userAccessToken === 'string' ? 'USER_TOKEN' : 'GLOBAL_DEMO_TOKEN'}`);
+        ws.send(JSON.stringify({ authorize: tokenToUse }));
       }
 
-      // Wait a short moment after authorization before sending the ticks request
       setTimeout(() => {
         const request = {
           ticks_history: symbol,
@@ -135,16 +137,16 @@ export async function getCandles(
         
         console.log('[DerivService/getCandles] Sending request:', request);
         ws.send(JSON.stringify(request));
-      }, DERIV_API_TOKEN ? 1000 : 0); // Wait 1 second if we need to authorize
+      }, tokenToUse ? 1000 : 0); // Wait if authorization was attempted
     };
 
     ws.onmessage = (event) => {
       try {
         const response = JSON.parse(event.data as string);
-        console.log('[DerivService/getCandles] Received response:', response);
+        // console.log('[DerivService/getCandles] Received response:', response); // Keep existing log or adjust
         
         if (response.error) {
-          console.error('[DerivService/getCandles] API Error:', response.error);
+          console.error('[DerivService/getCandles] API Error:', response.error.message, response.error.code);
           reject(new Error(response.error.message || 'Unknown API error'));
           ws.close();
           return;
@@ -163,11 +165,13 @@ export async function getCandles(
           ws.close();
         } else if (response.msg_type === 'authorize') {
           if (response.error) {
-            console.error('[DerivService/getCandles] Authorization Error:', response.error);
+            console.error('[DerivService/getCandles] Authorization Error:', response.error.message, response.error.code);
             reject(new Error(`Authorization failed: ${response.error.message}`));
             ws.close();
-        }
-          // Successfully authorized, waiting for candles
+          } else {
+            console.log('[DerivService/getCandles] Authorized successfully for candles request.');
+          }
+          // Successfully authorized (or already was), waiting for candles
         }
       } catch (e) {
         console.error('[DerivService/getCandles] Error processing message:', e);
@@ -178,26 +182,20 @@ export async function getCandles(
 
     ws.onerror = (event) => {
       let errorMessage = 'WebSocket error fetching candles.';
-      // Attempt to get more details from the event
       if (event && typeof event === 'object') {
-        // For a standard ErrorEvent, `message` might be available.
-        // For a generic Event from WebSocket, it might not have a direct 'message'.
-        // We can log the type or stringify it.
-        // Browsers usually log the Event object well, but in Node.js or some environments it might be just '{}'.
-        // The console.error below will show the object, this is for the rejected Error.
         if ('message' in event && (event as any).message) {
             errorMessage = `WebSocket Error: ${(event as any).message}`;
         } else {
             errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
         }
       }
-      console.error('[DerivService/getCandles] WebSocket Error Event:', event); // Log the full event object
-      reject(new Error(errorMessage)); // Reject with a more informative message
-        ws.close();
+      console.error('[DerivService/getCandles] WebSocket Error Event:', event);
+      reject(new Error(errorMessage));
+      ws.close();
     };
 
     ws.onclose = (event) => {
-      console.log('[DerivService/getCandles] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+      console.log('[DerivService/getCandles] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason ? event.reason.toString() : 'N/A');
     };
   });
 }

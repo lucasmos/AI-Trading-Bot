@@ -111,19 +111,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setDerivDemoAccountId(demoId);
         setDerivLiveAccountId(liveId);
         
-        const initialAccountType = demoId ? 'demo' : (liveId ? 'live' : null);
-        setSelectedDerivAccountType(initialAccountType);
-
-        if (initialAccountType === 'demo') {
-            setPaperBalance(demoBal);
-            // setLiveBalance(liveBal); // Typically demo account uses paper, real uses live.
-        } else if (initialAccountType === 'live') {
-            setLiveBalance(liveBal);
-            // setPaperBalance(demoBal);
+        let determinedAccountType: 'demo' | 'live' | null = null;
+        if (demoId) {
+            determinedAccountType = 'demo';
+            setPaperBalance(demoBal); // Set paper balance to demo account's balance
+            // Set live balance (either its actual value if available, or default if not)
+            setLiveBalance(typeof user.derivRealBalance === 'number' ? user.derivRealBalance : DEFAULT_LIVE_BALANCE);
+        } else if (liveId) {
+            determinedAccountType = 'live';
+            setLiveBalance(liveBal); // Set live balance to real account's balance
+            // Set paper balance (either its actual value if available, or default if not)
+            setPaperBalance(typeof user.derivDemoBalance === 'number' ? user.derivDemoBalance : DEFAULT_PAPER_BALANCE);
         } else {
-            // If no specific Deriv account type selected, or no Deriv accounts, use general balances
-            // These general balances might be loaded from localStorage for non-Deriv users later
+            // No specific Deriv account could be determined (e.g., no demoId and no liveId from session)
+            // Use default paper/live balances from the context.
+            setPaperBalance(DEFAULT_PAPER_BALANCE);
+            setLiveBalance(DEFAULT_LIVE_BALANCE);
         }
+        setSelectedDerivAccountType(determinedAccountType);
 
         // Persist Deriv specific data to localStorage (user preferences for balances on this browser)
         if (typeof window !== 'undefined') {
@@ -172,15 +177,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const adaptedUser: UserInfo = {
         id: nextAuthUser.id || '',
         name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
-        email: nextAuthUser.email || '',
-        photoURL: nextAuthUser.image, // next-auth typically uses 'image'
+        email: nextAuthUser.email || '', // This is the primary email from NextAuth User model
+        photoURL: nextAuthUser.image,
         authMethod: authMethodFromProvider,
-        provider: nextAuthUser.provider, // Keep original provider from NextAuth
-        derivDemoAccountId: nextAuthUser.derivDemoAccountId,
-        derivRealAccountId: nextAuthUser.derivRealAccountId,
-        derivDemoBalance: nextAuthUser.derivDemoBalance,
-        derivRealBalance: nextAuthUser.derivRealBalance,
-        // Ensure other fields expected by UserInfo are present or defaulted
+        provider: nextAuthUser.provider,
+
+        // Deriv specific fields from session (added in Step 1's JWT/session callbacks)
+        derivAccessToken: (nextAuthUser as any).derivAccessToken,
+        derivActualUserId: (nextAuthUser as any).derivActualUserId,
+        derivEmail: (nextAuthUser as any).derivEmail, // Email as reported by Deriv API
+        derivFullname: (nextAuthUser as any).derivFullname, // Fullname as reported by Deriv API
+        derivLoginId: (nextAuthUser as any).derivLoginId,   // LoginId for the token from Deriv API
+
+        derivDemoAccountId: (nextAuthUser as any).derivDemoAccountId,
+        derivRealAccountId: (nextAuthUser as any).derivRealAccountId,
+        derivDemoBalance: (nextAuthUser as any).derivDemoBalance,
+        derivRealBalance: (nextAuthUser as any).derivRealBalance,
       };
 
       if (lastProcessedNextAuthUserId.current !== adaptedUser.id || authStatus !== 'authenticated' || currentAuthMethod !== adaptedUser.authMethod) {

@@ -67,17 +67,39 @@ export default function DashboardPage() {
     authStatus, 
     userInfo,
     paperBalance, 
-    setPaperBalance, 
+    // setPaperBalance, // Direct setPaperBalance from context might not be used here now
     liveBalance, 
-    setLiveBalance 
+    // setLiveBalance, // Direct setLiveBalance from context might not be used here now
+    selectedDerivAccountType,
+    switchToDerivDemo,
+    switchToDerivLive,
+    currentAuthMethod,
   } = useAuth();
   
   const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
   const [tradeDuration, setTradeDuration] = useState<TradeDuration>('5m');
-  const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); 
+  // const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); // Removed local state
   const [stakeAmount, setStakeAmount] = useState<number>(10);
+
+  const paperTradingModeForControls: PaperTradingMode =
+    (currentAuthMethod === 'deriv-credentials' && selectedDerivAccountType === 'live')
+    ? 'live'
+    : 'paper';
+
+  const handleAccountTypeChangeFromControls = (newMode: PaperTradingMode) => {
+    if (currentAuthMethod === 'deriv-credentials') {
+      if (newMode === 'live') {
+        switchToDerivLive();
+      } else { // 'paper'
+        switchToDerivDemo();
+      }
+    } else {
+      console.warn(`[DashboardPage] Account type switch attempted for non-Deriv user to ${newMode}. No action taken in AuthContext.`);
+      // Handle local paper/live for non-Deriv if needed in future
+    }
+  };
 
   const [isMarketOpenForSelected, setIsMarketOpenForSelected] = useState<boolean>(true);
   const [marketStatusMessage, setMarketStatusMessage] = useState<string | null>(null);
@@ -108,14 +130,22 @@ export default function DashboardPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
-  const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
-  const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
+  // const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance; // Replaced by currentBalanceToDisplay
+  // const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance; // Commented out, balance updates need refactor
+
+  const currentBalanceToDisplay = useMemo(() => {
+    if (currentAuthMethod === 'deriv-credentials') {
+      return selectedDerivAccountType === 'live' ? liveBalance : paperBalance;
+    }
+    // Fallback for non-Deriv users or if AuthContext isn't fully synced yet.
+    return paperTradingModeForControls === 'live' ? liveBalance : paperBalance;
+  }, [currentAuthMethod, selectedDerivAccountType, liveBalance, paperBalance, paperTradingModeForControls]);
 
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
-    const profitsKey = `forexCryptoProfitsClaimable_${paperTradingMode}`;
+    const profitsKey = `forexCryptoProfitsClaimable_${paperTradingModeForControls}`; // Updated dependency
     const storedProfits = localStorage.getItem(profitsKey);
     if (storedProfits) {
       try {
@@ -127,12 +157,12 @@ export default function DashboardPage() {
     } else {
       setProfitsClaimable({ totalNetProfit: 0, tradeCount: 0, winningTrades: 0, losingTrades: 0 });
     }
-  }, [paperTradingMode]);
+  }, [paperTradingModeForControls]); // Updated dependency
 
   useEffect(() => {
-    const profitsKey = `forexCryptoProfitsClaimable_${paperTradingMode}`;
+    const profitsKey = `forexCryptoProfitsClaimable_${paperTradingModeForControls}`; // Updated dependency
     localStorage.setItem(profitsKey, JSON.stringify(profitsClaimable));
-  }, [profitsClaimable, paperTradingMode]);
+  }, [profitsClaimable, paperTradingModeForControls]); // Updated dependency
 
   useEffect(() => {
     const { isOpen, statusMessage } = getMarketStatus(currentInstrument);
@@ -183,7 +213,7 @@ export default function DashboardPage() {
     // The old `if (!isAuthenticated(authStatus, paperTradingMode))` might still be relevant if paper trading by unauthenticated users is allowed
     // but live trading is not. The new check blocks ALL actions if unauthenticated.
     // For now, let's remove the old one as per instruction "Remove or adjust... if it becomes redundant".
-    // if (!isAuthenticated(authStatus, paperTradingMode)) {
+    // if (!isAuthenticated(authStatus, paperTradingModeForControls)) { // Updated
     //   toast({
     //     title: "Login Required",
     //     description: "Please login with your Deriv account to use Real Account features.",
@@ -192,7 +222,7 @@ export default function DashboardPage() {
     //   return;
     // }
 
-    const validationError = validateTradeParameters(stakeAmount, currentBalance, paperTradingMode);
+    const validationError = validateTradeParameters(stakeAmount, currentBalanceToDisplay, paperTradingModeForControls); // Updated
     if (validationError) {
       toast({ 
         title: validationError.split(':')[0], 
@@ -253,7 +283,7 @@ export default function DashboardPage() {
       const decimals = getInstrumentDecimalPlaces(currentInstrument);
       const priceChange = entryPrice * 0.001; 
       
-      console.log(`[Dashboard] Executing ${action} trade for ${currentInstrument} with duration ${tradeDuration} and stake ${stakeAmount} in ${tradingMode} mode. Account: ${paperTradingMode}. Entry: ${entryPrice}`);
+      console.log(`[Dashboard] Executing ${action} trade for ${currentInstrument} with duration ${tradeDuration} and stake ${stakeAmount} in ${tradingMode} mode. Account: ${paperTradingModeForControls}. Entry: ${entryPrice}`); // Updated
       
       const response = await fetch('/api/trades', {
         method: 'POST',
@@ -271,7 +301,7 @@ export default function DashboardPage() {
           metadata: {
             mode: tradingMode,
             duration: tradeDuration,
-            accountType: paperTradingMode
+            accountType: paperTradingModeForControls // Updated
           }
         }),
       });
@@ -302,7 +332,7 @@ export default function DashboardPage() {
         metadata: {
           mode: tradingMode,
           duration: tradeDuration,
-          accountType: paperTradingMode,
+              accountType: paperTradingModeForControls, // Updated
           source: dbTradeCreated ? 'database-backup' : 'local-only'
         }
       };
@@ -355,7 +385,8 @@ export default function DashboardPage() {
           console.warn("[Dashboard] Database trade not created or ID missing, cannot close in DB. Trade outcome simulated locally only.");
         }
         
-        setCurrentBalance(prev => parseFloat((prev + pnl).toFixed(2)));
+        // setCurrentBalance(prev => parseFloat((prev + pnl).toFixed(2))); // Needs refactor for AuthContext
+        console.warn("[DashboardPage] setCurrentBalance after trade needs refactor to update AuthContext balances.");
         toast({
           title: `Trade ${outcome === "won" ? "Won" : "Lost"}`,
           description: `P/L: $${pnl.toFixed(2)}`,
@@ -386,8 +417,8 @@ export default function DashboardPage() {
     }
 
     // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
-    // The old `if (authStatus === 'unauthenticated' && paperTradingMode === 'live')` is now covered.
-    // if (authStatus === 'unauthenticated' && paperTradingMode === 'live') {
+    // The old `if (authStatus === 'unauthenticated' && paperTradingModeForControls === 'live')` is now covered. // Updated
+    // if (authStatus === 'unauthenticated' && paperTradingModeForControls === 'live') { // Updated
     //   toast({title: "Login Required", description: "AI Recommendation for Live Account requires login.", variant: "destructive"});
     //   setAiRecommendation(null);
     //   return;
@@ -480,7 +511,7 @@ export default function DashboardPage() {
       });
       setAiRecommendation(null);
     }
-  }, [currentInstrument, tradingMode, toast, authStatus, paperTradingMode, selectedAiStrategyId]);
+  }, [currentInstrument, tradingMode, toast, authStatus, paperTradingModeForControls, selectedAiStrategyId, router]); // Added router and paperTradingModeForControls
 
   const logAutomatedTradingEvent = (message: string) => {
     console.log(`[AutoTrade] ${message}`);
@@ -499,8 +530,8 @@ export default function DashboardPage() {
     }
 
     // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
-    // The old `if (authStatus !== 'authenticated' && paperTradingMode === 'live')` is now covered.
-    // if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
+    // The old `if (authStatus !== 'authenticated' && paperTradingModeForControls === 'live')` is now covered. // Updated
+    // if (authStatus !== 'authenticated' && paperTradingModeForControls === 'live') { // Updated
     //   toast({
     //     title: "Authentication Required for Live Trading",
     //     description: "Please log in to start live auto-trading.",
@@ -512,7 +543,7 @@ export default function DashboardPage() {
       toast({ title: "Set Stake", description: "Please set a total stake for auto-trading.", variant: "default" });
       return;
     }
-    if (autoTradeTotalStake > currentBalance) {
+    if (autoTradeTotalStake > currentBalanceToDisplay) { // Updated
       toast({ title: "Insufficient Balance", description: "Auto-trade total stake exceeds available balance.", variant: "destructive" });
       return;
     }
@@ -532,7 +563,7 @@ export default function DashboardPage() {
     setIsAutoTradingActive(true);
     setActiveAutomatedTrades([]);
     setAutomatedTradingLog([]);
-    logAutomatedTradingEvent(`Initializing AI Auto-Trading session with $${autoTradeTotalStake} in ${paperTradingMode} mode using strategy ${selectedAiStrategyId}.`);
+    logAutomatedTradingEvent(`Initializing AI Auto-Trading session with $${autoTradeTotalStake} in ${paperTradingModeForControls} mode using strategy ${selectedAiStrategyId}.`); // Updated
 
     try {
       const allPossibleInstruments = SUPPORTED_INSTRUMENTS
@@ -632,7 +663,7 @@ export default function DashboardPage() {
       } else {
         toast({ 
           title: "AI Strategy Initiated (F/C/C)", 
-          description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingMode} account. ${strategyResult.overallReasoning || 'Executing strategy.'}`, 
+          description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingModeForControls} account. ${strategyResult.overallReasoning || 'Executing strategy.'}`, // Updated
           duration: 7000 
         });
       }
@@ -699,7 +730,7 @@ export default function DashboardPage() {
       toast({ title: "AI Auto-Trading Error", description: (error as Error).message, variant: "destructive" });
       setIsAutoTradingActive(false);
     }
-  }, [authStatus, paperTradingMode, autoTradeTotalStake, currentBalance, tradingMode, toast, logAutomatedTradingEvent, selectedAiStrategyId, selectedStopLossPercentage, userInfo]); 
+  }, [authStatus, paperTradingModeForControls, autoTradeTotalStake, currentBalanceToDisplay, tradingMode, toast, logAutomatedTradingEvent, selectedAiStrategyId, selectedStopLossPercentage, userInfo, router]); // Added router, paperTradingModeForControls, currentBalanceToDisplay
 
 
   const handleStopAiAutoTrade = () => {
@@ -732,7 +763,7 @@ export default function DashboardPage() {
                 metadata: {
                   mode: tradingMode,
                   duration: `${trade.durationSeconds}s`,
-                  accountType: paperTradingMode,
+                  accountType: paperTradingModeForControls, // Updated
                   automated: true,
                   manualStop: true
                 }
@@ -793,7 +824,8 @@ export default function DashboardPage() {
           }
           
           setTimeout(() => {
-            setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            // setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2))); // Needs refactor for AuthContext
+            console.warn("[DashboardPage] setCurrentBalance after manual stop needs refactor to update AuthContext balances.");
             setProfitsClaimable(prevProfits => ({
               totalNetProfit: prevProfits.totalNetProfit + pnl,
               tradeCount: prevProfits.tradeCount + 1,
@@ -802,7 +834,7 @@ export default function DashboardPage() {
             }));
             
             toast({
-              title: `Auto-Trade Ended (${paperTradingMode}): ${trade.instrument}`,
+              title: `Auto-Trade Ended (${paperTradingModeForControls}): ${trade.instrument}`, // Updated
               description: `Status: closed_manual, P/L: $${pnl.toFixed(2)}`,
               variant: pnl > 0 ? "default" : "destructive"
             });
@@ -819,7 +851,7 @@ export default function DashboardPage() {
         return trade;
       })
     );
-    toast({ title: "AI Auto-Trading Stopped", description: `Automated Forex/Crypto/Commodity trading session for ${paperTradingMode} account has been manually stopped.`});
+    toast({ title: "AI Auto-Trading Stopped", description: `Automated Forex/Crypto/Commodity trading session for ${paperTradingModeForControls} account has been manually stopped.`}); // Updated
   };
   
   useEffect(() => {
@@ -889,7 +921,7 @@ export default function DashboardPage() {
                       metadata: {
                         mode: tradingMode,
                         duration: `${currentTrade.durationSeconds}s`,
-                        accountType: paperTradingMode,
+                    accountType: paperTradingModeForControls, // Updated
                         automated: true
                       }
                     }),
@@ -940,7 +972,8 @@ export default function DashboardPage() {
                 }
                 
                 setTimeout(() => { 
-                  setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  // setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2))); // Needs refactor for AuthContext
+                  console.warn("[DashboardPage] setCurrentBalance after auto-trade needs refactor to update AuthContext balances.");
                   setProfitsClaimable(prevProfits => ({
                     totalNetProfit: prevProfits.totalNetProfit + pnl,
                     tradeCount: prevProfits.tradeCount + 1,
@@ -949,7 +982,7 @@ export default function DashboardPage() {
                   }));
                   
                   toast({
-                    title: `Auto-Trade Ended (${paperTradingMode}): ${currentTrade.instrument}`,
+                    title: `Auto-Trade Ended (${paperTradingModeForControls}): ${currentTrade.instrument}`, // Updated
                     description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
                     variant: pnl > 0 ? "default" : "destructive"
                   });
@@ -965,7 +998,7 @@ export default function DashboardPage() {
             if (allTradesNowConcluded && isAutoTradingActive) { 
                  setTimeout(() => { 
                     setIsAutoTradingActive(false); 
-                    toast({ title: "AI Auto-Trading Session Complete", description: `All Forex/Crypto/Commodity trades for ${paperTradingMode} account concluded.`});
+                    toast({ title: "AI Auto-Trading Session Complete", description: `All Forex/Crypto/Commodity trades for ${paperTradingModeForControls} account concluded.`}); // Updated
                 }, 100); 
             }
             return updatedTrades;
@@ -979,14 +1012,14 @@ export default function DashboardPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isPreparingAutoTrades, userInfo, tradingMode, selectedAiStrategyId]);
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingModeForControls, toast, isPreparingAutoTrades, userInfo, tradingMode, selectedAiStrategyId]); // Removed setCurrentBalance, setProfitsClaimable, added paperTradingModeForControls
 
 
   return (
     <div className="container mx-auto py-2">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <BalanceDisplay balance={currentBalance} accountType={paperTradingMode} />
+          <BalanceDisplay balance={currentBalanceToDisplay} accountType={paperTradingModeForControls} />
           <TradingChart 
                 instrument={currentInstrument}
                 onInstrumentChange={handleInstrumentChange}
@@ -997,7 +1030,7 @@ export default function DashboardPage() {
           {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Active AI Trades ({paperTradingMode === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle>
+                <CardTitle>Active AI Trades ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
                 <CardDescription>Monitoring automated trades by the AI for Forex/Crypto/Commodities. Stop-Loss is {selectedStopLossPercentage}% of entry.</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1049,7 +1082,7 @@ export default function DashboardPage() {
            {isAutoTradingActive && activeAutomatedTrades.length === 0 && !isPreparingAutoTrades && (
              <Card className="shadow-lg">
                 <CardHeader>
-                    <CardTitle>AI Auto-Trading ({paperTradingMode === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle>
+                    <CardTitle>AI Auto-Trading ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground text-center py-4">AI analysis complete. No suitable Forex/Crypto/Commodity trades found at this moment.</p>
@@ -1059,7 +1092,7 @@ export default function DashboardPage() {
             {isPreparingAutoTrades && (
              <Card className="shadow-lg">
                 <CardHeader>
-                    <CardTitle>AI Auto-Trading ({paperTradingMode === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle>
+                    <CardTitle>AI Auto-Trading ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground text-center py-4">AI is analyzing Forex/Crypto/Commodity markets and preparing trades...</p>
@@ -1076,11 +1109,11 @@ export default function DashboardPage() {
             onAiStrategyChange={setSelectedAiStrategyId}
             tradeDuration={tradeDuration}
             onTradeDurationChange={setTradeDuration}
-            paperTradingMode={paperTradingMode}
-            onPaperTradingModeChange={setPaperTradingMode}
+            paperTradingMode={paperTradingModeForControls} // Updated
+            onPaperTradingModeChange={handleAccountTypeChangeFromControls} // Updated
             stakeAmount={stakeAmount}
             onStakeAmountChange={setStakeAmount}
-            onExecuteTrade={handleExecuteTrade}
+            onExecuteTrade={handleExecuteTrade} // Note: handleExecuteTrade internal balance logic needs future refactor
             onGetAiRecommendation={fetchAndSetAiRecommendation}
             isFetchingManualRecommendation={isFetchingManualRecommendation} 
             isPreparingAutoTrades={isPreparingAutoTrades} 
@@ -1090,7 +1123,7 @@ export default function DashboardPage() {
             onStopAiAutoTrade={handleStopAiAutoTrade}
             isAutoTradingActive={isAutoTradingActive} 
             disableManualControls={isAutoTradingActive || isFetchingManualRecommendation || isPreparingAutoTrades} 
-            currentBalance={currentBalance}
+            currentBalance={currentBalanceToDisplay} // Updated
             supportedInstrumentsForManualAi={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
             currentSelectedInstrument={currentInstrument}
             isMarketOpenForSelected={isMarketOpenForSelected}
