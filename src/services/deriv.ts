@@ -3,7 +3,14 @@
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
+let derivAppIdForUrl = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+if (!derivAppIdForUrl) {
+  console.error("CRITICAL: NEXT_PUBLIC_DERIV_APP_ID is not set for Deriv API URL construction in deriv.ts. WebSocket connections for market data may fail or use an invalid App ID.");
+  // Using a placeholder that will intentionally fail, to make missing configuration obvious.
+  // In a real production scenario, you might throw an error or have a different handling strategy.
+  derivAppIdForUrl = 'APP_ID_NOT_CONFIGURED';
+}
+const DERIV_API_URL = `wss://ws.derivws.com/websockets/v3?app_id=${derivAppIdForUrl}`;
 const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
 // Define the instrument map
