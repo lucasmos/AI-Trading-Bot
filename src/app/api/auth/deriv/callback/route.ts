@@ -58,7 +58,10 @@ export async function GET(request: NextRequest) {
 
   try {
     console.log(`[Deriv Callback] Connecting to WebSocket: wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
+
+    console.log('[Deriv Callback] About to instantiate WebSocket...'); // <<< NEW LOG
     const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
+    console.log('[Deriv Callback] WebSocket instantiated successfully.'); // <<< NEW LOG
 
     const finalRedirectUrl = await new Promise<URL>((resolve, reject) => {
       let timeoutId: NodeJS.Timeout | null = null;
