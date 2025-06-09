@@ -4,7 +4,7 @@ import WebSocket from 'ws';
 // Ensure UserInfo is not imported if not used, or define it if needed for internal structuring.
 // import type { UserInfo } from '@/types';
 
-const DERIV_API_TIMEOUT_MS = 10000; // 10 seconds timeout for API requests
+const DERIV_API_TIMEOUT_MS = 20000; // 20 seconds timeout for API requests
 
 interface DerivAccount {
   account?: string;
