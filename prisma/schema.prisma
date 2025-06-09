@@ -131,31 +131,39 @@ model Notification {
 model Trade {
   id           String    @id @default(uuid())
   userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol       String
-  type         String
-  amount       Float
-  price        Float
-  totalValue   Float
-  status       String
-  openTime     DateTime  @default(now())
+  type         String    // e.g., "buy", "sell" (or "CALL", "PUT")
+  amount       Float     // Stake amount
+  price        Float     // Entry price
+  totalValue   Float?    // Optional, as per existing schema (corrected to optional)
+  status       String    // "open", "won", "lost", "sold", "cancelled", "pending_settlement"
+  openTime     DateTime  @default(now()) // General record creation time or open time for non-Deriv
   closeTime    DateTime?
-  profit       Float?
+  pnl          Float?    // Actual profit or loss (renamed from 'profit' for clarity if needed, but 'profit' is fine)
   metadata     Json?
+  aiStrategyId String?   // If applicable
+  exchange     String?   // Existing field
+  fees         Float?    // Existing field
+  leverage     Float?    // Existing field
+  orderType    String?   // Existing field
+  stopLoss     Float?    // Existing field
+  takeProfit   Float?    // Existing field
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  exchange     String?
-  fees         Float?
-  leverage     Float?
-  orderType    String?
-  stopLoss     Float?
-  takeProfit   Float?
-  aiStrategyId String?
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // --- New fields for Deriv Integration ---
+  derivContractId  Int?      @unique
+  purchaseTime     DateTime? // Specific purchase time from Deriv
+  durationSeconds  Int?
+  loginidUsed      String?   // The Deriv loginid (account CR... or VRTC...) used
+  exitPrice        Float?    // Price at settlement
 
   @@index([userId])
   @@index([symbol])
   @@index([status])
   @@index([openTime])
+  @@index([derivContractId]) // Added index for new unique field
 }
 
 model ProfitSummary {
