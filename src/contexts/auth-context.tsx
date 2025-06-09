@@ -136,7 +136,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             localStorage.setItem(`derivAiDerivLiveBalance_${user.id}`, liveBal.toString());
             if (demoId) localStorage.setItem(`derivAiDerivDemoAccountId_${user.id}`, demoId); else localStorage.removeItem(`derivAiDerivDemoAccountId_${user.id}`);
             if (liveId) localStorage.setItem(`derivAiDerivLiveAccountId_${user.id}`, liveId); else localStorage.removeItem(`derivAiDerivLiveAccountId_${user.id}`);
-            if (initialAccountType) localStorage.setItem(`derivAiSelectedDerivAccountType_${user.id}`, initialAccountType); else localStorage.removeItem(`derivAiSelectedDerivAccountType_${user.id}`);
+            if (determinedAccountType) localStorage.setItem(`derivAiSelectedDerivAccountType_${user.id}`, determinedAccountType); else localStorage.removeItem(`derivAiSelectedDerivAccountType_${user.id}`);
         }
     } else { // For other auth methods like 'google'
         console.log('[AuthContext] Non-Deriv user login processing for balances.');
