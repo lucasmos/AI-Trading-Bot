@@ -573,12 +573,19 @@ export async function placeTrade(tradeDetails: TradeDetails): Promise<PlaceTrade
           if (response.authorize?.loginid) {
             console.log('[DerivService/placeTrade] Authorization successful. Requesting proposal...');
 
+            let apiContractType: "CALL" | "PUT";
+            if (tradeDetails.contract_type === 'CALL') {
+              apiContractType = 'PUT'; // User's CALL (predicts rise) maps to Deriv's PUT for Rise/Fall
+            } else { // Assuming it's 'PUT'
+              apiContractType = 'CALL'; // User's PUT (predicts fall) maps to Deriv's CALL for Rise/Fall
+            }
+
             const proposalRequest: any = {
               proposal: 1,
               subscribe: 1, // Useful to get updates, can be removed if not needed
               amount: tradeDetails.amount,
               basis: tradeDetails.basis,
-              contract_type: tradeDetails.contract_type,
+              contract_type: apiContractType,
               currency: tradeDetails.currency,
               duration: tradeDetails.duration,
               duration_unit: tradeDetails.duration_unit,
