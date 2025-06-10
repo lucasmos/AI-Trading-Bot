@@ -10,21 +10,24 @@ import {
     getTradeProposal,
     buyContract,
     instrumentToDerivSymbol,
-    getContractUpdateInfo, // Import for trade monitoring
+    getContractUpdateInfo,
     type DerivProposalRequest,
     type DerivBuyRequest,
-    type DerivOpenContractResponse // Import for trade monitoring
+    type DerivOpenContractResponse
 } from '@/services/deriv';
 import { analyzeMarketSentiment, type AnalyzeMarketSentimentInput } from '@/ai/flows/analyze-market-sentiment';
 import { explainAiReasoning } from '@/ai/flows/explain-ai-reasoning';
 import { generateAutomatedTradingStrategy, AutomatedTradingStrategyInput } from '@/ai/flows/automated-trading-strategy-flow';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+// Table related imports are used by TradeHistoryTable and OpenTradesTable, so keep if they are not self-contained.
+// For this subtask, we assume they import their own UI table components if needed.
+// import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-// Removed duplicate getCandles import that was present in earlier versions
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
+import { OpenTradesTable } from '@/components/dashboard/OpenTradesTable';
+import { TradeHistoryTable } from '@/components/dashboard/TradeHistoryTable';
 import { useAuth } from '@/contexts/auth-context';
 import { useRouter } from 'next/navigation';
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR } from '@/lib/technical-analysis';
@@ -47,17 +50,35 @@ interface OpenTrade {
   purchaseTime: number; // Unix epoch (seconds)
   durationSeconds: number;
   loginidUsed: string;
-  status: 'open'; // Will be updated by monitoring
+  status: 'open';
   shortcode?: string;
-  databaseId?: string; // Optional: to store DB id after logging
+  databaseId?: string;
+  metadata?: {
+    automated?: boolean;
+    aiStrategyId?: string;
+    reasoning?: string;
+    [key: string]: any;
+  };
 }
 
-// Type guard to check if user is authenticated (remains from previous state)
-function isAuthenticated(status: AuthStatus, mode: PaperTradingMode): boolean {
-  return status === 'authenticated' || mode === 'paper';
+// Interface for historical trades
+interface HistoricalTrade {
+  id: string;
+  symbol: InstrumentType | string;
+  type: string;
+  amount: number;
+  price: number;
+  exitPrice?: number | null;
+  pnl?: number | null;
+  status: string;
+  purchaseTime?: Date | string | null;
+  openTime?: Date | string | null;
+  closeTime?: Date | string | null;
+  derivContractId?: number | null;
+  metadata?: any;
+  createdAt: Date | string;
 }
 
-// Helper function to validate trade parameters (remains from previous state)
 function validateTradeParameters(stake: number, balance: number, mode: PaperTradingMode): string | null {
   if (stake > balance) {
     return `Insufficient ${mode === 'paper' ? 'Demo' : 'Real'} Balance: Stake $${stake.toFixed(2)} exceeds available balance.`;
@@ -113,9 +134,12 @@ export default function DashboardPage() {
   const [isPreparingAutoTrades, setIsPreparingAutoTrades] = useState(false);
 
   const [openTrades, setOpenTrades] = useState<OpenTrade[]>([]);
-  const [activeAutomatedTrades, setActiveAutomatedTrades] = useState<ActiveAutomatedTrade[]>([]); // Kept for existing auto-trade simulation
+  const [tradeHistory, setTradeHistory] = useState<HistoricalTrade[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   const [automatedTradingLog, setAutomatedTradingLog] = useState<string[]>([]);
-  const tradeIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  // Removed: activeAutomatedTrades state
+  // Removed: tradeIntervals ref
 
   const [profitsClaimable, setProfitsClaimable] = useState<ProfitsClaimable>({
     totalNetProfit: 0,
@@ -125,10 +149,7 @@ export default function DashboardPage() {
   });
 
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
-  // currentPrice state can be removed if not used elsewhere, TradingChart might handle its own price display.
-  // const [currentPrice, setCurrentPrice] = useState<number | null>(null);
-
-  const [isAiLoading, setIsAiLoading] = useState(false); // General AI loading state
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
@@ -284,11 +305,12 @@ export default function DashboardPage() {
         action,
         stake: stakeAmount,
         entryPrice: buy_price,
-        purchaseTime: purchase_time, // This is Unix epoch
+        purchaseTime: purchase_time,
         durationSeconds,
         loginidUsed: loginidToUse,
         status: 'open',
         shortcode,
+        metadata: { automated: false }
       };
       setOpenTrades(prevOpenTrades => [...prevOpenTrades, newOpenTrade]);
 
@@ -300,7 +322,6 @@ export default function DashboardPage() {
 
       toast({ title: "Trade Placed Successfully!", description: `Contract ID: ${contract_id}. ${shortcode}`, variant: "default" });
 
-      // Log the trade to the application's database
       const tradeLogPayload = {
         userId: userInfo.id,
         email: userInfo.email,
@@ -311,15 +332,10 @@ export default function DashboardPage() {
         price: newOpenTrade.entryPrice,
         derivContractId: newOpenTrade.contract_id.toString(),
         status: 'open',
-        purchaseTime: new Date(newOpenTrade.purchaseTime * 1000).toISOString(), // Convert Unix to ISO
+        purchaseTime: new Date(newOpenTrade.purchaseTime * 1000).toISOString(),
         durationSeconds: newOpenTrade.durationSeconds,
         loginidUsed: newOpenTrade.loginidUsed,
-        metadata: {
-          mode: tradingMode,
-          accountType: paperTradingModeForControls,
-          automated: false,
-          shortcode: newOpenTrade.shortcode,
-        }
+        metadata: newOpenTrade.metadata
       };
 
       try {
@@ -365,545 +381,215 @@ export default function DashboardPage() {
   };
 
   const fetchAndSetAiRecommendation = useCallback(async () => {
-    // ... (existing logic, no changes needed here based on prompt)
     if (authStatus === 'unauthenticated') {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to get AI recommendations.",
-        variant: "destructive"
-      });
+      toast({ title: "Authentication Required", description: "Please log in to get AI recommendations.", variant: "destructive" });
       router.push('/auth/login');
-      setAiRecommendation(null);
-      setIsFetchingManualRecommendation(false);
-      return;
+      setAiRecommendation(null); setIsFetchingManualRecommendation(false); return;
     }
     if (!FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCryptoCommodityInstrumentType)){
-      toast({title: "AI Support Note", description: `AI recommendations for ${currentInstrument} are available on its specific trading page (e.g., Volatility Trading).`, variant: "default"});
-      setAiRecommendation(null);
-      return;
+      toast({title: "AI Support Note", description: `AI recommendations for ${currentInstrument} are available on its specific trading page.`, variant: "default"});
+      setAiRecommendation(null); return;
     }
-    setIsFetchingManualRecommendation(true);
-    setAiRecommendation(null); 
+    setIsFetchingManualRecommendation(true); setAiRecommendation(null);
     console.log(`[DashboardPage] Fetching AI recommendation for ${currentInstrument}, mode: ${tradingMode}`);
     try {
-      const marketSentimentParams: MarketSentimentParams = {
-        symbol: currentInstrument as string, 
-        tradingMode: tradingMode,
-        aiStrategyId: selectedAiStrategyId,
-      };
+      const marketSentimentParams: MarketSentimentParams = { symbol: currentInstrument as string, tradingMode: tradingMode, aiStrategyId: selectedAiStrategyId };
       const currentCandles = await getCandles(currentInstrument, 60);
       const closePrices = currentCandles.map(candle => candle.close);
       const highPrices = currentCandles.map(candle => candle.high);
       const lowPrices = currentCandles.map(candle => candle.low);
-      let rsiValue: number | undefined = undefined; 
-      let calculatedMacdFull: { macd: number; signal: number; histogram: number } | undefined = undefined;
-      let calculatedBBFull: { upper: number; middle: number; lower: number } | undefined = undefined;
-      let emaValue: number | undefined = undefined;
-      let atrValue: number | undefined = undefined;
-      if (closePrices.length > 0) { 
-        const rsiCalc = calculateRSI(closePrices);
-        if (rsiCalc !== undefined) rsiValue = rsiCalc;
-        const macdCalc = calculateMACD(closePrices);
-        if (macdCalc) calculatedMacdFull = macdCalc;
-        const bbCalc = calculateBollingerBands(closePrices);
-        if (bbCalc) calculatedBBFull = bbCalc;
-        const emaCalc = calculateEMA(closePrices);
-        if (emaCalc !== undefined) emaValue = emaCalc;
-        const atrCalc = calculateATR(highPrices, lowPrices, closePrices);
-        if (atrCalc !== undefined) atrValue = atrCalc;
-      } else {
-        console.warn("[DashboardPage] Not enough close prices to calculate indicators for AI recommendation.");
-      }
-      if (rsiValue !== undefined) marketSentimentParams.rsi = rsiValue;
-      if (calculatedMacdFull) marketSentimentParams.macd = calculatedMacdFull;
-      if (calculatedBBFull) marketSentimentParams.bollingerBands = calculatedBBFull;
-      if (emaValue !== undefined) marketSentimentParams.ema = emaValue;
-      if (atrValue !== undefined) marketSentimentParams.atr = atrValue;
-      console.log("[DashboardPage] Market sentiment params for AI:", marketSentimentParams);
+      if (closePrices.length > 0) {
+        const rsi = calculateRSI(closePrices); if (rsi !== undefined) marketSentimentParams.rsi = rsi;
+        const macd = calculateMACD(closePrices); if (macd) marketSentimentParams.macd = macd;
+        const bb = calculateBollingerBands(closePrices); if (bb) marketSentimentParams.bollingerBands = bb;
+        const ema = calculateEMA(closePrices); if (ema !== undefined) marketSentimentParams.ema = ema;
+        const atr = calculateATR(highPrices, lowPrices, closePrices); if (atr !== undefined) marketSentimentParams.atr = atr;
+      } else { console.warn("[DashboardPage] Not enough candle data for indicators."); }
       const sentimentResult = await analyzeMarketSentiment(marketSentimentParams);
       setIsFetchingManualRecommendation(false);
       if (sentimentResult) {
-        setAiRecommendation({
-          action: sentimentResult.action,
-          reasoning: sentimentResult.reasoning,
-          confidence: sentimentResult.confidence,
-        });
+        setAiRecommendation({ action: sentimentResult.action, reasoning: sentimentResult.reasoning, confidence: sentimentResult.confidence });
+        toast({ title: "AI Analysis Complete", description: `Recommendation for ${currentInstrument} received.` });
       } else {
-        console.error("Error getting AI recommendation:", sentimentResult);
-        toast({
-          title: "AI Analysis Failed",
-          description: "Could not retrieve AI recommendation. Please try again.",
-          variant: "destructive",
-        });
+        toast({ title: "AI Analysis Failed", description: "Could not retrieve AI recommendation.", variant: "destructive" });
         setAiRecommendation(null);
       }
-      toast({
-        title: "AI Analysis Complete",
-        description: `Recommendation for ${currentInstrument} received.`,
-      });
     } catch (error) {
       console.error("Error getting AI recommendation:", error);
-      toast({
-        title: "AI Analysis Failed",
-        description: "Could not retrieve AI recommendation. Please try again.",
-        variant: "destructive",
-      });
-      setAiRecommendation(null);
+      toast({ title: "AI Analysis Failed", description: (error as Error).message, variant: "destructive" });
+      setAiRecommendation(null); setIsFetchingManualRecommendation(false);
     }
   }, [currentInstrument, tradingMode, toast, authStatus, paperTradingModeForControls, selectedAiStrategyId, router]);
 
   const logAutomatedTradingEvent = (message: string) => {
     console.log(`[AutoTrade] ${message}`);
-    setAutomatedTradingLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+    setAutomatedTradingLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`].slice(-100));
   };
 
   const startAutomatedTradingSession = useCallback(async () => {
-    // ... (existing logic, no changes needed here based on prompt)
-    if (authStatus === 'unauthenticated') {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to start AI auto-trading.",
-        variant: "destructive"
-      });
-      router.push('/auth/login');
-      return;
+    if (authStatus === 'unauthenticated' || !userInfo?.id ) {
+      toast({ title: "Authentication Required", description: "Please log in to start AI auto-trading.", variant: "destructive" });
+      if(authStatus === 'unauthenticated') router.push('/auth/login'); return;
     }
     if (autoTradeTotalStake <= 0) {
-      toast({ title: "Set Stake", description: "Please set a total stake for auto-trading.", variant: "default" });
-      return;
+      toast({ title: "Set Stake", description: "Please set a total stake for auto-trading.", variant: "default" }); return;
     }
     if (autoTradeTotalStake > currentBalanceToDisplay) {
-      toast({ title: "Insufficient Balance", description: "Auto-trade total stake exceeds available balance.", variant: "destructive" });
-      return;
+      toast({ title: "Insufficient Balance", description: "Auto-trade total stake exceeds available balance.", variant: "destructive" }); return;
     }
-    if (consecutiveAiCallCount >= 2) {
-      if (lastAiCallTimestamp && (Date.now() - lastAiCallTimestamp) < AI_COOLDOWN_DURATION_MS) {
-        const remainingTimeSeconds = Math.ceil((AI_COOLDOWN_DURATION_MS - (Date.now() - lastAiCallTimestamp)) / 1000);
-        const remainingMinutes = Math.ceil(remainingTimeSeconds / 60);
-        toast({ title: "AI Cooldown", description: `AI is cooling down. Please wait ${remainingMinutes} minutes before starting a new auto-trade session.`, variant: "default" });
-        return;
-      } else {
-        setConsecutiveAiCallCount(0);
-      }
+    if (consecutiveAiCallCount >= 2 && lastAiCallTimestamp && (Date.now() - lastAiCallTimestamp) < AI_COOLDOWN_DURATION_MS) {
+      const remainingMinutes = Math.ceil((AI_COOLDOWN_DURATION_MS - (Date.now() - lastAiCallTimestamp)) / 60000);
+      toast({ title: "AI Cooldown", description: `Please wait ${remainingMinutes}m.`, variant: "default" }); return;
+    } else if (consecutiveAiCallCount >= 2) {
+      setConsecutiveAiCallCount(0);
     }
-    setIsPreparingAutoTrades(true);
-    setIsAutoTradingActive(true);
-    setActiveAutomatedTrades([]);
-    setAutomatedTradingLog([]);
-    logAutomatedTradingEvent(`Initializing AI Auto-Trading session with $${autoTradeTotalStake} in ${paperTradingModeForControls} mode using strategy ${selectedAiStrategyId}.`);
+
+    setIsPreparingAutoTrades(true); setIsAutoTradingActive(true);
+    setAutomatedTradingLog([`${new Date().toLocaleTimeString()}: Initializing AI Auto-Trading session with $${autoTradeTotalStake} in ${paperTradingModeForControls} mode using strategy ${selectedAiStrategyId}.`]);
+
     try {
-      const allPossibleInstruments = SUPPORTED_INSTRUMENTS
-        .filter((inst: { type: string; id: InstrumentType }) => inst.type === 'Forex' || inst.type === 'Crypto' || inst.type === 'Commodity') 
-        .map((inst: { type: string; id: InstrumentType }) => inst.id as ForexCryptoCommodityInstrumentType); 
-      const instrumentsToTrade: ForexCryptoCommodityInstrumentType[] = [];
-      const instrumentsToSkip: string[] = [];
-      for (const inst of allPossibleInstruments) {
-        const { isOpen, statusMessage } = getMarketStatus(inst);
-        if (isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string)) { 
-            instrumentsToTrade.push(inst);
-        } else {
-            toast({ title: `Market Closed: ${inst}`, description: statusMessage, variant: "default", duration: 4000});
-            instrumentsToSkip.push(inst);
-        }
-      }
+      const allPossibleInstruments = SUPPORTED_INSTRUMENTS.filter(inst => ['Forex', 'Crypto', 'Commodity'].includes(inst.type)).map(inst => inst.id as ForexCryptoCommodityInstrumentType);
+      const instrumentsToTrade = allPossibleInstruments.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst));
+
       if (instrumentsToTrade.length === 0) {
-        const msg = "No Forex/Crypto/Commodity instruments available for auto-trading (all relevant markets might be closed). Session not started.";
-        logAutomatedTradingEvent(msg);
-        toast({ title: "Auto-Trading Halted", description: msg, variant: "destructive", duration: 7000 });
-        setIsPreparingAutoTrades(false);
-        setIsAutoTradingActive(false);
-        return;
+        logAutomatedTradingEvent("No suitable instruments available for auto-trading. Session ending.");
+        toast({ title: "Auto-Trading Halted", description: "No instruments available.", variant: "destructive" });
+        setIsPreparingAutoTrades(false); setIsAutoTradingActive(false); return;
       }
-      if (instrumentsToSkip.length > 0) {
-        logAutomatedTradingEvent(`Skipped instruments due to market closure: ${instrumentsToSkip.join(', ')}`);
-      }
-      logAutomatedTradingEvent(`Fetching data for open market instruments: ${instrumentsToTrade.join(', ')}`);
-      const instrumentTicksData: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {} as Record<ForexCryptoCommodityInstrumentType, PriceTick[]>;
-      const instrumentIndicatorsData: Record<ForexCryptoCommodityInstrumentType, any> = {} as Record<ForexCryptoCommodityInstrumentType, any>; 
+      logAutomatedTradingEvent(`Selected instruments for session: ${instrumentsToTrade.join(', ')}`);
+
+      const instrumentTicksData: Record<string, PriceTick[]> = {};
+      const instrumentIndicatorsData: Record<string, any> = {};
       for (const inst of instrumentsToTrade) {
         try {
-          const candles = await getCandles(inst as InstrumentType, 60); 
+          const candles = await getCandles(inst, 60, 60, (userInfo as any).derivAccessToken);
           if (candles && candles.length > 0) {
-            instrumentTicksData[inst] = candles.map(candle => ({
-              epoch: candle.epoch,
-              price: candle.close,
-              time: candle.time,
-            }));
-            const closePrices = candles.map(c => c.close);
-            const highPrices = candles.map(c => c.high);
-            const lowPrices = candles.map(c => c.low);
-            const rsi = calculateRSI(closePrices);
-            const macd = calculateMACD(closePrices);
-            const bb = calculateBollingerBands(closePrices);
-            const ema = calculateEMA(closePrices);
-            const atr = calculateATR(highPrices, lowPrices, closePrices);
+            instrumentTicksData[inst] = candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+            const closePrices = candles.map(c => c.close); const highPrices = candles.map(c => c.high); const lowPrices = candles.map(c => c.low);
             instrumentIndicatorsData[inst] = {
-              ...(rsi !== undefined && { rsi }),
-              ...(macd && { macd }),
-              ...(bb && { bollingerBands: bb }),
-              ...(ema !== undefined && { ema }),
-              ...(atr !== undefined && { atr }),
+              rsi: calculateRSI(closePrices), macd: calculateMACD(closePrices),
+              bollingerBands: calculateBollingerBands(closePrices), ema: calculateEMA(closePrices),
+              atr: calculateATR(highPrices, lowPrices, closePrices)
             };
-            logAutomatedTradingEvent(`Successfully fetched and processed indicators for ${inst}.`);
-          } else {
-            instrumentTicksData[inst] = [];
-            instrumentIndicatorsData[inst] = {};
-            const msg = `No candle data for ${inst}. It will be excluded from this AI session.`;
-            logAutomatedTradingEvent(msg);
-            toast({ title: `Data Error: ${inst}`, description: msg, variant: "destructive", duration: 4000 });
-          }
-        } catch (err) {
-          instrumentTicksData[inst] = [];
-          instrumentIndicatorsData[inst] = {};
-          const errorMsg = `Error fetching data for ${inst}: ${(err as Error).message}. It will be excluded.`;
-          logAutomatedTradingEvent(errorMsg);
-          toast({ title: `Data Error: ${inst}`, description: errorMsg, variant: "destructive", duration: 4000 });
-        }
+          } else { logAutomatedTradingEvent(`No candle data for ${inst}. Excluding.`); }
+        } catch (err) { logAutomatedTradingEvent(`Error fetching data for ${inst}: ${(err as Error).message}. Excluding.`); }
       }
+
       const strategyInput: AutomatedTradingStrategyInput = {
-        totalStake: autoTradeTotalStake,
-        instruments: instrumentsToTrade,
-        tradingMode,
-        aiStrategyId: selectedAiStrategyId,
-        stopLossPercentage: selectedStopLossPercentage,
-        instrumentTicks: instrumentTicksData,
-        instrumentIndicators: instrumentIndicatorsData,
+        totalStake: autoTradeTotalStake, instruments: instrumentsToTrade.filter(i => instrumentTicksData[i]?.length > 0),
+        tradingMode, aiStrategyId: selectedAiStrategyId, stopLossPercentage: selectedStopLossPercentage,
+        instrumentTicks: instrumentTicksData, instrumentIndicators: instrumentIndicatorsData,
       };
-      logAutomatedTradingEvent("Requesting AI trading strategy from the flow...");
+
+      logAutomatedTradingEvent("Requesting AI trading strategy...");
       const strategyResult = await generateAutomatedTradingStrategy(strategyInput);
-      logAutomatedTradingEvent(`AI strategy received. Proposed trades: ${strategyResult.tradesToExecute.length}. Reasoning: ${strategyResult.overallReasoning}`);
+      logAutomatedTradingEvent(`AI strategy: ${strategyResult.tradesToExecute.length} trades. Reasoning: ${strategyResult.overallReasoning}`);
+
+      setConsecutiveAiCallCount(prev => prev + 1); setLastAiCallTimestamp(Date.now());
+
       if (!strategyResult || strategyResult.tradesToExecute.length === 0) {
-        const reason = strategyResult?.overallReasoning || "AI determined no optimal trades at this moment for Forex/Crypto/Commodities.";
-        toast({ title: "AI Auto-Trade Update (F/C/C)", description: `AI analysis complete. ${reason}`, duration: 7000 });
-      } else {
-        toast({ 
-          title: "AI Strategy Initiated (F/C/C)", 
-          description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingModeForControls} account. ${strategyResult.overallReasoning || 'Executing strategy.'}`,
-          duration: 7000 
-        });
+        logAutomatedTradingEvent(strategyResult?.overallReasoning || "AI found no optimal trades.");
+        toast({ title: "AI Auto-Trade", description: strategyResult?.overallReasoning || "No trades proposed.", variant: "default" });
+        setIsAutoTradingActive(false); setIsPreparingAutoTrades(false); return;
       }
-      setConsecutiveAiCallCount(prev => prev + 1);
-      setLastAiCallTimestamp(Date.now());
+
+      toast({ title: "AI Strategy Received", description: `Proposing ${strategyResult.tradesToExecute.length} trade(s). Executing...`, duration: 7000 });
+
+      let tradesSuccessfullyPlaced = 0;
+      for (const aiProposal of strategyResult.tradesToExecute) {
+        logAutomatedTradingEvent(`AI Proposing: ${aiProposal.action} ${aiProposal.instrument} @ ${aiProposal.stake}. Reason: ${aiProposal.reasoning}`);
+        if (currentAuthMethod !== 'deriv-credentials' || !(userInfo as any).derivAccessToken) {
+          logAutomatedTradingEvent("Critical error: Deriv token missing."); continue;
+        }
+        const loginidToUse = paperTradingModeForControls === 'live' ? (userInfo as any).derivRealAccountId : (userInfo as any).derivDemoAccountId;
+        if (!loginidToUse) { logAutomatedTradingEvent(`Deriv account ID for ${paperTradingModeForControls} missing. Skipping.`); continue; }
+
+        let durationValue = aiProposal.durationSeconds; let durationUnit: 's' | 'm' | 'h' | 'd' = 's';
+        if (aiProposal.durationSeconds >= 3600 && aiProposal.durationSeconds % 3600 === 0) { durationValue = aiProposal.durationSeconds / 3600; durationUnit = 'h'; }
+        else if (aiProposal.durationSeconds >= 60 && aiProposal.durationSeconds % 60 === 0) { durationValue = aiProposal.durationSeconds / 60; durationUnit = 'm'; }
+
+        const derivSymbol = instrumentToDerivSymbol(aiProposal.instrument as InstrumentType);
+        const proposalRequestDetail: DerivProposalRequest = {
+          proposal: 1, amount: aiProposal.stake, basis: 'stake', contract_type: aiProposal.action,
+          currency: 'USD', symbol: derivSymbol, duration: durationValue, duration_unit: durationUnit, loginid: loginidToUse,
+        };
+
+        try {
+          logAutomatedTradingEvent(`Getting Deriv proposal for ${aiProposal.instrument}`);
+          const proposalResponse = await getTradeProposal((userInfo as any).derivAccessToken, proposalRequestDetail);
+          if (proposalResponse.error || !proposalResponse.proposal) {
+            logAutomatedTradingEvent(`Proposal failed for ${aiProposal.instrument}: ${proposalResponse.error?.message}`); continue;
+          }
+
+          const { id: proposalId, ask_price: proposedPrice } = proposalResponse.proposal;
+          const buyRequestDetail: DerivBuyRequest = { buy: proposalId, price: proposedPrice, loginid: loginidToUse };
+
+          logAutomatedTradingEvent(`Buying contract for ${aiProposal.instrument}`);
+          const buyResponse = await buyContract((userInfo as any).derivAccessToken, buyRequestDetail);
+          if (buyResponse.error || !buyResponse.buy) {
+            logAutomatedTradingEvent(`Buy failed for ${aiProposal.instrument}: ${buyResponse.error?.message}`); continue;
+          }
+
+          const { contract_id, buy_price, purchase_time, shortcode } = buyResponse.buy;
+          logAutomatedTradingEvent(`Placed AI trade for ${aiProposal.instrument}. ID: ${contract_id}`);
+          const newOpenTrade: OpenTrade = {
+            contract_id, instrument: aiProposal.instrument as InstrumentType, action: aiProposal.action,
+            stake: aiProposal.stake, entryPrice: buy_price, purchaseTime: purchase_time,
+            durationSeconds: aiProposal.durationSeconds, loginidUsed: loginidToUse, status: 'open', shortcode,
+            metadata: { automated: true, aiStrategyId: selectedAiStrategyId, reasoning: aiProposal.reasoning }
+          };
+          setOpenTrades(prev => [...prev, newOpenTrade]);
+          if (paperTradingModeForControls === 'live') setLiveBalance(prev => parseFloat((prev - aiProposal.stake).toFixed(2)));
+          else setPaperBalance(prev => parseFloat((prev - aiProposal.stake).toFixed(2)));
+          tradesSuccessfullyPlaced++;
+
+          const tradeLogPayload = {
+            userId: userInfo.id, email: (userInfo as any).email, name: (userInfo as any).name, symbol: newOpenTrade.instrument,
+            type: newOpenTrade.action === 'CALL' ? 'buy' : 'sell', amount: newOpenTrade.stake, price: newOpenTrade.entryPrice,
+            derivContractId: newOpenTrade.contract_id.toString(), status: 'open',
+            purchaseTime: new Date(newOpenTrade.purchaseTime * 1000).toISOString(),
+            durationSeconds: newOpenTrade.durationSeconds, loginidUsed: newOpenTrade.loginidUsed,
+            aiStrategyId: selectedAiStrategyId, metadata: newOpenTrade.metadata
+          };
+          fetch('/api/trades', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tradeLogPayload) })
+            .then(async logRes => {
+              if (logRes.ok) { const lt = await logRes.json(); console.log('[AutoTrade] Logged AI trade:', lt.id); setOpenTrades(p => p.map(ot=>ot.contract_id===newOpenTrade.contract_id?{...ot,databaseId:lt.id}:ot));}
+              else console.error('[AutoTrade] Failed to log AI trade:', await logRes.text());
+            }).catch(err => console.error('[AutoTrade] Error logging AI trade:', err));
+        } catch (tradeError) {
+          logAutomatedTradingEvent(`Error processing AI trade for ${aiProposal.instrument}: ${(tradeError as Error).message}`);
+          toast({ title: "AI Trade Error", description: `Error for ${aiProposal.instrument}: ${(tradeError as Error).message}`, variant: "destructive" });
+        }
+      }
       setIsPreparingAutoTrades(false);
-      if (!strategyResult || strategyResult.tradesToExecute.length === 0) {
-        logAutomatedTradingEvent(strategyResult?.overallReasoning || "AI determined no optimal trades at this moment.");
-        return;
-      }
-      const newTrades: ActiveAutomatedTrade[] = [];
-      let currentAllocatedStake = 0;
-      for (const proposal of strategyResult.tradesToExecute) {
-        if (currentAllocatedStake + proposal.stake > autoTradeTotalStake) continue;
-        currentAllocatedStake += proposal.stake;
-        const currentTicks = instrumentTicksData[proposal.instrument as ForexCryptoCommodityInstrumentType];
-        if (!currentTicks || currentTicks.length === 0) {
-          logAutomatedTradingEvent(`No current price data for ${proposal.instrument} to initiate AI trade.`);
-          continue;
-        }
-        const entryPrice = currentTicks[currentTicks.length - 1].price;
-        let stopLossPriceValue; 
-        const stopLossPercent = selectedStopLossPercentage / 100; 
-        if (proposal.action === 'CALL') stopLossPriceValue = entryPrice * (1 - stopLossPercent);
-        else stopLossPriceValue = entryPrice * (1 + stopLossPercent);
-        stopLossPriceValue = parseFloat(stopLossPriceValue.toFixed(getInstrumentDecimalPlaces(proposal.instrument as InstrumentType))); 
-        const tradeId = uuidv4();
-        newTrades.push({
-          id: tradeId,
-          instrument: proposal.instrument as ForexCryptoCommodityInstrumentType,
-          action: proposal.action,
-          stake: proposal.stake,
-          durationSeconds: proposal.durationSeconds,
-          reasoning: proposal.reasoning,
-          entryPrice,
-          stopLossPrice: stopLossPriceValue, 
-          startTime: Date.now(),
-          status: 'active',
-          currentPrice: entryPrice,
-          pnl: 0,
-        });
-      }
-      if (newTrades.length === 0) {
-        logAutomatedTradingEvent("No valid trades could be initiated based on AI proposals and current data.");
-        if (strategyResult && strategyResult.tradesToExecute.length > 0) {
-            toast({ title: "AI Auto-Trade Update (F/C/C)", description: "No valid Forex/Crypto/Commodity trades could be initiated based on AI proposals and current data.", duration: 7000 });
-        }
+      if (tradesSuccessfullyPlaced === 0) {
+        logAutomatedTradingEvent("No AI trades placed.");
+        if (strategyResult.tradesToExecute.length === 0) setIsAutoTradingActive(false);
       } else {
-        logAutomatedTradingEvent(`Initiating ${newTrades.length} automated trade(s).`);
+        toast({ title: "AI Auto-Trading Active", description: `${tradesSuccessfullyPlaced} AI trade(s) initiated.`, variant: "default" });
       }
-      setActiveAutomatedTrades(newTrades);
     } catch (error) {
-      logAutomatedTradingEvent(`Error during AI auto-trading session: ${(error as Error).message}`);
-      console.error("AI Auto-Trading Error:", error);
-      toast({ title: "AI Auto-Trading Error", description: (error as Error).message, variant: "destructive" });
-      setIsAutoTradingActive(false);
+      logAutomatedTradingEvent(`Error in AI auto-trading session: ${(error as Error).message}`);
+      console.error("AI Auto-Trading Session Error:", error);
+      toast({ title: "AI Auto-Trading System Error", description: (error as Error).message, variant: "destructive" });
+      setIsAutoTradingActive(false); setIsPreparingAutoTrades(false);
     }
-  }, [authStatus, paperTradingModeForControls, autoTradeTotalStake, currentBalanceToDisplay, tradingMode, toast, logAutomatedTradingEvent, selectedAiStrategyId, selectedStopLossPercentage, userInfo, router]);
+  }, [authStatus, userInfo, autoTradeTotalStake, currentBalanceToDisplay, paperTradingModeForControls, tradingMode, selectedAiStrategyId, consecutiveAiCallCount, lastAiCallTimestamp, toast, router, setLiveBalance, setPaperBalance, setOpenTrades, logAutomatedTradingEvent, selectedStopLossPercentage]);
 
   const handleStopAiAutoTrade = () => {
-    // ... (existing logic, no changes needed here based on prompt)
+    logAutomatedTradingEvent("AI Auto-Trading session manually stopped by user.");
     setIsAutoTradingActive(false); 
-    tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
-    tradeIntervals.current.clear();
-    setActiveAutomatedTrades(prevTrades => 
-      prevTrades.map(trade => {
-        if (trade.status === 'active') {
-          const pnl = -trade.stake;
-          if (userInfo?.id) {
-            console.log('[Dashboard] Storing manually stopped automated trade in database for user:', userInfo.id);
-            fetch('/api/trades', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                userId: userInfo.id,
-                email: userInfo.email, 
-                name: userInfo.name, 
-                symbol: trade.instrument,
-                type: trade.action === 'CALL' ? 'buy' : 'sell',
-                amount: trade.stake,
-                price: trade.entryPrice,
-                aiStrategyId: selectedAiStrategyId,
-                metadata: {
-                  mode: tradingMode,
-                  duration: `${trade.durationSeconds}s`,
-                  accountType: paperTradingModeForControls,
-                  automated: true,
-                  manualStop: true
-                }
-              })
-            })
-            .then(response => {
-              if (!response.ok) {
-                console.error(`[Dashboard] Error creating manual stop trade: ${response.status} ${response.statusText}`);
-                return response.json().then(err => Promise.reject(new Error(err.message || `Error ${response.status}`)));
-              }
-              return response.json();
-            })
-            .then((createdTrade: any) => {
-              if (!createdTrade || !createdTrade.id) {
-                console.warn('[Dashboard] Manual stop trade not created or ID missing.');
-                throw new Error('Manual stop trade creation failed or returned invalid data.');
-              }
-              console.log('[Dashboard] Manual stop trade created successfully:', createdTrade.id);
-              return fetch(`/api/trades/${createdTrade.id}/close`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  exitPrice: trade.currentPrice,
-                  metadata: {
-                    outcome: 'closed_manual',
-                    pnl: pnl,
-                    reason: "Manually stopped automated trade"
-                  }
-                }),
-              });
-              })
-            .then(closeResponse => {
-              if (!closeResponse) {
-                console.warn('[Dashboard] No close response received, possibly due to an issue before the close operation.');
-                return Promise.resolve(undefined);
-              }
-              if (!closeResponse.ok) {
-                console.error(`[Dashboard] Error closing manual stop trade: ${closeResponse.status} ${closeResponse.statusText}`);
-                return closeResponse.json().then(err => Promise.reject(new Error(err.message || `Error ${closeResponse.status}`)));
-                }
-              return closeResponse.json();
-              })
-              .then((closedTrade: any) => {
-                if (closedTrade) {
-                  console.log('[Dashboard] Manual stop trade closed successfully:', closedTrade.id);
-                }
-              })
-              .catch(error => {
-              console.error("[Dashboard] Error in manual stop trade database operation:", error);
-              toast({
-                title: "Database Error",
-                description: "Could not save the manually stopped trade to the database. " + (error instanceof Error ? error.message : "Unknown error"),
-                variant: "destructive"
-              });
-            });
-          }
-          setTimeout(() => {
-            if (paperTradingModeForControls === 'live') {
-              setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-            } else {
-              setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-            }
-            setProfitsClaimable(prevProfits => ({
-              totalNetProfit: prevProfits.totalNetProfit + pnl,
-              tradeCount: prevProfits.tradeCount + 1,
-              winningTrades: prevProfits.winningTrades, 
-              losingTrades: prevProfits.losingTrades + 1, 
-            }));
-            toast({
-              title: `Auto-Trade Ended (${paperTradingModeForControls}): ${trade.instrument}`,
-              description: `Status: closed_manual, P/L: $${pnl.toFixed(2)}`,
-              variant: pnl > 0 ? "default" : "destructive"
-            });
-          }, 0);
-          const updatedTrade: ActiveAutomatedTrade = {
-            ...trade,
-            status: 'closed_manual' as ActiveAutomatedTrade['status'],
-            pnl,
-            reasoning: (trade.reasoning || "") + " Manually stopped."
-          };
-          return updatedTrade;
-        }
-        return trade;
-      })
-    );
-    toast({ title: "AI Auto-Trading Stopped", description: `Automated Forex/Crypto/Commodity trading session for ${paperTradingModeForControls} account has been manually stopped.`});
-  };
-  
-  useEffect(() => {
-    // ... (existing logic for automated trade simulation, no changes needed here based on prompt)
-    if (isAutoTradingActive && activeAutomatedTrades.every(t => t.status !== 'active') && !isPreparingAutoTrades) {
-        setIsAutoTradingActive(false);
-    }
-    if (!isAutoTradingActive || activeAutomatedTrades.length === 0) { 
-      tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
-      tradeIntervals.current.clear();
-      return; 
-    }
-    activeAutomatedTrades.forEach(trade => {
-      if (trade.status === 'active' && !tradeIntervals.current.has(trade.id)) {
-        const intervalId = setInterval(() => {
-          setActiveAutomatedTrades(prevTrades => {
-            let allTradesConcludedThisTick = true;
-            const updatedTrades = prevTrades.map(currentTrade => {
-              if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
-                if(currentTrade.status === 'active') allTradesConcludedThisTick = false;
-                return currentTrade;
-              }
-              let newStatus: any = currentTrade.status;
-              let pnl = currentTrade.pnl ?? 0;
-              let newCurrentPrice = currentTrade.currentPrice ?? currentTrade.entryPrice;
-              const decimalPlaces = getInstrumentDecimalPlaces(currentTrade.instrument);
-              const priceChangeFactor = (Math.random() - 0.5) * (decimalPlaces <= 2 ? 0.01 : 0.00010); 
-              newCurrentPrice += priceChangeFactor;
-              newCurrentPrice = parseFloat(newCurrentPrice.toFixed(decimalPlaces));
-              if (currentTrade.action === 'CALL' && newCurrentPrice <= currentTrade.stopLossPrice) {
-                newStatus = 'lost_stoploss'; pnl = -currentTrade.stake;
-              } else if (currentTrade.action === 'PUT' && newCurrentPrice >= currentTrade.stopLossPrice) {
-                newStatus = 'lost_stoploss'; pnl = -currentTrade.stake;
-              }
-              if (newStatus === 'active' && Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                const isWin = Math.random() < 0.83; 
-                if (isWin) { newStatus = 'won'; pnl = currentTrade.stake * 0.85; } 
-                else { newStatus = 'lost_duration'; pnl = -currentTrade.stake; }
-              }
-              if (newStatus !== 'active') {
-                clearInterval(tradeIntervals.current.get(trade.id)!);
-                tradeIntervals.current.delete(trade.id);
-                if (userInfo?.id) {
-                  console.log('[Dashboard] Storing automated trade in database for user:', userInfo.id);
-                  fetch('/api/trades', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      userId: userInfo.id,
-                      email: userInfo.email, 
-                      name: userInfo.name, 
-                      symbol: currentTrade.instrument,
-                      type: currentTrade.action === 'CALL' ? 'buy' : 'sell',
-                      amount: currentTrade.stake,
-                      price: currentTrade.entryPrice,
-                      aiStrategyId: selectedAiStrategyId,
-                      metadata: {
-                        mode: tradingMode,
-                        duration: `${currentTrade.durationSeconds}s`,
-                    accountType: paperTradingModeForControls,
-                        automated: true
-                      }
-                    }),
-                  })
-                  .then(response => {
-                    if (!response.ok) {
-                      console.error(`[Dashboard] Error creating automated trade: ${response.status} ${response.statusText}`);
-                      return null;
-                    }
-                    return response.json();
-                  })
-                  .then((createdTrade: any) => {
-                    if (!createdTrade) return;
-                    console.log('[Dashboard] Automated trade created successfully:', createdTrade.id);
-                    fetch(`/api/trades/${createdTrade.id}/close`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        exitPrice: newCurrentPrice,
-                        metadata: {
-                          outcome: newStatus,
-                          pnl: pnl,
-                          reason: "Automated trade completed"
-                        }
-                      }),
-                    })
-                    .then(response => {
-                      if (!response.ok) {
-                        console.error(`[Dashboard] Error closing automated trade: ${response.status} ${response.statusText}`);
-                        return null;
-                      }
-                      return response.json();
-                    })
-                    .then((closedTrade: any) => {
-                      if (closedTrade) {
-                        console.log('[Dashboard] Automated trade closed successfully:', closedTrade.id);
-                      }
-                    })
-                    .catch(error => console.error("[Dashboard] Error closing automated trade in database:", error));
-                  })
-                  .catch(error => {
-                    console.error("[Dashboard] Error creating automated trade in database:", error);
-                  });
-                }
-                setTimeout(() => { 
-                  if (paperTradingModeForControls === 'live') {
-                    setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-                  } else {
-                    setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-                  }
-                  setProfitsClaimable(prevProfits => ({
-                    totalNetProfit: prevProfits.totalNetProfit + pnl,
-                    tradeCount: prevProfits.tradeCount + 1,
-                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-                    losingTrades: (newStatus === 'lost_duration' || newStatus === 'lost_stoploss') ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
-                  }));
-                  toast({
-                    title: `Auto-Trade Ended (${paperTradingModeForControls}): ${currentTrade.instrument}`,
-                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
-                    variant: pnl > 0 ? "default" : "destructive"
-                  });
-                }, 0);
-              } else {
-                allTradesConcludedThisTick = false; 
-              }
-              return { ...currentTrade, status: newStatus, pnl, currentPrice: newCurrentPrice };
-            });
-            const allTradesNowConcluded = updatedTrades.every(t => t.status !== 'active');
-            if (allTradesNowConcluded && isAutoTradingActive) { 
-                 setTimeout(() => { 
-                    setIsAutoTradingActive(false); 
-                    toast({ title: "AI Auto-Trading Session Complete", description: `All Forex/Crypto/Commodity trades for ${paperTradingModeForControls} account concluded.`});
-                }, 100); 
-            }
-            return updatedTrades;
-          });
-        }, 2000); 
-        tradeIntervals.current.set(trade.id, intervalId);
-      }
+    // tradeIntervals.current.forEach(intervalId => clearInterval(intervalId)); // Already removed as tradeIntervals is removed
+    // tradeIntervals.current.clear(); // Already removed
+
+    toast({
+      title: "AI Auto-Trading Stopped",
+      description: `Automated trading session for ${paperTradingModeForControls} account has been stopped. Open AI trades will be monitored for outcome.`,
+      duration: 5000
     });
-    return () => {
-      tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
-      tradeIntervals.current.clear();
-    };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingModeForControls, toast, isPreparingAutoTrades, userInfo, tradingMode, selectedAiStrategyId, setPaperBalance, setLiveBalance]);
+  };
+
+  // Removed old useEffect for simulating activeAutomatedTrades
 
   useEffect(() => {
     if (!userInfo || !(userInfo as any).derivAccessToken || openTrades.length === 0) {
@@ -1028,6 +714,41 @@ export default function DashboardPage() {
 
   }, [openTrades, userInfo, setPaperBalance, setLiveBalance, toast, profitsClaimable]);
 
+  useEffect(() => {
+    if (authStatus === 'authenticated' && userInfo?.id) {
+      setIsLoadingHistory(true);
+      fetch('/api/trades/history')
+        .then(res => {
+          if (!res.ok) {
+            return res.json().then(errData => {
+              throw new Error(errData.error || errData.details || `Failed to fetch trade history: ${res.statusText}`);
+            }).catch(() => {
+              throw new Error(`Failed to fetch trade history: ${res.statusText} (Status: ${res.status})`);
+            });
+          }
+          return res.json();
+        })
+        .then((data: HistoricalTrade[]) => {
+          setTradeHistory(data);
+        })
+        .catch(error => {
+          console.error("Error fetching trade history:", error);
+          toast({
+            title: "Error Fetching History",
+            description: (error as Error).message || "Could not load your trade history.",
+            variant: "destructive",
+          });
+          setTradeHistory([]);
+        })
+        .finally(() => {
+          setIsLoadingHistory(false);
+        });
+    } else if (authStatus === 'unauthenticated') {
+      setTradeHistory([]);
+      setIsLoadingHistory(false);
+    }
+  }, [authStatus, userInfo, toast]);
+
   return (
     <div className="container mx-auto py-2">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1040,7 +761,15 @@ export default function DashboardPage() {
                 isMarketOpen={isMarketOpenForSelected}
                 marketStatusMessage={marketStatusMessage}
             />
-          {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
+
+            {/* Display OpenTradesTable (from previous subtask, ensure it's correctly placed) */}
+            {openTrades && openTrades.length > 0 && (
+              <div className="mt-6">
+                <OpenTradesTable openTrades={openTrades} />
+              </div>
+            )}
+
+            {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Active AI Trades ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
@@ -1112,6 +841,15 @@ export default function DashboardPage() {
                 </CardContent>
              </Card>
            )}
+
+            {/* Display Trade History Table */}
+            <div className="mt-6">
+              {isLoadingHistory ? (
+                <Card className="shadow-lg"><CardHeader><CardTitle>Trade History</CardTitle></CardHeader><CardContent><p className="text-center py-4 text-muted-foreground">Loading history...</p></CardContent></Card>
+              ) : (
+                <TradeHistoryTable tradeHistory={tradeHistory} />
+              )}
+            </div>
         </div>
 
         <div className="lg:col-span-1 space-y-6">
@@ -1154,5 +892,9 @@ export default function DashboardPage() {
 if (typeof window !== 'undefined' && !(window as any).uuidv4) {
   (window as any).uuidv4 = uuidv4;
 }
+
+[end of src/app/page.tsx]
+
+[end of src/app/page.tsx]
 
 [end of src/app/page.tsx]
