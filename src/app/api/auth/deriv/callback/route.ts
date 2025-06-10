@@ -179,10 +179,15 @@ export async function GET(request: NextRequest) {
                 derivDemoBalance: derivDemoBalance,
                 derivRealBalance: derivRealBalance,
             };
-            localStorage.setItem('derivAiUser', JSON.stringify(userInfoForClient));
-            localStorage.setItem('derivAiAuthMethod', 'deriv');
 
-            _tempRedirectUrl = new URL('/', request.nextUrl.origin); // Redirect to home or dashboard after successful login
+            // Construct URL for the finalize page with query parameters
+            const finalizeUrl = new URL('/auth/deriv/finalize', request.nextUrl.origin);
+            finalizeUrl.searchParams.append('derivUserId', userId);
+            finalizeUrl.searchParams.append('email', email);
+            finalizeUrl.searchParams.append('name', name || ''); // Ensure name is at least an empty string
+            finalizeUrl.searchParams.append('accessToken', firstToken); // firstToken from earlier in the function
+            _tempRedirectUrl = finalizeUrl;
+
             ws.close();
             resolve();
           }
