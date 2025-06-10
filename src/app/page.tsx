@@ -138,8 +138,6 @@ export default function DashboardPage() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [automatedTradingLog, setAutomatedTradingLog] = useState<string[]>([]);
-  // Removed: activeAutomatedTrades state
-  // Removed: tradeIntervals ref
 
   const [profitsClaimable, setProfitsClaimable] = useState<ProfitsClaimable>({
     totalNetProfit: 0,
@@ -151,6 +149,7 @@ export default function DashboardPage() {
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
+  const [isAutoTradingActive, setIsAutoTradingActive] = useState(false); // Moved from being with activeAutomatedTrades
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
@@ -579,13 +578,11 @@ export default function DashboardPage() {
   const handleStopAiAutoTrade = () => {
     logAutomatedTradingEvent("AI Auto-Trading session manually stopped by user.");
     setIsAutoTradingActive(false); 
-    // tradeIntervals.current.forEach(intervalId => clearInterval(intervalId)); // Already removed as tradeIntervals is removed
-    // tradeIntervals.current.clear(); // Already removed
 
     toast({
       title: "AI Auto-Trading Stopped",
       description: `Automated trading session for ${paperTradingModeForControls} account has been stopped. Open AI trades will be monitored for outcome.`,
-      duration: 5000
+      duration: 7000
     });
   };
 
@@ -749,6 +746,11 @@ export default function DashboardPage() {
     }
   }, [authStatus, userInfo, toast]);
 
+  const aiOpenTrades = useMemo(() =>
+    openTrades.filter(trade => trade.metadata?.automated === true && trade.status === 'open'),
+    [openTrades]
+  );
+
   return (
     <div className="container mx-auto py-2">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -762,85 +764,70 @@ export default function DashboardPage() {
                 marketStatusMessage={marketStatusMessage}
             />
 
-            {/* Display OpenTradesTable (from previous subtask, ensure it's correctly placed) */}
+            {/* Display OpenTradesTable (shows all open trades, including AI ones) */}
             {openTrades && openTrades.length > 0 && (
               <div className="mt-6">
                 <OpenTradesTable openTrades={openTrades} />
               </div>
             )}
 
-            {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
-            <Card className="shadow-lg">
+            {/* Card for AI Auto-Trading Status & Log */}
+            {(isAutoTradingActive || automatedTradingLog.length > 0 || isPreparingAutoTrades) && (
+            <Card className="shadow-lg mt-6">
               <CardHeader>
-                <CardTitle>Active AI Trades ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
-                <CardDescription>Monitoring automated trades by the AI for Forex/Crypto/Commodities. Stop-Loss is {selectedStopLossPercentage}% of entry.</CardDescription>
+                <CardTitle>AI Auto-Trading Status</CardTitle>
+                <CardDescription>
+                  {isPreparingAutoTrades
+                    ? "AI is currently analyzing markets and preparing trades..."
+                    : isAutoTradingActive
+                      ? `AI is actively managing trades in your ${paperTradingModeForControls} account.`
+                      : "AI Auto-Trading session has ended or was stopped."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Instrument</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Stake</TableHead>
-                      <TableHead>Entry</TableHead>
-                      <TableHead>Current</TableHead>
-                      <TableHead>Stop-Loss ({selectedStopLossPercentage}%)</TableHead>
-                      <TableHead>Status</TableHead>
-                       <TableHead>P/L</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {activeAutomatedTrades.map(trade => (
-                      <TableRow key={trade.id}>
-                        <TableCell>{trade.instrument}</TableCell>
-                        <TableCell>
-                          {/* @ts-ignore */}
-                          <Badge variant={trade.action === 'CALL' ? 'default' : 'destructive'}
-                                 className={trade.action === 'CALL' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-                            {trade.action}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>${trade.stake.toFixed(2)}</TableCell>
-                        <TableCell>{trade.entryPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
-                        <TableCell>{trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
-                        <TableCell>{trade.stopLossPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
-                        <TableCell>
-                           {/* @ts-ignore */}
-                           <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
-                                  className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
-                            {trade.status}
-                           </Badge>
-                        </TableCell>
-                        <TableCell className={trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                          {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
-                        </TableCell>
-                      </TableRow>
+                {isAutoTradingActive ? (
+                  <>
+                    {aiOpenTrades.length > 0 ? (
+                      <p className="text-sm text-green-600 font-semibold mb-2">
+                        Monitoring {aiOpenTrades.length} open AI trade(s). View them in the "Active Deriv Trades" table above.
+                      </p>
+                    ) : (
+                      !isPreparingAutoTrades && <p className="text-xs text-muted-foreground mt-1">AI is active but currently has no open positions. It may be analyzing or waiting for conditions.</p>
+                    )}
+                  </>
+                ) : (
+                  !isPreparingAutoTrades && <p className="text-sm text-muted-foreground">AI Auto-Trading is currently stopped.</p>
+                )}
+
+                {automatedTradingLog && automatedTradingLog.length > 0 && (
+                  <div className="mt-2 h-40 overflow-y-auto border rounded-md p-2 text-xs bg-muted">
+                    <p className="font-semibold mb-1">AI Log:</p>
+                    {automatedTradingLog.map((log, index) => (
+                      <p key={index} className="whitespace-pre-wrap">{log}</p>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
-          )}
-           {isAutoTradingActive && activeAutomatedTrades.length === 0 && !isPreparingAutoTrades && (
+            )}
+
+            {/* Removed the old card that was conditioned on:
+             isAutoTradingActive && activeAutomatedTrades.length === 0 && !isPreparingAutoTrades
+             as its conditions are now handled by the main AI status card.
+            */}
+
+            {/* Card for when AI is preparing trades - this is now covered by the main AI status card's description
+            {isPreparingAutoTrades && ( // This specific card can be removed
              <Card className="shadow-lg">
                 <CardHeader>
-                    <CardTitle>AI Auto-Trading ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
-                </CardHeader>
-                <CardContent>
-                    <p className="text-muted-foreground text-center py-4">AI analysis complete. No suitable Forex/Crypto/Commodity trades found at this moment.</p>
-                </CardContent>
-             </Card>
-           )}
-            {isPreparingAutoTrades && (
-             <Card className="shadow-lg">
-                <CardHeader>
-                    <CardTitle>AI Auto-Trading ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle> {/* Updated */}
+                    <CardTitle>AI Auto-Trading ({paperTradingModeForControls === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground text-center py-4">AI is analyzing Forex/Crypto/Commodity markets and preparing trades...</p>
                 </CardContent>
              </Card>
            )}
+            */}
 
             {/* Display Trade History Table */}
             <div className="mt-6">
@@ -860,11 +847,11 @@ export default function DashboardPage() {
             onAiStrategyChange={setSelectedAiStrategyId}
             tradeDuration={tradeDuration}
             onTradeDurationChange={setTradeDuration}
-            paperTradingMode={paperTradingModeForControls} // Updated
-            onPaperTradingModeChange={handleAccountTypeChangeFromControls} // Updated
+            paperTradingMode={paperTradingModeForControls}
+            onPaperTradingModeChange={handleAccountTypeChangeFromControls}
             stakeAmount={stakeAmount}
             onStakeAmountChange={setStakeAmount}
-            onExecuteTrade={handleExecuteTrade} // Note: handleExecuteTrade internal balance logic needs future refactor
+            onExecuteTrade={handleExecuteTrade}
             onGetAiRecommendation={fetchAndSetAiRecommendation}
             isFetchingManualRecommendation={isFetchingManualRecommendation} 
             isPreparingAutoTrades={isPreparingAutoTrades} 
@@ -874,7 +861,7 @@ export default function DashboardPage() {
             onStopAiAutoTrade={handleStopAiAutoTrade}
             isAutoTradingActive={isAutoTradingActive} 
             disableManualControls={isAutoTradingActive || isFetchingManualRecommendation || isPreparingAutoTrades} 
-            currentBalance={currentBalanceToDisplay} // Updated
+            currentBalance={currentBalanceToDisplay}
             supportedInstrumentsForManualAi={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
             currentSelectedInstrument={currentInstrument}
             isMarketOpenForSelected={isMarketOpenForSelected}
@@ -892,6 +879,10 @@ export default function DashboardPage() {
 if (typeof window !== 'undefined' && !(window as any).uuidv4) {
   (window as any).uuidv4 = uuidv4;
 }
+
+[end of src/app/page.tsx]
+
+[end of src/app/page.tsx]
 
 [end of src/app/page.tsx]
 
