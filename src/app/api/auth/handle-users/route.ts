@@ -28,6 +28,13 @@ export async function POST(request: Request) {
       googleId, 
       picture,
       authMethod, 
+    let {
+      userId,
+      email,
+      name,
+      googleId,
+      picture,
+      authMethod,
     } = requestData;
 
     if (!userId) {
@@ -36,6 +43,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    userId = String(userId); // Ensure userId is a string for all subsequent operations
 
     console.log('[Handle Users API] Processing user:', { userId, email, authMethod, name });
 
