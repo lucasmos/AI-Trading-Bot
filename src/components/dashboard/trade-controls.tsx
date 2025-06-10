@@ -39,6 +39,13 @@ interface TradeControlsProps {
   marketStatusMessage: string | null;
   stopLossPercentage: number;
   onStopLossPercentageChange: (value: number) => void;
+  stopLossValue: number | string;
+  onStopLossChange: (value: string) => void;
+  takeProfitValue: number | string;
+  onTakeProfitChange: (value: string) => void;
+  availableDurations: string[];
+  isLoadingDurations: boolean;
+  isTradeable: boolean;
 }
 
 export function TradeControls({
@@ -69,9 +76,16 @@ export function TradeControls({
   marketStatusMessage,
   stopLossPercentage,
   onStopLossPercentageChange,
+  stopLossValue,
+  onStopLossChange,
+  takeProfitValue,
+  onTakeProfitChange,
+  availableDurations,
+  isLoadingDurations,
+  isTradeable,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
-  const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m'];
+  // const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m']; // Removed hardcoded durations
 
   const handleStakeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(event.target.value);
@@ -96,7 +110,8 @@ export function TradeControls({
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;
-  const isManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected;
+  // Combine isTradeable with other conditions for disabling manual trade actions
+  const combinedManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected || !isTradeable;
 
   // Determine if the selected instrument is a Forex or Commodity that is subject to market hours
   const isForexOrCommoditySubjectToMarketHours = 
@@ -167,14 +182,27 @@ export function TradeControls({
               </div>
               <div>
                 <Label htmlFor="trade-duration" className="text-sm font-medium text-muted-foreground">Trade Duration</Label>
-                <Select value={tradeDuration} onValueChange={(value) => onTradeDurationChange(value as TradeDuration)} disabled={disableManualControls}>
+                <Select
+                  value={tradeDuration}
+                  onValueChange={(value) => onTradeDurationChange(value as TradeDuration)}
+                  disabled={disableManualControls || isLoadingDurations}
+                >
                   <SelectTrigger id="trade-duration" className="w-full mt-1">
                     <SelectValue placeholder="Select duration" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tradeDurations.map(duration => (
-                      <SelectItem key={duration} value={duration}>{duration}</SelectItem>
-                    ))}
+                    {isLoadingDurations ? (
+                      <SelectItem value="loading" disabled>Loading durations...</SelectItem>
+                    ) : (
+                      availableDurations.map(durationStr => (
+                        <SelectItem key={durationStr} value={durationStr}>
+                          {durationStr.toUpperCase()}
+                        </SelectItem>
+                      ))
+                    )}
+                    {!isLoadingDurations && availableDurations.length === 0 && (
+                        <SelectItem value="nodurations" disabled>No durations available</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -192,12 +220,44 @@ export function TradeControls({
                   placeholder="Enter amount"
                   className="w-full pl-8"
                   min="1"
-                  disabled={disableManualControls}
+                  disabled={disableManualControls || !isTradeable}
                 />
               </div>
               {stakeAmount > currentBalance && !disableManualControls && (
                 <p className="text-xs text-destructive mt-1">Stake exceeds available balance.</p>
               )}
+            </div>
+
+            <div>
+              <Label htmlFor="stop-loss-amount" className="text-sm font-medium text-muted-foreground">Stop Loss Amount ($)</Label>
+              <div className="relative mt-1">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="stop-loss-amount"
+                  type="number"
+                  value={stopLossValue}
+                  onChange={(e) => onStopLossChange(e.target.value)}
+                  placeholder="e.g., 5"
+                  className="w-full pl-8"
+                  disabled={disableManualControls || !isTradeable}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="take-profit-amount" className="text-sm font-medium text-muted-foreground">Take Profit Amount ($)</Label>
+              <div className="relative mt-1">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="take-profit-amount"
+                  type="number"
+                  value={takeProfitValue}
+                  onChange={(e) => onTakeProfitChange(e.target.value)}
+                  placeholder="e.g., 8"
+                  className="w-full pl-8"
+                  disabled={disableManualControls || !isTradeable}
+                />
+              </div>
             </div>
             
             {/* Added back AI Recommendation Button */}
@@ -222,8 +282,8 @@ export function TradeControls({
                 size="lg"
                 className="bg-green-500 hover:bg-green-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('CALL')}
-                disabled={isManualTradeDisabled}
-                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place CALL trade'}
+                disabled={combinedManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : (!isTradeable ? 'Trading for this instrument/duration type is currently unavailable with this UI.' : 'Place CALL trade')}
               >
                 <TrendingUp className="mr-2 h-6 w-6" />
                 CALL
@@ -232,8 +292,8 @@ export function TradeControls({
                 size="lg"
                 className="bg-red-500 hover:bg-red-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('PUT')}
-                disabled={isManualTradeDisabled}
-                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place PUT trade'}
+                disabled={combinedManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : (!isTradeable ? 'Trading for this instrument/duration type is currently unavailable with this UI.' : 'Place PUT trade')}
               >
                 <TrendingDown className="mr-2 h-6 w-6" />
                 PUT

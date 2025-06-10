@@ -65,8 +65,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setDerivLiveAccountId(null);
     
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('derivAiUser');
-      localStorage.removeItem('derivAiAuthMethod');
+      // localStorage.removeItem('derivAiUser'); // No longer relying on this for session
+      // localStorage.removeItem('derivAiAuthMethod'); // No longer relying on this for session
       localStorage.removeItem('derivAiSelectedDerivAccountType');
       localStorage.removeItem('derivAiDerivDemoBalance');
       localStorage.removeItem('derivAiDerivLiveBalance');
@@ -167,6 +167,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         derivRealAccountId?: string | null;
         derivDemoBalance?: number | null;
         derivRealBalance?: number | null;
+        derivApiToken?: { access_token: string }; // Added for Deriv API token
       };
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
@@ -182,6 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         derivRealAccountId: nextAuthUser.derivRealAccountId,
         derivDemoBalance: nextAuthUser.derivDemoBalance,
         derivRealBalance: nextAuthUser.derivRealBalance,
+        derivApiToken: nextAuthUser.derivApiToken, // Assign the token here
       };
 
       // Only call login if the NextAuth user ID has genuinely changed
@@ -215,41 +217,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Case 3: NextAuth is unauthenticated (and not loading)
-    console.log('[AuthContext] NextAuth is unauthenticated. Checking for Deriv localStorage session as fallback.');
-    let localUserString = null;
-    let localAuthMethod: AuthMethod = null;
-
-    if (typeof window !== 'undefined') {
-      localUserString = localStorage.getItem('derivAiUser');
-      localAuthMethod = localStorage.getItem('derivAiAuthMethod') as AuthMethod;
+    // No more localStorage fallback for Deriv session. If NextAuth is unauthenticated, the user is unauthenticated.
+    console.log('[AuthContext] NextAuth is unauthenticated.');
+    if (authStatus !== 'unauthenticated') {
+      console.log('[AuthContext] No active NextAuth session. Clearing auth data.');
+      clearAuthData(); // Clears context state and any remaining relevant localStorage (like balances, selected accounts)
     }
-
-    if (typeof window !== 'undefined' && ['deriv', 'deriv-credentials'].includes(localAuthMethod as string) && localUserString) {
-      try {
-        const user = JSON.parse(localUserString) as UserInfo;
-        // Only call login if this localStorage user is new or AuthContext state is different
-        if (lastProcessedNextAuthUserId.current !== user.id || authStatus !== 'authenticated' || currentAuthMethod !== localAuthMethod) {
-            console.log(`[AuthContext] Maintaining ${localAuthMethod} session from localStorage.`);
-            login(user, localAuthMethod, { redirect: false });
-            lastProcessedNextAuthUserId.current = user.id; // Update ref
-        } else {
-            console.log('[AuthContext] LocalStorage Deriv session is already active in AuthContext.');
-        }
-      } catch (e) {
-        console.error(`[AuthContext] Error parsing stored ${localAuthMethod} user. Clearing auth data.`, e);
-        if (authStatus !== 'unauthenticated') { // Only clear if necessary
-            clearAuthData();
-        }
-        lastProcessedNextAuthUserId.current = null; // Clear ref on error/clear
-      }
-    } else {
-      // If no local storage session and not already unauthenticated, clear data.
-      if (authStatus !== 'unauthenticated') {
-        console.log('[AuthContext] No active NextAuth session and no Deriv localStorage session. Clearing auth data.');
-        clearAuthData();
-      }
-      lastProcessedNextAuthUserId.current = null; // Clear ref
-    }
+    lastProcessedNextAuthUserId.current = null; // Clear ref for the last processed user
 
   // ESLint will complain about missing dependencies (userInfo, authStatus, currentAuthMethod).
   // We explicitly exclude them because their state is updated by `login` or `setAuthStatus/setUserInfo/setCurrentAuthMethod`

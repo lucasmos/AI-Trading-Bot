@@ -138,7 +138,13 @@ export const authOptions: NextAuthOptions = {
 
           if (user) {
             console.log(`[Deriv CredentialsProvider] Authorize successful for user: ${user.id}, email: ${user.email}`);
-            return { id: user.id, email: user.email, name: user.name, image: user.image };
+            return {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              image: user.image,
+              derivAccessToken: credentials.accessToken // Added Deriv access token
+            };
           } else {
             console.error('[Deriv CredentialsProvider] User could not be found or created.');
             return null;
@@ -287,9 +293,30 @@ export const authOptions: NextAuthOptions = {
         (token as any).derivDemoBalance = (user as any).derivDemoBalance;
         (token as any).derivRealAccountId = (user as any).derivRealAccountId;
         (token as any).derivRealBalance = (user as any).derivRealBalance;
+
+        // If user object has derivAccessToken (from deriv-credentials authorize), prioritize it
+        if ((user as any).derivAccessToken) {
+          token.derivAccessToken = (user as any).derivAccessToken;
+          console.log('[NextAuth Callbacks] JWT callback - Deriv access token stored from user object:', token.derivAccessToken ? '******' : 'NOT STORED');
+        }
       }
+
+      // This part handles general OAuth providers and might also catch the deriv-credentials
+      // if the 'user' object didn't have derivAccessToken for some reason (though it should).
+      // The previous specific check for 'deriv-credentials' using account.access_token here is removed
+      // as account.access_token was not reliably providing the Deriv token in that flow.
       if (account) {
-        token.accessToken = account.access_token; // Store access token from provider if needed
+        // Store generic access token if needed, could be from any provider (e.g. Google)
+        token.accessToken = account.access_token;
+
+        // If derivAccessToken is not already set from 'user' object and provider is 'deriv-credentials',
+        // this is a fallback, though less likely to be hit now.
+        // This specific block for deriv-credentials from account.access_token is removed as it was problematic.
+        // if (account.provider === 'deriv-credentials' && !token.derivAccessToken) {
+        //   token.derivAccessToken = account.access_token; // This was often undefined
+        //   console.log('[NextAuth Callbacks] JWT callback - Deriv access token (fallback from account):', token.derivAccessToken ? '******' : 'NOT STORED');
+        // }
+
         // The provider from account might be generic 'oauth', prefer our custom 'deriv' if available from user
         if (!token.provider) {
           token.provider = account.provider;
@@ -321,6 +348,13 @@ export const authOptions: NextAuthOptions = {
       }
       if ((token as any).derivRealBalance && session.user) {
         (session.user as any).derivRealBalance = (token as any).derivRealBalance as number;
+      }
+      // Add derivAccessToken to the session user object
+      if (token.derivAccessToken && session.user) {
+        (session.user as any).derivAccessToken = token.derivAccessToken as string;
+        // Structure it as derivApiToken for consistency with how handleExecuteTrade might expect it
+        (session.user as any).derivApiToken = { access_token: token.derivAccessToken as string };
+        console.log('[NextAuth Callbacks] Session callback - Deriv access token added to session user.');
       }
       console.log('[NextAuth Callbacks] Session callback - after:', session);
       return session;
