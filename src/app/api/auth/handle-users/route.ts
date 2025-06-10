@@ -21,20 +21,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid JSON format in request body', details: parseError.message }, { status: 400 });
     }
 
-    const { 
+    let {
       userId, 
       email, 
       name, 
       googleId, 
       picture,
-      authMethod, 
-    let {
-      userId,
-      email,
-      name,
-      googleId,
-      picture,
-      authMethod,
+      authMethod
     } = requestData;
 
     if (!userId) {
