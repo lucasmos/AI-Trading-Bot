@@ -759,5 +759,3 @@ export async function getOrderBookDepth(instrument: InstrumentType): Promise<Ord
     ],
   };
 }
-
-[end of src/services/deriv.ts]
