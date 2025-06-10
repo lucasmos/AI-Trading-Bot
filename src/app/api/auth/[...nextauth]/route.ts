@@ -289,7 +289,15 @@ export const authOptions: NextAuthOptions = {
         (token as any).derivRealBalance = (user as any).derivRealBalance;
       }
       if (account) {
-        token.accessToken = account.access_token; // Store access token from provider if needed
+        // Store generic access token if needed, could be from any provider
+        token.accessToken = account.access_token;
+
+        // Specifically store derivAccessToken if the provider is deriv-credentials
+        if (account.provider === 'deriv-credentials') {
+          token.derivAccessToken = account.access_token;
+          console.log('[NextAuth Callbacks] JWT callback - Deriv access token stored:', token.derivAccessToken ? '******' : 'NOT STORED');
+        }
+
         // The provider from account might be generic 'oauth', prefer our custom 'deriv' if available from user
         if (!token.provider) {
           token.provider = account.provider;
@@ -321,6 +329,13 @@ export const authOptions: NextAuthOptions = {
       }
       if ((token as any).derivRealBalance && session.user) {
         (session.user as any).derivRealBalance = (token as any).derivRealBalance as number;
+      }
+      // Add derivAccessToken to the session user object
+      if (token.derivAccessToken && session.user) {
+        (session.user as any).derivAccessToken = token.derivAccessToken as string;
+        // Structure it as derivApiToken for consistency with how handleExecuteTrade might expect it
+        (session.user as any).derivApiToken = { access_token: token.derivAccessToken as string };
+        console.log('[NextAuth Callbacks] Session callback - Deriv access token added to session user.');
       }
       console.log('[NextAuth Callbacks] Session callback - after:', session);
       return session;

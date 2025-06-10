@@ -167,6 +167,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         derivRealAccountId?: string | null;
         derivDemoBalance?: number | null;
         derivRealBalance?: number | null;
+        derivApiToken?: { access_token: string }; // Added for Deriv API token
       };
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
@@ -182,6 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         derivRealAccountId: nextAuthUser.derivRealAccountId,
         derivDemoBalance: nextAuthUser.derivDemoBalance,
         derivRealBalance: nextAuthUser.derivRealBalance,
+        derivApiToken: nextAuthUser.derivApiToken, // Assign the token here
       };
 
       // Only call login if the NextAuth user ID has genuinely changed

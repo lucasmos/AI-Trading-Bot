@@ -156,6 +156,10 @@ export interface UserInfo {
   derivActiveLoginId?: string | null;
   derivDemoAccountId?: string | null;
   derivRealAccountId?: string | null;
+  derivApiToken?: {
+    access_token: string;
+    // Potentially other token-related fields like expiry if available/needed later
+  };
 }
 
 export type AuthStatus = 'authenticated' | 'unauthenticated' | 'pending';
