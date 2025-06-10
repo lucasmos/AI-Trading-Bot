@@ -254,7 +254,14 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
     ws.onmessage = (event) => {
       try {
         const response = JSON.parse(event.data as string);
-        console.log('[DerivService/getTradingDurations] Received response:', JSON.stringify(response, null, 2));
+        // General log for any response
+        console.log('[DerivService/getTradingDurations] Received API response:', response.msg_type);
+
+        // Conditional detailed log for specific instruments
+        const symbolsToLog = ['frxEURUSD', 'frxGBPUSD', 'cryBTCUSD', 'cryETHUSD', 'frxXAUUSD', 'frxXPDUSD', 'frxXPTUSD', 'frxXAGUSD'];
+        if (instrumentSymbol.startsWith('frx') || symbolsToLog.includes(instrumentSymbol) || instrumentSymbol.toLowerCase().includes('gold') || instrumentSymbol.toLowerCase().includes('silver') || instrumentSymbol.toLowerCase().includes('palladium') || instrumentSymbol.toLowerCase().includes('platinum')) {
+          console.log(`[DerivService/getTradingDurations] RAW contracts_for response for ${instrumentSymbol}:`, JSON.stringify(response, null, 2));
+        }
 
         if (response.error) {
           console.error('[DerivService/getTradingDurations] API Error:', response.error);
