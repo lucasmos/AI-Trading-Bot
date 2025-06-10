@@ -1,9 +1,25 @@
+// IMPORTANT: Deriv API Service
+// This service requires the following environment variables to be set:
+// 1. NEXT_PUBLIC_DERIV_WS_URL: The base WebSocket URL for the Deriv API (e.g., wss://ws.derivws.com/websockets/v3).
+// 2. NEXT_PUBLIC_DERIV_APP_ID: Your specific Deriv application ID.
+// The application will fail to start if these are not correctly configured.
+
 // import WebSocket from 'ws'; // Removed: 'ws' is for Node.js, browser has native WebSocket
 // Types import - ensuring CandleData is recognized
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=74597'; // Ensure your App ID is correct
+const NEXT_PUBLIC_DERIV_WS_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL;
+const NEXT_PUBLIC_DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID;
+
+if (!NEXT_PUBLIC_DERIV_WS_URL) {
+  throw new Error("NEXT_PUBLIC_DERIV_WS_URL environment variable is not set.");
+}
+if (!NEXT_PUBLIC_DERIV_APP_ID) {
+  throw new Error("NEXT_PUBLIC_DERIV_APP_ID environment variable is not set.");
+}
+
+const DERIV_API_URL = `${NEXT_PUBLIC_DERIV_WS_URL}?app_id=${NEXT_PUBLIC_DERIV_APP_ID}`;
 const DERIV_API_TOKEN = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO; // Example: using a demo token
 
 // Define the instrument map
