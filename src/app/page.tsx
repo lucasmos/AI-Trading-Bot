@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { getCandles } from '@/services/deriv';
+import { getCandles, placeTrade, instrumentToDerivSymbol, type PlaceTradeResponse } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -101,6 +101,9 @@ export default function DashboardPage() {
 
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  const [stopLossValue, setStopLossValue] = useState<string>('');
+  const [takeProfitValue, setTakeProfitValue] = useState<string>('');
 
   const [isAiLoading, setIsAiLoading] = useState(false);
 
@@ -202,170 +205,64 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!userInfo?.id) {
-      console.error('[Dashboard] Cannot execute trade: No user ID available');
-      toast({ 
-        title: "Authentication Error", 
-        description: "Your user ID is not available. Please try logging in again.", 
-        variant: "destructive" 
+    if (!userInfo?.id || !userInfo.derivApiToken?.access_token) {
+      console.error('[Dashboard] User ID or Deriv API token not found.');
+      toast({
+        title: "Authentication Error",
+        description: "Deriv API token not found. Please connect to Deriv via the Profile page.",
+        variant: "destructive"
       });
       return;
     }
 
+    const retrievedToken = userInfo.derivApiToken.access_token;
+
+    // Parse tradeDuration
+    const durationMatch = tradeDuration.match(/^(\d+)([smhdt])$/);
+    if (!durationMatch) {
+      toast({ title: "Invalid Duration", description: "Trade duration format is invalid.", variant: "destructive" });
+      return;
+    }
+    const durationValue = parseInt(durationMatch[1], 10);
+    const durationUnit = durationMatch[2] as "s" | "m" | "h" | "d" | "t";
+
+    // Parse Stop Loss and Take Profit values
+    const slAmount = stopLossValue && !isNaN(parseFloat(stopLossValue)) ? parseFloat(stopLossValue) : undefined;
+    const tpAmount = takeProfitValue && !isNaN(parseFloat(takeProfitValue)) ? parseFloat(takeProfitValue) : undefined;
+
+    const derivSymbol = instrumentToDerivSymbol(currentInstrument);
+
+    const tradePayload = {
+      token: retrievedToken,
+      symbol: derivSymbol,
+      contract_type: action,
+      duration: durationValue,
+      duration_unit: durationUnit,
+      amount: stakeAmount,
+      currency: "USD", // Assuming USD for now
+      basis: "stake",  // Assuming "stake" basis
+      stop_loss: slAmount,
+      take_profit: tpAmount,
+    };
+
+    console.log('[Dashboard] Attempting to place Deriv trade with details:', tradePayload);
+
     try {
-      console.log('[Dashboard] Ensuring user exists in database:', userInfo.id);
-      
-      const handleUserResponse = await fetch('/api/auth/handle-users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: userInfo.id,
-          email: userInfo.email || `user-${userInfo.id}@example.com`,
-          name: userInfo.name || 'User'
-        }),
-      });
-
-      if (!handleUserResponse.ok) {
-        console.error('[Dashboard] Error ensuring user exists:', await handleUserResponse.text());
-        toast({ 
-          title: "User Error", 
-          description: "Could not validate your user account. The trade will still be saved locally.", 
-          variant: "destructive" 
-        });
-      } else {
-        const userData = await handleUserResponse.json();
-        console.log('[Dashboard] User validation successful:', userData.message);
-      }
-      
-      const ticks = await getCandles(currentInstrument, 60);
-      if (ticks.length === 0) {
-        toast({ 
-          title: "Price Error", 
-          description: `Could not fetch entry price for ${currentInstrument}. Trade not placed.`, 
-          variant: "destructive" 
-        });
-        return;
-      }
-
-      const entryPrice = ticks[ticks.length - 1].close;
-      const decimals = getInstrumentDecimalPlaces(currentInstrument);
-      const priceChange = entryPrice * 0.001; 
-      
-      console.log(`[Dashboard] Executing ${action} trade for ${currentInstrument} with duration ${tradeDuration} and stake ${stakeAmount} in ${tradingMode} mode. Account: ${paperTradingMode}. Entry: ${entryPrice}`);
-      
-      const response = await fetch('/api/trades', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: userInfo.id,
-          email: userInfo.email, 
-          name: userInfo.name,   
-          symbol: currentInstrument,
-          type: action === 'CALL' ? 'buy' : 'sell',
-          amount: stakeAmount,
-          price: entryPrice,
-          metadata: {
-            mode: tradingMode,
-            duration: tradeDuration,
-            accountType: paperTradingMode
-          }
-        }),
-      });
-
-      let dbTradeCreated = false;
-      let trade: any = null; 
-      
-      if (response.ok) {
-        trade = await response.json();
-        console.log('[Dashboard] Trade created successfully in database:', trade);
-        dbTradeCreated = true;
-      } else {
-        console.error('[Dashboard] Database error:', await response.text());
-      }
-      
-      const localTradeId = crypto.randomUUID();
-      const localStorageTrade = {
-        id: dbTradeCreated ? trade.id : localTradeId,
-        userId: userInfo.id,
-        symbol: currentInstrument,
-        type: action === 'CALL' ? 'buy' : 'sell',
-        amount: stakeAmount,
-        price: entryPrice,
-        status: 'open',
-        openTime: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        metadata: {
-          mode: tradingMode,
-          duration: tradeDuration,
-          accountType: paperTradingMode,
-          source: dbTradeCreated ? 'database-backup' : 'local-only'
-        }
-      };
-      
-      setTimeout(() => {
-        const potentialProfit = stakeAmount * 0.85; 
-        const outcome = Math.random() > 0.4 ? "won" : "lost"; 
-        const pnl = outcome === "won" ? potentialProfit : -stakeAmount;
-        
-        let exitPrice: number;
-        if (action === 'CALL') {
-          exitPrice = outcome === "won" ? entryPrice + priceChange : entryPrice - priceChange;
-        } else { 
-          exitPrice = outcome === "won" ? entryPrice - priceChange : entryPrice - priceChange;
-        }
-        exitPrice = parseFloat(exitPrice.toFixed(decimals));
-        
-        if (dbTradeCreated && trade?.id) {
-          console.log('[Dashboard] Closing trade in database:', trade.id);
-          fetch(`/api/trades/${trade.id}/close`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              exitPrice,
-              metadata: {
-                outcome,
-                pnl,
-                duration: tradeDuration
-              }
-            }),
-          })
-          .then(res => {
-            if (!res.ok) {
-              console.error(`[Dashboard] Error closing trade: ${res.status} ${res.statusText}`);
-              return;
-            }
-            return res.json();
-          })
-          .then((closedTrade: any) => {
-            if (closedTrade) {
-              console.log('[Dashboard] Trade closed successfully:', closedTrade);
-            }
-          })
-          .catch(err => {
-            console.error('[Dashboard] Error closing trade:', err);
-          });
-        } else {
-          console.warn("[Dashboard] Database trade not created or ID missing, cannot close in DB. Trade outcome simulated locally only.");
-        }
-        
-        setCurrentBalance(prev => parseFloat((prev + pnl).toFixed(2)));
-        toast({
-          title: `Trade ${outcome === "won" ? "Won" : "Lost"}`,
-          description: `P/L: $${pnl.toFixed(2)}`,
-          variant: outcome === "won" ? "default" : "destructive",
-        });
-      }, 2000);
-    } catch (error) {
-      console.error('[Dashboard] Trade execution error:', error);
+      const tradeResult: PlaceTradeResponse = await placeTrade(tradePayload);
+      console.log('[Dashboard] Deriv trade placed successfully:', tradeResult);
       toast({
-        title: "Trade Error",
+        title: "Trade Placed on Deriv",
+        description: `Contract ID: ${tradeResult.contract_id}. Entry: ${tradeResult.entry_spot}, Buy Price: ${tradeResult.buy_price.toFixed(2)}`
+      });
+
+      // TODO: (Future) Log this successful real trade to our local DB if needed.
+      // The old fetch('/api/trades', ...) for simulated trades is removed.
+      // Balance updates will need to be handled based on real contract outcomes from Deriv (e.g., via WebSocket stream or transaction history).
+
+    } catch (error) {
+      console.error('[Dashboard] Deriv trade placement error:', error);
+      toast({
+        title: "Deriv Trade Failed",
         description: error instanceof Error ? error.message : "Failed to execute trade. Please try again.",
         variant: "destructive"
       });
@@ -1097,6 +994,10 @@ export default function DashboardPage() {
             marketStatusMessage={marketStatusMessage}
             stopLossPercentage={selectedStopLossPercentage}
             onStopLossPercentageChange={setSelectedStopLossPercentage}
+            stopLossValue={stopLossValue}
+            onStopLossChange={setStopLossValue}
+            takeProfitValue={takeProfitValue}
+            onTakeProfitChange={setTakeProfitValue}
           />
           <AiRecommendationCard recommendation={aiRecommendation} isLoading={isFetchingManualRecommendation} />
         </div>

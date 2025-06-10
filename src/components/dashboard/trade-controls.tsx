@@ -39,6 +39,10 @@ interface TradeControlsProps {
   marketStatusMessage: string | null;
   stopLossPercentage: number;
   onStopLossPercentageChange: (value: number) => void;
+  stopLossValue: number | string;
+  onStopLossChange: (value: string) => void;
+  takeProfitValue: number | string;
+  onTakeProfitChange: (value: string) => void;
 }
 
 export function TradeControls({
@@ -69,6 +73,10 @@ export function TradeControls({
   marketStatusMessage,
   stopLossPercentage,
   onStopLossPercentageChange,
+  stopLossValue,
+  onStopLossChange,
+  takeProfitValue,
+  onTakeProfitChange,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
   const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m'];
@@ -198,6 +206,38 @@ export function TradeControls({
               {stakeAmount > currentBalance && !disableManualControls && (
                 <p className="text-xs text-destructive mt-1">Stake exceeds available balance.</p>
               )}
+            </div>
+
+            <div>
+              <Label htmlFor="stop-loss-amount" className="text-sm font-medium text-muted-foreground">Stop Loss Amount ($)</Label>
+              <div className="relative mt-1">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="stop-loss-amount"
+                  type="number"
+                  value={stopLossValue}
+                  onChange={(e) => onStopLossChange(e.target.value)}
+                  placeholder="e.g., 5"
+                  className="w-full pl-8"
+                  disabled={disableManualControls}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="take-profit-amount" className="text-sm font-medium text-muted-foreground">Take Profit Amount ($)</Label>
+              <div className="relative mt-1">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="take-profit-amount"
+                  type="number"
+                  value={takeProfitValue}
+                  onChange={(e) => onTakeProfitChange(e.target.value)}
+                  placeholder="e.g., 8"
+                  className="w-full pl-8"
+                  disabled={disableManualControls}
+                />
+              </div>
             </div>
             
             {/* Added back AI Recommendation Button */}
