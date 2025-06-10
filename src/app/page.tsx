@@ -149,7 +149,7 @@ export default function DashboardPage() {
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  const [isAutoTradingActive, setIsAutoTradingActive] = useState(false); // Moved from being with activeAutomatedTrades
+  const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
@@ -586,7 +586,6 @@ export default function DashboardPage() {
     });
   };
 
-  // Removed old useEffect for simulating activeAutomatedTrades
 
   useEffect(() => {
     if (!userInfo || !(userInfo as any).derivAccessToken || openTrades.length === 0) {
@@ -879,6 +878,8 @@ export default function DashboardPage() {
 if (typeof window !== 'undefined' && !(window as any).uuidv4) {
   (window as any).uuidv4 = uuidv4;
 }
+
+[end of src/app/page.tsx]
 
 [end of src/app/page.tsx]
 
