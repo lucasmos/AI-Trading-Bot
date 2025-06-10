@@ -45,6 +45,7 @@ interface TradeControlsProps {
   onTakeProfitChange: (value: string) => void;
   availableDurations: string[];
   isLoadingDurations: boolean;
+  isTradeable: boolean;
 }
 
 export function TradeControls({
@@ -81,6 +82,7 @@ export function TradeControls({
   onTakeProfitChange,
   availableDurations,
   isLoadingDurations,
+  isTradeable,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
   // const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m']; // Removed hardcoded durations
@@ -108,7 +110,8 @@ export function TradeControls({
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;
-  const isManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected;
+  // Combine isTradeable with other conditions for disabling manual trade actions
+  const combinedManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected || !isTradeable;
 
   // Determine if the selected instrument is a Forex or Commodity that is subject to market hours
   const isForexOrCommoditySubjectToMarketHours = 
@@ -217,7 +220,7 @@ export function TradeControls({
                   placeholder="Enter amount"
                   className="w-full pl-8"
                   min="1"
-                  disabled={disableManualControls}
+                  disabled={disableManualControls || !isTradeable}
                 />
               </div>
               {stakeAmount > currentBalance && !disableManualControls && (
@@ -236,7 +239,7 @@ export function TradeControls({
                   onChange={(e) => onStopLossChange(e.target.value)}
                   placeholder="e.g., 5"
                   className="w-full pl-8"
-                  disabled={disableManualControls}
+                  disabled={disableManualControls || !isTradeable}
                 />
               </div>
             </div>
@@ -252,7 +255,7 @@ export function TradeControls({
                   onChange={(e) => onTakeProfitChange(e.target.value)}
                   placeholder="e.g., 8"
                   className="w-full pl-8"
-                  disabled={disableManualControls}
+                  disabled={disableManualControls || !isTradeable}
                 />
               </div>
             </div>
@@ -279,8 +282,8 @@ export function TradeControls({
                 size="lg"
                 className="bg-green-500 hover:bg-green-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('CALL')}
-                disabled={isManualTradeDisabled}
-                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place CALL trade'}
+                disabled={combinedManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : (!isTradeable ? 'Trading for this instrument/duration type is currently unavailable with this UI.' : 'Place CALL trade')}
               >
                 <TrendingUp className="mr-2 h-6 w-6" />
                 CALL
@@ -289,8 +292,8 @@ export function TradeControls({
                 size="lg"
                 className="bg-red-500 hover:bg-red-600 text-white font-bold text-lg transition-transform hover:scale-105 active:scale-95 h-16"
                 onClick={() => onExecuteTrade('PUT')}
-                disabled={isManualTradeDisabled}
-                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : 'Place PUT trade'}
+                disabled={combinedManualTradeDisabled}
+                title={!isMarketOpenForSelected ? marketStatusMessage || 'Market is closed' : (!isTradeable ? 'Trading for this instrument/duration type is currently unavailable with this UI.' : 'Place PUT trade')}
               >
                 <TrendingDown className="mr-2 h-6 w-6" />
                 PUT

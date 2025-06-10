@@ -218,6 +218,80 @@ export async function getCandles(
   });
 }
 
+function parseDurationToMinutes(durationString: string): number {
+  if (!durationString || typeof durationString !== 'string') {
+    return 0;
+  }
+  const match = durationString.match(/^(\d+)([smhd])$/);
+  if (!match) {
+    console.warn(`[DerivService/parseDurationToMinutes] Invalid duration string format: ${durationString}`);
+    return 0;
+  }
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+
+  switch (unit) {
+    case 's':
+      return Math.ceil(value / 60); // Treat seconds by rounding up to the nearest minute for step generation
+    case 'm':
+      return value;
+    case 'h':
+      return value * 60;
+    case 'd':
+      return value * 24 * 60;
+    default:
+      return 0;
+  }
+}
+
+function formatMinutesToDurationString(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
+  } else if (minutes < 24 * 60) {
+    if (minutes % 60 === 0) {
+      return `${minutes / 60}h`;
+    }
+    return `${minutes}m`; // Or handle as hours and minutes e.g. "1h 30m" - simplified for now
+  } else {
+    if (minutes % (24 * 60) === 0) {
+      return `${minutes / (24 * 60)}d`;
+    }
+    return `${minutes}m`; // Or handle as days and hours/minutes - simplified for now
+  }
+}
+
+function generateDurationSteps(minMinutes: number, maxMinutes: number): string[] {
+  const stepsInMinutes = [
+    1, 2, 3, 5, 10, 15, 30, 45,
+    60, // 1h
+    120, // 2h
+    180, // 3h
+    240, // 4h
+    360, // 6h
+    480, // 8h
+    720, // 12h
+    1440, // 1d
+    2 * 1440, // 2d
+    // Add more steps if needed, e.g., for weekly options
+  ];
+
+  const durations = new Set<string>();
+
+  // Add the precise min and max durations if they are valid
+  if (minMinutes > 0) durations.add(formatMinutesToDurationString(minMinutes));
+  if (maxMinutes > 0 && maxMinutes !== minMinutes) durations.add(formatMinutesToDurationString(maxMinutes));
+
+  stepsInMinutes.forEach(step => {
+    if (step >= minMinutes && step <= maxMinutes) {
+      durations.add(formatMinutesToDurationString(step));
+    }
+  });
+
+  // Sort numerically then by unit (simple sort for now)
+  return Array.from(durations).sort((a, b) => parseDurationToMinutes(a) - parseDurationToMinutes(b));
+}
+
+
 /**
  * Fetches available trading durations for a given instrument symbol from Deriv API.
  * @param instrumentSymbol The Deriv API symbol for the instrument (e.g., "R_100", "frxEURUSD").
@@ -240,12 +314,11 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
       if (token) {
         console.log('[DerivService/getTradingDurations] Authorizing...');
         ws.send(JSON.stringify({ authorize: token }));
-        // The actual contracts_for request will be sent after authorization response
       } else {
         console.log('[DerivService/getTradingDurations] Sending contracts_for request without prior authorization.');
         ws.send(JSON.stringify({
           contracts_for: instrumentSymbol,
-          currency: "USD", // Assuming USD, make configurable if needed
+          currency: "USD",
           product_type: "basic"
         }));
       }
@@ -254,10 +327,8 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
     ws.onmessage = (event) => {
       try {
         const response = JSON.parse(event.data as string);
-        // General log for any response
         console.log('[DerivService/getTradingDurations] Received API response:', response.msg_type);
 
-        // Conditional detailed log for specific instruments
         const symbolsToLog = ['frxEURUSD', 'frxGBPUSD', 'cryBTCUSD', 'cryETHUSD', 'frxXAUUSD', 'frxXPDUSD', 'frxXPTUSD', 'frxXAGUSD'];
         if (instrumentSymbol.startsWith('frx') || symbolsToLog.includes(instrumentSymbol) || instrumentSymbol.toLowerCase().includes('gold') || instrumentSymbol.toLowerCase().includes('silver') || instrumentSymbol.toLowerCase().includes('palladium') || instrumentSymbol.toLowerCase().includes('platinum')) {
           console.log(`[DerivService/getTradingDurations] RAW contracts_for response for ${instrumentSymbol}:`, JSON.stringify(response, null, 2));
@@ -287,83 +358,40 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
           }
         } else if (response.msg_type === 'contracts_for') {
           clearTimeout(operationTimeout);
-          const availableDurations = new Set<string>();
+          const foundDurations = new Set<string>();
 
-          if (response.contracts_for && response.contracts_for.available) {
-            // The actual path to durations might be nested and vary.
-            // This is a common structure, but needs verification with API docs for 'contracts_for'.
-            // Assuming response.contracts_for.available is an array of contract types.
-            response.contracts_for.available.forEach((contractCategory: any) => {
-              // Filter for categories that typically include CALL/PUT, e.g., 'callput'
-              if (contractCategory.contract_category?.toLowerCase() === 'callput' ||
-                  contractCategory.contract_display?.toLowerCase().includes('up/down') || // common for rise/fall
-                  (contractCategory.market === 'forex' || contractCategory.market === 'indices' || contractCategory.market === 'commodities' || contractCategory.market === 'synthetic_index') // Broad categories
-                 ) {
-                // The exact field for durations list can vary. Common names include:
-                // available_durations, allowed_durations, or min_contract_duration + max_contract_duration
-                // For simplicity, let's assume a field like 'available_durations' exists for now if it's a direct list.
-                // Or we might need to parse min_contract_duration and max_contract_duration.
+          if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
+            response.contracts_for.available.forEach((contract: any) => {
+              if (
+                contract.contract_category === 'callput' &&
+                contract.start_type === 'spot' &&
+                contract.expiry_type === 'intraday' && // Focus on intraday Rise/Fall
+                contract.min_contract_duration &&
+                contract.max_contract_duration
+              ) {
+                const minMinutes = parseDurationToMinutes(contract.min_contract_duration);
+                const maxMinutes = parseDurationToMinutes(contract.max_contract_duration);
 
-                // Example: If durations are directly listed per contract type
-                if (contractCategory.available_durations && Array.isArray(contractCategory.available_durations)) {
-                    contractCategory.available_durations.forEach((d: string) => availableDurations.add(d));
-                } else if (contractCategory.min_contract_duration && contractCategory.max_contract_duration) {
-                    // This logic is simplified. Real API might need more complex interpretation
-                    // of min/max and units (e.g. "1t", "30s", "1m", "2h", "1d")
-                    // For now, just adding them if they are simple strings.
-                    // A more robust solution would parse units and generate a list.
-                    availableDurations.add(contractCategory.min_contract_duration);
-                    // Potentially add some common intermediate durations if min/max are far apart
-                    // e.g., if min is 1m and max is 1h, add "5m", "15m", "30m"
+                if (minMinutes > 0 && maxMinutes > 0 && maxMinutes >= minMinutes) {
+                  const steps = generateDurationSteps(minMinutes, maxMinutes);
+                  steps.forEach(step => foundDurations.add(step));
+                  // For simplicity, we'll take the first valid contract type's range.
+                  // If multiple callput/spot/intraday contracts exist, their ranges might differ.
+                  // This could be expanded to merge or select the most appropriate range.
+                  // For now, if we found one, we can break or just let the Set handle uniqueness.
                 }
               }
             });
           }
 
-          // Fallback or more direct parsing if the structure is simpler, e.g. a top-level feed_license
-          // The path `response.contracts_for.feed_license` seems specific to `trading_times` not `contracts_for` durations.
-          // The primary source should be `available_contracts` or similar within `contracts_for` response.
-          // For now, the above loop is a guess. If the API returns durations in a specific known structure, use that.
-
-          // A common pattern for Deriv is that min/max duration is per underlying or category.
-          // If the above loop doesn't yield results, we might need to inspect the `response.contracts_for` object more broadly.
-          // For example, `response.contracts_for.min_contract_duration` if it exists at that level.
-
-          // Example: Extracting from a hypothetical structure like "trading_period"
-          // if (response.contracts_for && response.contracts_for.trading_period && response.contracts_for.trading_period.duration) {
-          //    response.contracts_for.trading_period.duration.forEach((d: any) => {
-          //        availableDurations.add(`${d.value}${d.unit}`); // e.g., 5m, 1h
-          //    });
-          // }
-
-
-          // As per Deriv API docs for `contracts_for`, `available_contracts` is an array of objects.
-          // Each object can have `min_contract_duration` and `max_contract_duration`.
-          // We need to aggregate these and potentially generate a list.
-          // Let's try a more specific parsing based on typical `contracts_for` structure for options:
-          if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
-            response.contracts_for.available.forEach((contractDetails: any) => {
-              if (contractDetails.min_contract_duration) {
-                availableDurations.add(contractDetails.min_contract_duration);
-              }
-              // Deriv might not list all discrete durations. Often it's min/max and specific expiry types.
-              // For "CALL"/"PUT" (rise/fall), it's usually a range.
-              // This is a simplified extraction. A real UI might need more granular control or specific duration sets.
-            });
+          if (foundDurations.size === 0) {
+             console.warn(`[DerivService/getTradingDurations] No 'callput/spot/intraday' durations found for ${instrumentSymbol}. Returning empty array.`);
+             resolve([]);
+          } else {
+            console.log(`[DerivService/getTradingDurations] Extracted durations for ${instrumentSymbol}:`, Array.from(foundDurations));
+            resolve(Array.from(foundDurations));
           }
-
-
-          if (availableDurations.size === 0) {
-             console.warn('[DerivService/getTradingDurations] No specific durations found in contracts_for response. Using default list or checking alternative paths.');
-             // Fallback to a default list if no specific durations found, or if the structure is different.
-             // This default list should match what's typically available for basic CALL/PUT options.
-             const defaultDurations = ["30s", "1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h"];
-             defaultDurations.forEach(d => availableDurations.add(d));
-          }
-
-          console.log('[DerivService/getTradingDurations] Extracted durations:', Array.from(availableDurations));
           ws.close();
-          resolve(Array.from(availableDurations));
         }
       } catch (e) {
         console.error('[DerivService/getTradingDurations] Error processing message:', e);
@@ -731,3 +759,5 @@ export async function getOrderBookDepth(instrument: InstrumentType): Promise<Ord
     ],
   };
 }
+
+[end of src/services/deriv.ts]

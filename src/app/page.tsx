@@ -78,6 +78,7 @@ export default function DashboardPage() {
   const [tradeDuration, setTradeDuration] = useState<TradeDuration>('5m');
   const [availableDurations, setAvailableDurations] = useState<string[]>(['5m', '10m', '15m', '30m', '1h']); // Initial sensible defaults
   const [isLoadingDurations, setIsLoadingDurations] = useState<boolean>(false);
+  const [isTradeable, setIsTradeable] = useState<boolean>(true); // Default to true, will be updated
   const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); 
   const [stakeAmount, setStakeAmount] = useState<number>(10);
 
@@ -176,32 +177,29 @@ export default function DashboardPage() {
         if (durations && durations.length > 0) {
           console.log(`[DashboardPage] Received durations for ${currentInstrument}:`, durations);
           setAvailableDurations(durations);
-          if (!durations.includes(tradeDuration)) {
-            setTradeDuration(durations[0] as TradeDuration); // Reset to the first available duration
+          setIsTradeable(true);
+          if (!durations.includes(tradeDuration) || tradeDuration === '') { // Also check if tradeDuration was cleared
+            setTradeDuration(durations[0] as TradeDuration);
           }
         } else {
-          console.warn(`[DashboardPage] No durations returned for ${currentInstrument}, using defaults.`);
-          const defaultDurations = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h'];
-          setAvailableDurations(defaultDurations);
-          if (!defaultDurations.includes(tradeDuration)) {
-            setTradeDuration(defaultDurations[0] as TradeDuration);
-          }
+          console.warn(`[DashboardPage] No durations returned for ${currentInstrument}. Instrument may not be tradeable with current contract parameters.`);
+          setAvailableDurations([]);
+          setTradeDuration(''); // Clear selected duration
+          setIsTradeable(false);
         }
       } catch (error) {
         console.error(`[DashboardPage] Error fetching trading durations for ${currentInstrument}:`, error);
-        const defaultDurations = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h'];
-        setAvailableDurations(defaultDurations);
-        if (!defaultDurations.includes(tradeDuration)) {
-          setTradeDuration(defaultDurations[0] as TradeDuration);
-        }
-        toast({ title: "Duration Load Error", description: "Could not load custom durations, using defaults.", variant: "destructive" });
+        setAvailableDurations([]); // Clear available durations
+        setTradeDuration('');    // Clear selected duration
+        setIsTradeable(false);
+        toast({ title: "Duration Load Error", description: "Could not load durations, instrument may not be tradeable.", variant: "destructive" });
       } finally {
         setIsLoadingDurations(false);
       }
     };
 
     fetchDurations();
-  }, [currentInstrument, userInfo?.derivApiToken?.access_token, toast]); // Consider if authStatus is a better dependency if token is sometimes not needed
+  }, [currentInstrument, userInfo?.derivApiToken?.access_token, toast, tradeDuration]); // Added tradeDuration to dep array due to its conditional set
 
   const handleExecuteTrade = async (action: 'CALL' | 'PUT') => {
     if (authStatus === 'unauthenticated') {
@@ -1043,6 +1041,7 @@ export default function DashboardPage() {
             // Pass new duration props
             availableDurations={availableDurations}
             isLoadingDurations={isLoadingDurations}
+            isTradeable={isTradeable}
           />
           <AiRecommendationCard recommendation={aiRecommendation} isLoading={isFetchingManualRecommendation} />
         </div>
