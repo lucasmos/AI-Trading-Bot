@@ -415,12 +415,13 @@ export async function placeTrade(tradeDetails: TradeDetails): Promise<PlaceTrade
               symbol: tradeDetails.symbol,
             };
 
-            if (tradeDetails.stop_loss !== undefined) {
-              proposalRequest.stop_loss = tradeDetails.stop_loss;
-            }
-            if (tradeDetails.take_profit !== undefined) {
-              proposalRequest.take_profit = tradeDetails.take_profit;
-            }
+            // Removed conditional stop_loss and take_profit addition
+            // if (tradeDetails.stop_loss !== undefined) {
+            //   proposalRequest.stop_loss = tradeDetails.stop_loss;
+            // }
+            // if (tradeDetails.take_profit !== undefined) {
+            //   proposalRequest.take_profit = tradeDetails.take_profit;
+            // }
 
             console.log('[DerivService/placeTrade] Sending proposal request:', proposalRequest);
             ws.send(JSON.stringify(proposalRequest));
