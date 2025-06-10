@@ -71,7 +71,7 @@ export interface Tick {
 /**
  * Maps user-friendly instrument names to Deriv API symbols.
  */
-const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
+export const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
   switch (instrument) {
     case 'EUR/USD':
       return 'frxEURUSD';
