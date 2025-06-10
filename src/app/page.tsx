@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { getCandles, placeTrade, instrumentToDerivSymbol, type PlaceTradeResponse } from '@/services/deriv';
+import { getCandles, placeTrade, instrumentToDerivSymbol, getTradingDurations, type PlaceTradeResponse } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -76,6 +76,8 @@ export default function DashboardPage() {
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
   const [tradeDuration, setTradeDuration] = useState<TradeDuration>('5m');
+  const [availableDurations, setAvailableDurations] = useState<string[]>(['5m', '10m', '15m', '30m', '1h']); // Initial sensible defaults
+  const [isLoadingDurations, setIsLoadingDurations] = useState<boolean>(false);
   const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); 
   const [stakeAmount, setStakeAmount] = useState<number>(10);
 
@@ -160,6 +162,46 @@ export default function DashboardPage() {
     setMarketStatusMessage(statusMessage);
     setAiRecommendation(null); 
   };
+
+  useEffect(() => {
+    const fetchDurations = async () => {
+      if (!currentInstrument) return;
+      setIsLoadingDurations(true);
+      console.log(`[DashboardPage] Fetching durations for ${currentInstrument}`);
+      const derivSymbol = instrumentToDerivSymbol(currentInstrument);
+      const token = userInfo?.derivApiToken?.access_token; // Token might be optional for getTradingDurations
+
+      try {
+        const durations = await getTradingDurations(derivSymbol, token);
+        if (durations && durations.length > 0) {
+          console.log(`[DashboardPage] Received durations for ${currentInstrument}:`, durations);
+          setAvailableDurations(durations);
+          if (!durations.includes(tradeDuration)) {
+            setTradeDuration(durations[0] as TradeDuration); // Reset to the first available duration
+          }
+        } else {
+          console.warn(`[DashboardPage] No durations returned for ${currentInstrument}, using defaults.`);
+          const defaultDurations = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h'];
+          setAvailableDurations(defaultDurations);
+          if (!defaultDurations.includes(tradeDuration)) {
+            setTradeDuration(defaultDurations[0] as TradeDuration);
+          }
+        }
+      } catch (error) {
+        console.error(`[DashboardPage] Error fetching trading durations for ${currentInstrument}:`, error);
+        const defaultDurations = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h'];
+        setAvailableDurations(defaultDurations);
+        if (!defaultDurations.includes(tradeDuration)) {
+          setTradeDuration(defaultDurations[0] as TradeDuration);
+        }
+        toast({ title: "Duration Load Error", description: "Could not load custom durations, using defaults.", variant: "destructive" });
+      } finally {
+        setIsLoadingDurations(false);
+      }
+    };
+
+    fetchDurations();
+  }, [currentInstrument, userInfo?.derivApiToken?.access_token, toast]); // Consider if authStatus is a better dependency if token is sometimes not needed
 
   const handleExecuteTrade = async (action: 'CALL' | 'PUT') => {
     if (authStatus === 'unauthenticated') {
@@ -998,6 +1040,9 @@ export default function DashboardPage() {
             onStopLossChange={setStopLossValue}
             takeProfitValue={takeProfitValue}
             onTakeProfitChange={setTakeProfitValue}
+            // Pass new duration props
+            availableDurations={availableDurations}
+            isLoadingDurations={isLoadingDurations}
           />
           <AiRecommendationCard recommendation={aiRecommendation} isLoading={isFetchingManualRecommendation} />
         </div>

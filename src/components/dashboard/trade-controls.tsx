@@ -43,6 +43,8 @@ interface TradeControlsProps {
   onStopLossChange: (value: string) => void;
   takeProfitValue: number | string;
   onTakeProfitChange: (value: string) => void;
+  availableDurations: string[];
+  isLoadingDurations: boolean;
 }
 
 export function TradeControls({
@@ -77,9 +79,11 @@ export function TradeControls({
   onStopLossChange,
   takeProfitValue,
   onTakeProfitChange,
+  availableDurations,
+  isLoadingDurations,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
-  const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m'];
+  // const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m']; // Removed hardcoded durations
 
   const handleStakeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(event.target.value);
@@ -175,14 +179,27 @@ export function TradeControls({
               </div>
               <div>
                 <Label htmlFor="trade-duration" className="text-sm font-medium text-muted-foreground">Trade Duration</Label>
-                <Select value={tradeDuration} onValueChange={(value) => onTradeDurationChange(value as TradeDuration)} disabled={disableManualControls}>
+                <Select
+                  value={tradeDuration}
+                  onValueChange={(value) => onTradeDurationChange(value as TradeDuration)}
+                  disabled={disableManualControls || isLoadingDurations}
+                >
                   <SelectTrigger id="trade-duration" className="w-full mt-1">
                     <SelectValue placeholder="Select duration" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tradeDurations.map(duration => (
-                      <SelectItem key={duration} value={duration}>{duration}</SelectItem>
-                    ))}
+                    {isLoadingDurations ? (
+                      <SelectItem value="loading" disabled>Loading durations...</SelectItem>
+                    ) : (
+                      availableDurations.map(durationStr => (
+                        <SelectItem key={durationStr} value={durationStr}>
+                          {durationStr.toUpperCase()}
+                        </SelectItem>
+                      ))
+                    )}
+                    {!isLoadingDurations && availableDurations.length === 0 && (
+                        <SelectItem value="nodurations" disabled>No durations available</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

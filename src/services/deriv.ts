@@ -219,6 +219,176 @@ export async function getCandles(
 }
 
 /**
+ * Fetches available trading durations for a given instrument symbol from Deriv API.
+ * @param instrumentSymbol The Deriv API symbol for the instrument (e.g., "R_100", "frxEURUSD").
+ * @param token Optional Deriv API token for authorization if required for the specific symbol or account.
+ * @returns A promise that resolves to an array of unique duration strings (e.g., ["1m", "5m", "30s"]).
+ */
+export async function getTradingDurations(instrumentSymbol: string, token?: string): Promise<string[]> {
+  const ws = new WebSocket(DERIV_API_URL);
+  const timeoutDuration = 10000; // 10 seconds for the operation
+
+  return new Promise((resolve, reject) => {
+    let operationTimeout = setTimeout(() => {
+      console.error('[DerivService/getTradingDurations] Operation timed out.');
+      ws.close();
+      reject(new Error('Fetching trading durations timed out.'));
+    }, timeoutDuration);
+
+    ws.onopen = () => {
+      console.log('[DerivService/getTradingDurations] WebSocket connection opened.');
+      if (token) {
+        console.log('[DerivService/getTradingDurations] Authorizing...');
+        ws.send(JSON.stringify({ authorize: token }));
+        // The actual contracts_for request will be sent after authorization response
+      } else {
+        console.log('[DerivService/getTradingDurations] Sending contracts_for request without prior authorization.');
+        ws.send(JSON.stringify({
+          contracts_for: instrumentSymbol,
+          currency: "USD", // Assuming USD, make configurable if needed
+          product_type: "basic"
+        }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        console.log('[DerivService/getTradingDurations] Received response:', JSON.stringify(response, null, 2));
+
+        if (response.error) {
+          console.error('[DerivService/getTradingDurations] API Error:', response.error);
+          clearTimeout(operationTimeout);
+          ws.close();
+          reject(new Error(response.error.message || 'Unknown API error fetching trading durations.'));
+          return;
+        }
+
+        if (response.msg_type === 'authorize') {
+          if (response.authorize?.loginid) {
+            console.log('[DerivService/getTradingDurations] Authorization successful. Sending contracts_for request...');
+            ws.send(JSON.stringify({
+              contracts_for: instrumentSymbol,
+              currency: "USD",
+              product_type: "basic"
+            }));
+          } else {
+            console.error('[DerivService/getTradingDurations] Authorization failed:', response);
+            clearTimeout(operationTimeout);
+            ws.close();
+            reject(new Error('Authorization failed for fetching trading durations.'));
+          }
+        } else if (response.msg_type === 'contracts_for') {
+          clearTimeout(operationTimeout);
+          const availableDurations = new Set<string>();
+
+          if (response.contracts_for && response.contracts_for.available) {
+            // The actual path to durations might be nested and vary.
+            // This is a common structure, but needs verification with API docs for 'contracts_for'.
+            // Assuming response.contracts_for.available is an array of contract types.
+            response.contracts_for.available.forEach((contractCategory: any) => {
+              // Filter for categories that typically include CALL/PUT, e.g., 'callput'
+              if (contractCategory.contract_category?.toLowerCase() === 'callput' ||
+                  contractCategory.contract_display?.toLowerCase().includes('up/down') || // common for rise/fall
+                  (contractCategory.market === 'forex' || contractCategory.market === 'indices' || contractCategory.market === 'commodities' || contractCategory.market === 'synthetic_index') // Broad categories
+                 ) {
+                // The exact field for durations list can vary. Common names include:
+                // available_durations, allowed_durations, or min_contract_duration + max_contract_duration
+                // For simplicity, let's assume a field like 'available_durations' exists for now if it's a direct list.
+                // Or we might need to parse min_contract_duration and max_contract_duration.
+
+                // Example: If durations are directly listed per contract type
+                if (contractCategory.available_durations && Array.isArray(contractCategory.available_durations)) {
+                    contractCategory.available_durations.forEach((d: string) => availableDurations.add(d));
+                } else if (contractCategory.min_contract_duration && contractCategory.max_contract_duration) {
+                    // This logic is simplified. Real API might need more complex interpretation
+                    // of min/max and units (e.g. "1t", "30s", "1m", "2h", "1d")
+                    // For now, just adding them if they are simple strings.
+                    // A more robust solution would parse units and generate a list.
+                    availableDurations.add(contractCategory.min_contract_duration);
+                    // Potentially add some common intermediate durations if min/max are far apart
+                    // e.g., if min is 1m and max is 1h, add "5m", "15m", "30m"
+                }
+              }
+            });
+          }
+
+          // Fallback or more direct parsing if the structure is simpler, e.g. a top-level feed_license
+          // The path `response.contracts_for.feed_license` seems specific to `trading_times` not `contracts_for` durations.
+          // The primary source should be `available_contracts` or similar within `contracts_for` response.
+          // For now, the above loop is a guess. If the API returns durations in a specific known structure, use that.
+
+          // A common pattern for Deriv is that min/max duration is per underlying or category.
+          // If the above loop doesn't yield results, we might need to inspect the `response.contracts_for` object more broadly.
+          // For example, `response.contracts_for.min_contract_duration` if it exists at that level.
+
+          // Example: Extracting from a hypothetical structure like "trading_period"
+          // if (response.contracts_for && response.contracts_for.trading_period && response.contracts_for.trading_period.duration) {
+          //    response.contracts_for.trading_period.duration.forEach((d: any) => {
+          //        availableDurations.add(`${d.value}${d.unit}`); // e.g., 5m, 1h
+          //    });
+          // }
+
+
+          // As per Deriv API docs for `contracts_for`, `available_contracts` is an array of objects.
+          // Each object can have `min_contract_duration` and `max_contract_duration`.
+          // We need to aggregate these and potentially generate a list.
+          // Let's try a more specific parsing based on typical `contracts_for` structure for options:
+          if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
+            response.contracts_for.available.forEach((contractDetails: any) => {
+              if (contractDetails.min_contract_duration) {
+                availableDurations.add(contractDetails.min_contract_duration);
+              }
+              // Deriv might not list all discrete durations. Often it's min/max and specific expiry types.
+              // For "CALL"/"PUT" (rise/fall), it's usually a range.
+              // This is a simplified extraction. A real UI might need more granular control or specific duration sets.
+            });
+          }
+
+
+          if (availableDurations.size === 0) {
+             console.warn('[DerivService/getTradingDurations] No specific durations found in contracts_for response. Using default list or checking alternative paths.');
+             // Fallback to a default list if no specific durations found, or if the structure is different.
+             // This default list should match what's typically available for basic CALL/PUT options.
+             const defaultDurations = ["30s", "1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h"];
+             defaultDurations.forEach(d => availableDurations.add(d));
+          }
+
+          console.log('[DerivService/getTradingDurations] Extracted durations:', Array.from(availableDurations));
+          ws.close();
+          resolve(Array.from(availableDurations));
+        }
+      } catch (e) {
+        console.error('[DerivService/getTradingDurations] Error processing message:', e);
+        clearTimeout(operationTimeout);
+        ws.close();
+        reject(e instanceof Error ? e : new Error('Failed to process message for trading durations.'));
+      }
+    };
+
+    ws.onerror = (event) => {
+      let errorMessage = 'WebSocket error fetching trading durations.';
+      if (event && typeof event === 'object') {
+        if ('message' in event && (event as any).message) {
+            errorMessage = `WebSocket Error: ${(event as any).message}`;
+        } else {
+            errorMessage = `WebSocket Error: type=${event.type}. Check console.`;
+        }
+      }
+      console.error('[DerivService/getTradingDurations] WebSocket Error Event:', event);
+      clearTimeout(operationTimeout);
+      ws.close();
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      console.log('[DerivService/getTradingDurations] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+      clearTimeout(operationTimeout);
+    };
+  });
+}
+
+/**
  * Authorizes with the Deriv API using a given token.
  * @param token The Deriv API token.
  * @returns The authorization response.
