@@ -487,40 +487,144 @@ export async function authorizeDeriv(token: string): Promise<any> {
  * @returns The account_list response.
  */
 export async function getDerivAccountList(token: string): Promise<any> {
-  const ws = new WebSocket(DERIV_API_URL);
-  return new Promise((resolve, reject) => {
-    ws.onopen = () => {
-      console.log('[DerivService/getDerivAccountList] Sending account_list request.');
-      ws.send(JSON.stringify({ authorize: token })); // Authorize first
-      setTimeout(() => {
-        ws.send(JSON.stringify({ account_list: 1 }));
-      }, 500); // Small delay after authorization
-    };
+  const functionStartTime = Date.now();
+  console.log(`[DerivService/getDerivAccountList] Starting at ${new Date(functionStartTime).toISOString()}. Token: ${token ? token.substring(0, 5) + '...' : 'N/A'}`);
 
-    ws.onmessage = (event) => {
-      try {
-        const response = JSON.parse(event.data as string);
-        console.log('[DerivService/getDerivAccountList] Received response:', response);
-        if (response.error) {
-          console.error('[DerivService/getDerivAccountList] API Error:', response.error);
-          reject(new Error(response.error.message || 'Failed to get account list'));
-        } else if (response.msg_type === 'account_list') {
-          resolve(response);
-        }
-      } catch (e) {
-        console.error('[DerivService/getDerivAccountList] Error processing message:', e);
-        reject(e);
-      } finally {
+  const operationTimeout = 10000; // 10 seconds
+  let timeoutId: NodeJS.Timeout;
+  let ws: WebSocket | null = null; // Declare ws here to make it accessible in timeout and cleanup
+  let connectedTime: number | null = null;
+  let requestSentTime: number | null = null;
+
+  const cleanup = (message: string, isError: boolean = false) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (ws) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        console.log(`[DerivService/getDerivAccountList] cleanup: Closing WebSocket (readyState: ${ws.readyState}). ${message}`);
         ws.close();
+      } else {
+        console.log(`[DerivService/getDerivAccountList] cleanup: WebSocket already closed or closing (readyState: ${ws.readyState}). ${message}`);
       }
-    };
+    }
+    const duration = Date.now() - functionStartTime;
+    console.log(`[DerivService/getDerivAccountList] Finished. Duration: ${duration}ms. ${message}`);
+    if (isError) {
+        // console.error is already called by the specific error handlers typically
+    }
+  };
 
-    ws.onerror = (event) => {
-      console.error('[DerivService/getDerivAccountList] WebSocket Error:', event);
-      reject(new Error('WebSocket error during account list fetch'));
-      ws.close();
-    };
-  });
+  return Promise.race([
+    new Promise((resolve, reject) => {
+      ws = new WebSocket(DERIV_API_URL);
+      console.log(`[DerivService/getDerivAccountList] WebSocket instance created. URL: ${DERIV_API_URL}`);
+
+      ws.onopen = () => {
+        connectedTime = Date.now();
+        const timeToConnect = connectedTime - functionStartTime;
+        console.log(`[DerivService/getDerivAccountList] WebSocket connection opened at ${new Date(connectedTime).toISOString()}. Time to connect: ${timeToConnect}ms.`);
+
+        console.log('[DerivService/getDerivAccountList] Authorizing...');
+        ws!.send(JSON.stringify({ authorize: token }));
+        // No explicit timeout here for auth, rely on overall operationTimeout.
+        // Account list request will be sent on 'authorize' success or if no auth error for public data.
+      };
+
+      ws.onmessage = (event) => {
+        const messageReceivedTime = Date.now();
+        console.log(`[DerivService/getDerivAccountList] Message received at ${new Date(messageReceivedTime).toISOString()}.`);
+        try {
+          const response = JSON.parse(event.data as string);
+          console.log('[DerivService/getDerivAccountList] Parsed response:', JSON.stringify(response, null, 2));
+
+          if (response.error) {
+            console.error(`[DerivService/getDerivAccountList] API Error: ${response.error.message}`, response.error);
+            cleanup(`API Error: ${response.error.message}`, true);
+            reject(new Error(response.error.message || 'Failed to process request due to API error'));
+            return;
+          }
+
+          if (response.msg_type === 'authorize') {
+            if (response.authorize) {
+              console.log('[DerivService/getDerivAccountList] Authorization successful.');
+              requestSentTime = Date.now();
+              console.log(`[DerivService/getDerivAccountList] Sending account_list request at ${new Date(requestSentTime).toISOString()}.`);
+              ws!.send(JSON.stringify({ account_list: 1 }));
+            } else {
+              // This case might not happen if error object is always present for auth failures
+              console.error('[DerivService/getDerivAccountList] Authorization failed, response did not contain expected authorize object:', response);
+              cleanup('Authorization failed.', true);
+              reject(new Error('Authorization failed.'));
+            }
+          } else if (response.msg_type === 'account_list') {
+            const timeToAccountList = requestSentTime ? messageReceivedTime - requestSentTime : messageReceivedTime - (connectedTime || functionStartTime);
+            console.log(`[DerivService/getDerivAccountList] Account list received. Time from request/connect: ${timeToAccountList}ms.`);
+            cleanup('Account list received successfully.');
+            resolve(response);
+          } else {
+            console.log(`[DerivService/getDerivAccountList] Received other message type: ${response.msg_type}`);
+            // Potentially handle other message types or ignore
+          }
+        } catch (e) {
+          const errorTime = Date.now();
+          console.error(`[DerivService/getDerivAccountList] Error processing message at ${new Date(errorTime).toISOString()}:`, e);
+          cleanup('Error processing message.', true);
+          reject(e instanceof Error ? e : new Error('Failed to process message for account list.'));
+        }
+      };
+
+      ws.onerror = (event) => {
+        const errorTime = Date.now();
+        // Try to get more details from the event
+        let errorMessage = 'WebSocket error during account list fetch.';
+        if (event && typeof event === 'object') {
+            if ('message' in event && (event as any).message) {
+                errorMessage = `WebSocket Error: ${(event as any).message}`;
+            } else {
+                errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+            }
+        }
+        console.error(`[DerivService/getDerivAccountList] WebSocket Error Event at ${new Date(errorTime).toISOString()}: ${errorMessage}`, event);
+        cleanup(`WebSocket error: ${errorMessage}`, true);
+        reject(new Error(errorMessage));
+      };
+
+      ws.onclose = (event) => {
+        const closeTime = Date.now();
+        console.log(`[DerivService/getDerivAccountList] WebSocket connection closed at ${new Date(closeTime).toISOString()}. Code: ${event.code}, Reason: ${event.reason}, WasClean: ${event.wasClean}`);
+        // If the promise hasn't been settled by an explicit resolve/reject (e.g. from onmessage or onerror)
+        // or by the timeout, this means an unexpected closure.
+        // We check if it's already being cleaned up to avoid redundant rejections.
+        // This check might be tricky; relying on timeout to eventually reject if no other resolution.
+        // For now, the cleanup function handles clearing timeout. If it's an unexpected close,
+        // and no data received, the main promise might still be pending until timeout.
+        // Consider rejecting here if !event.wasClean and no account_list received.
+        // However, the timeout is the primary mechanism for unresolved promises.
+        cleanup(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+        // Do not reject here if cleanup is already called by resolve/reject, to prevent "already settled" errors.
+        // The timeout or specific handlers should be responsible for rejection.
+      };
+    }),
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const timeoutTime = Date.now();
+        const errorMessage = `Deriv API call for account list timed out after ${operationTimeout / 1000} seconds.`;
+        console.error(`[DerivService/getDerivAccountList] Operation timed out at ${new Date(timeoutTime).toISOString()}.`);
+
+        // Attempt to close WebSocket if it exists and is open
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          console.log('[DerivService/getDerivAccountList] Timeout: Attempting to close WebSocket.');
+          ws.close(1000, "Operation timed out"); // 1000 is a normal closure
+        }
+        // Cleanup will be called by the main promise's onclose or onerror eventually if ws.close() triggers them,
+        // but we ensure resources tied to this specific operation (like this timeout) are cleared.
+        // Directly call cleanup for timeout specific logging and ensure rejection.
+        cleanup(errorMessage, true); // Ensure cleanup logs reflect timeout
+        reject(new Error(errorMessage));
+      }, operationTimeout);
+    })
+  ]);
 }
 
 /**

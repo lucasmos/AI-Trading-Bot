@@ -223,6 +223,7 @@ export const authOptions: NextAuthOptions = {
             }
           } catch (error: any) {
             console.error('[NextAuth Callbacks] JWT - Error fetching Deriv account list:', error.message || error);
+            console.warn('[NextAuth Callbacks] JWT - Deriv account details could not be fetched due to the previous error. These details will be missing from the session token.');
           }
         }
       }
