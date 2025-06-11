@@ -60,7 +60,13 @@ export function AutomatedTradingControls() {
     );
   };
 
-  const fetchMarketDataForSelectedInstruments = async (): Promise<boolean> => {
+  const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<boolean> => {
+    if (!currentToken) {
+      console.error('[fetchMarketData] Attempted to fetch market data without a valid API token.');
+      toast({ title: 'Internal Error', description: 'API token was missing when fetching data.', variant: 'destructive' });
+      setIsFetchingData(false); // Ensure loading state is reset
+      return false;
+    }
     if (selectedInstruments.length === 0) return true; // No data to fetch
 
     setIsFetchingData(true);
@@ -72,7 +78,7 @@ export function AutomatedTradingControls() {
     for (const instrument of selectedInstruments) {
       try {
         // Use the user's API token for fetching candles
-        const candles = await getCandles(instrument, 150, 60, apiToken || undefined); // Fetch 150 1-min candles
+        const candles = await getCandles(instrument, 150, 60, currentToken); // Fetch 150 1-min candles
         if (candles && candles.length > 0) {
           const indicators = calculateAllIndicators(candles);
           newMarketData[instrument] = { candles, indicators };
@@ -118,7 +124,7 @@ export function AutomatedTradingControls() {
     setAiReasoning('');
 
     // 1. Fetch live market data and calculate indicators
-    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments();
+    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
     if (!dataFetchSuccess) {
       // Error messages already toasted by fetchMarketDataForSelectedInstruments
       return;
