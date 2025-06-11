@@ -1,50 +1,56 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ForexCryptoCommodityInstrumentType, TradingMode, AutomatedTradingStrategyOutput } from '@/types';
+import {
+  ForexCryptoCommodityInstrumentType,
+  TradingMode,
+  AutomatedTradingStrategyOutput,
+  CandleData, // Import CandleData
+  InstrumentIndicatorData, // Import InstrumentIndicatorData
+  PriceTick // Import PriceTick
+} from '@/types';
 import { generateAutomatedTradingStrategy } from '@/ai/flows/automated-trading-strategy-flow';
 import { executeAiTradingStrategy, TradeExecutionResult } from '@/app/actions/trade-execution-actions';
-import { useToast } from '@/hooks/use-toast'; // Assuming a toast hook exists for notifications
+import { useToast } from '@/hooks/use-toast';
+import { getCandles } from '@/services/deriv'; // Import getCandles
+import { calculateAllIndicators } from '@/lib/technical-analysis'; // Import calculateAllIndicators
 
-// Define available instruments - this could also come from a config file or API
 const AVAILABLE_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
-  'EUR/USD',
-  'GBP/USD',
-  'BTC/USD',
-  'XAU/USD', // Gold
-  'ETH/USD',
-  'Palladium/USD',
-  'Platinum/USD',
-  'Silver/USD',
+  'EUR/USD', 'GBP/USD', 'BTC/USD', 'XAU/USD',
+  'ETH/USD', 'Palladium/USD', 'Platinum/USD', 'Silver/USD',
 ];
-
 const TRADING_MODES: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
 
-interface AutomatedTradingControlsProps {
-  // Props if needed, e.g., for passing down user info or callbacks
-}
+// Define a type for the market data state
+type MarketDataState = Record<ForexCryptoCommodityInstrumentType, {
+  candles: CandleData[];
+  indicators?: InstrumentIndicatorData;
+  error?: string;
+}>;
 
-export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
-  const { toast } = useToast(); // For showing notifications
+export function AutomatedTradingControls() {
+  const { toast } = useToast();
 
-  // State for API Token
   const [apiToken, setApiToken] = useState<string>('');
-
-  // State for Strategy Configuration
-  const [totalStake, setTotalStake] = useState<number>(10); // Default to 10 USD
+  const [totalStake, setTotalStake] = useState<number>(10);
   const [selectedInstruments, setSelectedInstruments] = useState<ForexCryptoCommodityInstrumentType[]>([]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
-  const [stopLossPercentage, setStopLossPercentage] = useState<number | undefined>(5); // Default 5%
+  const [stopLossPercentage, setStopLossPercentage] = useState<number | undefined>(5);
 
-  // State for UI feedback
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isFetchingData, setIsFetchingData] = useState<boolean>(false);
+  const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false);
+  const [isExecutingTrades, setIsExecutingTrades] = useState<boolean>(false);
+
+  const [marketData, setMarketData] = useState<MarketDataState>({});
   const [executionResults, setExecutionResults] = useState<TradeExecutionResult[]>([]);
   const [aiReasoning, setAiReasoning] = useState<string>('');
+
+  const isBusy = isFetchingData || isProcessingAi || isExecutingTrades;
 
   const handleInstrumentChange = (instrument: ForexCryptoCommodityInstrumentType) => {
     setSelectedInstruments(prev =>
@@ -53,6 +59,46 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
         : [...prev, instrument]
     );
   };
+
+  const fetchMarketDataForSelectedInstruments = async (): Promise<boolean> => {
+    if (selectedInstruments.length === 0) return true; // No data to fetch
+
+    setIsFetchingData(true);
+    toast({ title: 'Fetching Market Data...', description: `Fetching candles for ${selectedInstruments.join(', ')}.` });
+
+    const newMarketData: MarketDataState = {};
+    let allFetchesSuccessful = true;
+
+    for (const instrument of selectedInstruments) {
+      try {
+        // Use the user's API token for fetching candles
+        const candles = await getCandles(instrument, 150, 60, apiToken || undefined); // Fetch 150 1-min candles
+        if (candles && candles.length > 0) {
+          const indicators = calculateAllIndicators(candles);
+          newMarketData[instrument] = { candles, indicators };
+        } else {
+          newMarketData[instrument] = { candles: [], error: 'No candle data returned.' };
+          toast({ title: 'Data Warning', description: `No candle data for ${instrument}.`, variant: 'default' });
+          allFetchesSuccessful = false; // Mark as partially successful if some data is missing
+        }
+      } catch (error: any) {
+        console.error(`Error fetching market data for ${instrument}:`, error);
+        newMarketData[instrument] = { candles: [], error: error.message || 'Failed to fetch data.' };
+        toast({ title: 'Data Error', description: `Failed to fetch data for ${instrument}: ${error.message}`, variant: 'destructive' });
+        allFetchesSuccessful = false; // Definitely not fully successful
+      }
+    }
+    setMarketData(newMarketData);
+    setIsFetchingData(false);
+
+    if (Object.values(newMarketData).every(d => d.error && d.candles.length === 0)) {
+        toast({ title: 'Market Data Error', description: 'Failed to fetch market data for all selected instruments.', variant: 'destructive'});
+        return false; // All fetches failed critically
+    }
+    // If some data was fetched, it might still be okay to proceed
+    return true;
+  };
+
 
   const handleStartAutomatedTrading = async () => {
     if (!apiToken) {
@@ -63,43 +109,69 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
       toast({ title: 'Error', description: 'Please select at least one instrument.', variant: 'destructive' });
       return;
     }
-    if (totalStake < 1) { // Or a more appropriate minimum like 0.35 for some Deriv contracts
+    if (totalStake < 1) {
         toast({ title: 'Error', description: 'Total stake must be at least 1.', variant: 'destructive' });
         return;
     }
 
-    setIsProcessing(true);
     setExecutionResults([]);
     setAiReasoning('');
 
+    // 1. Fetch live market data and calculate indicators
+    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments();
+    if (!dataFetchSuccess) {
+      // Error messages already toasted by fetchMarketDataForSelectedInstruments
+      return;
+    }
+
+    // Prepare data for AI: instrumentTicks and instrumentIndicators
+    const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
+    const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
+    let hasDataForAtLeastOneInstrument = false;
+
+    for (const instrument of selectedInstruments) {
+      const currentInstrumentData = marketData[instrument]; // Use a local variable for current instrument's data
+      if (currentInstrumentData && !currentInstrumentData.error && currentInstrumentData.candles.length > 0) {
+        // Convert CandleData to PriceTick[] for the AI (using closing prices)
+        instrumentTicksForAi[instrument] = currentInstrumentData.candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+        if (currentInstrumentData.indicators) {
+          instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
+        }
+        hasDataForAtLeastOneInstrument = true;
+      }
+    }
+
+    if (!hasDataForAtLeastOneInstrument) {
+        toast({ title: 'AI Strategy Halted', description: 'No valid market data available to generate a strategy.', variant: 'destructive' });
+        return;
+    }
+
+    setIsProcessingAi(true);
     try {
-      // 1. Generate AI Strategy
-      // For now, instrumentTicks and instrumentIndicators will be empty or mocked.
-      // In a real scenario, you'd fetch live data.
-      toast({ title: 'AI Thinking...', description: 'Generating trading strategy.' });
+      toast({ title: 'AI Thinking...', description: 'Generating trading strategy with live data.' });
       const strategyInput = {
         totalStake,
-        instruments: selectedInstruments,
+        instruments: selectedInstruments.filter(inst => marketData[inst] && !marketData[inst].error && marketData[inst].candles.length > 0), // Only pass instruments with data
         tradingMode,
-        stopLossPercentage: stopLossPercentage || undefined, // Pass undefined if 0 or empty
-        instrumentTicks: {}, // Mock: fetch real data
-        instrumentIndicators: {}, // Mock: calculate real indicators
+        stopLossPercentage: stopLossPercentage || undefined,
+        instrumentTicks: instrumentTicksForAi,
+        instrumentIndicators: instrumentIndicatorsForAi,
       };
 
-      // Type assertion needed if the imported type from @/types is slightly different from Zod schema
       const aiStrategy: AutomatedTradingStrategyOutput = await generateAutomatedTradingStrategy(strategyInput as any);
+      setAiReasoning(aiStrategy.overallReasoning);
 
       if (!aiStrategy || !aiStrategy.tradesToExecute || aiStrategy.tradesToExecute.length === 0) {
-        toast({ title: 'AI Strategy', description: 'AI did not propose any trades. Try different parameters or market conditions.', variant: 'default' });
-        setAiReasoning(aiStrategy?.overallReasoning || 'No trades proposed.');
-        setIsProcessing(false);
+        toast({ title: 'AI Strategy', description: 'AI did not propose any trades based on current live data.', variant: 'default' });
+        setIsProcessingAi(false);
         return;
       }
 
-      setAiReasoning(aiStrategy.overallReasoning);
       toast({ title: 'AI Strategy Generated', description: `AI proposed ${aiStrategy.tradesToExecute.length} trade(s). Executing now...` });
+      setIsProcessingAi(false); // Done with AI part
 
       // 2. Execute Trades
+      setIsExecutingTrades(true);
       const results = await executeAiTradingStrategy(aiStrategy, apiToken);
       setExecutionResults(results);
 
@@ -119,18 +191,20 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
       });
 
     } catch (error: any) {
-      console.error('Error during automated trading process:', error);
+      console.error('Error during AI strategy generation or trade execution:', error);
       toast({ title: 'Error', description: error.message || 'An unexpected error occurred.', variant: 'destructive' });
     } finally {
-      setIsProcessing(false);
+      setIsProcessingAi(false);
+      setIsExecutingTrades(false);
     }
   };
 
+  // UI remains largely the same, but button disabled state uses `isBusy`
   return (
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
-        <CardTitle>AI Automated Trading</CardTitle>
-        <CardDescription>Configure and start AI-powered automated trading with your Deriv account.</CardDescription>
+        <CardTitle>AI Automated Trading (Live Data)</CardTitle>
+        <CardDescription>Configure and start AI-powered automated trading with your Deriv account using live market data.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* API Token Input */}
@@ -142,10 +216,10 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
             placeholder="Enter your Deriv API Token"
             value={apiToken}
             onChange={(e) => setApiToken(e.target.value)}
-            disabled={isProcessing}
+            disabled={isBusy}
           />
           <p className="text-xs text-muted-foreground">
-            Your API token is used to place trades. It is not stored on our servers.
+            Your API token is used to place trades and fetch market data.
           </p>
         </div>
 
@@ -158,7 +232,7 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
             min="1"
             value={totalStake}
             onChange={(e) => setTotalStake(parseFloat(e.target.value))}
-            disabled={isProcessing}
+            disabled={isBusy}
           />
         </div>
 
@@ -170,7 +244,7 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
                 key={instrument}
                 variant={selectedInstruments.includes(instrument) ? 'default' : 'outline'}
                 onClick={() => handleInstrumentChange(instrument)}
-                disabled={isProcessing}
+                disabled={isBusy}
                 size="sm"
               >
                 {instrument}
@@ -184,7 +258,7 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
           <Select
             value={tradingMode}
             onValueChange={(value: string) => setTradingMode(value as TradingMode)}
-            disabled={isProcessing}
+            disabled={isBusy}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select trading mode" />
@@ -212,23 +286,33 @@ export function AutomatedTradingControls({}: AutomatedTradingControlsProps) {
               const val = e.target.value;
               setStopLossPercentage(val === '' ? undefined : parseFloat(val));
             }}
-            disabled={isProcessing}
+            disabled={isBusy}
           />
         </div>
 
         {/* Control Button */}
         <Button
           onClick={handleStartAutomatedTrading}
-          disabled={isProcessing || !apiToken || selectedInstruments.length === 0}
+          disabled={isBusy || !apiToken || selectedInstruments.length === 0}
           className="w-full"
         >
-          {isProcessing ? 'Processing...' : 'Start Automated Trading'}
+          {isFetchingData && 'Fetching Data...'}
+          {isProcessingAi && !isFetchingData && 'AI Processing...'}
+          {isExecutingTrades && !isFetchingData && !isProcessingAi && 'Executing Trades...'}
+          {!isBusy && 'Start Automated Trading'}
         </Button>
       </CardContent>
 
-      {/* Status Display */}
-      {(aiReasoning || executionResults.length > 0) && (
+      {/* Status Display (market data errors can also be shown here if desired) */}
+      {(aiReasoning || executionResults.length > 0 || Object.values(marketData).some(d => d.error)) && (
         <CardFooter className="flex flex-col items-start space-y-4">
+          {Object.entries(marketData).map(([instrument, data]) =>
+            data.error ? (
+              <div key={instrument} className="text-red-500 text-sm">
+                Market Data Error for {instrument}: {data.error}
+              </div>
+            ) : null
+          )}
           {aiReasoning && (
             <div>
               <h4 className="font-semibold mb-2">AI Overall Reasoning:</h4>
