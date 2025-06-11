@@ -59,7 +59,7 @@ model User {
   emailVerified  DateTime?
   image          String?
   hashedPassword String?
-  derivAccountId String?        @unique
+  derivAccountId String?        @unique // This is the Deriv main login ID, might be CR... or VRTC...
   provider       String?
   accounts       Account[]
   apiKeys        ApiKey[]
@@ -75,15 +75,24 @@ model User {
 }
 
 model UserSettings {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  theme         String   @default("light")
-  language      String   @default("en")
-  notifications Boolean  @default(true)
-  settings      Json
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                        String    @id @default(uuid())
+  userId                    String    @unique
+  user                      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                     String    @default("light")
+  language                  String    @default("en")
+  notifications             Boolean   @default(true)
+  settings                  Json      // For other dynamic user-specific settings
+
+  // Deriv-specific settings
+  derivDemoAccountId        String?   // e.g., "VRTC..."
+  derivRealAccountId        String?   // e.g., "CR..."
+  selectedDerivAccountType  String?   @default("demo") // "demo" or "real"
+  derivDemoBalance          Float?
+  derivRealBalance          Float?
+  lastBalanceSync           DateTime? // Timestamp of the last successful balance update
+
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 }
 
 model UsageStats {
