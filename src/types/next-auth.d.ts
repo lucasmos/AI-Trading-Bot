@@ -1,37 +1,41 @@
-import NextAuth, { DefaultSession, DefaultUser } from "next-auth";
-import { JWT, DefaultJWT } from "next-auth/jwt";
+import { DefaultSession, DefaultUser } from "next-auth";
+import { DefaultJWT } from "next-auth/jwt";
 
 declare module "next-auth" {
-  /**
-   * Returned by `useSession`, `getSession` and received as a prop on the `SessionProvider` React Context
-   */
-  interface Session {
-    user: {
-      /** The user's id. */
-      id: string;
-      provider?: string;
-      derivAccountId?: string;
-    } & DefaultSession["user"]; // Keep existing properties like name, email, image
+  interface User extends DefaultUser {
+    // Fields returned by authorize or from DB user model that are used by JWT callback
+    provider?: string;
+    derivAccessToken?: string; // If returned by authorize for 'deriv-credentials'
   }
 
-  /**
-   * The shape of the user object returned in the OAuth providers' `profile` callback,
-   * or the second parameter of the `session` callback, when using a database.
-   */
-  interface User extends DefaultUser {
-    /** Add your custom properties here. */
-    // id: string; // id is already part of DefaultUser
-    provider?: string;
-    derivAccountId?: string;
+  interface Session {
+    user: {
+      id: string; // Ensure id is always string on session.user
+      provider?: string;
+      derivAccessToken?: string;
+      derivApiToken?: { access_token: string };
+      derivAccountId?: string | null;
+      derivDemoAccountId?: string | null;
+      derivRealAccountId?: string | null;
+      derivDemoBalance?: number | null;
+      derivRealBalance?: number | null;
+      selectedDerivAccountType?: 'demo' | 'real' | null;
+    } & DefaultSession["user"]; // DefaultSession["user"] provides name, email, image
   }
 }
 
 declare module "next-auth/jwt" {
-  /** Returned by the `jwt` callback and `getToken`, when using JWT sessions */
   interface JWT extends DefaultJWT {
-    /** OpenID ID Token */
-    id?: string; // Add id to the JWT token as well
+    // Fields added to the JWT token by the jwt callback
+    id?: string;
     provider?: string;
-    derivAccountId?: string;
+    derivAccessToken?: string;
+    derivAccountId?: string | null;
+    derivDemoAccountId?: string | null;
+    derivRealAccountId?: string | null;
+    derivDemoBalance?: number | null;
+    derivRealBalance?: number | null;
+    selectedDerivAccountType?: 'demo' | 'real' | null;
+    accessToken?: string; // For other OAuth provider's access token
   }
-} 
+}

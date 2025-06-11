@@ -63,13 +63,11 @@ export default function DashboardPage() {
   const { 
     authStatus, 
     userInfo,
-    // paperBalance as contextPaperBalance, // Using specific deriv balances from context now
-    // liveBalance as contextLiveBalance,   // Using specific deriv balances
     selectedDerivAccountType,
     derivDemoAccountId,
     derivRealAccountId,
     derivDemoBalance,
-    derivLiveBalance, // This is the context's 'real' balance
+    derivLiveBalance,
     updateSelectedDerivAccountType,
   } = useAuth();
   
@@ -103,13 +101,8 @@ export default function DashboardPage() {
   });
 
   const [selectedStopLossPercentage, setSelectedStopLossPercentage] = useState<number>(5);
-  // const [currentPrice, setCurrentPrice] = useState<number | null>(null); // Not directly used, chart handles its own price updates
-
   const [stopLossValue, setStopLossValue] = useState<string>('');
   const [takeProfitValue, setTakeProfitValue] = useState<string>('');
-
-  // const [isAiLoading, setIsAiLoading] = useState(false); // Replaced by isFetchingManualRecommendation or isPreparingAutoTrades
-
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
@@ -122,8 +115,6 @@ export default function DashboardPage() {
         return derivLiveBalance ?? DEFAULT_LIVE_BALANCE;
       }
     }
-    // Fallback for non-Deriv users or if selectedDerivAccountType is null (guest/unlinked)
-    // This should ideally use a generic paper balance if that's distinct from Deriv demo
     return DEFAULT_PAPER_BALANCE;
   }, [authStatus, userInfo, selectedDerivAccountType, derivDemoBalance, derivLiveBalance]);
 
@@ -272,6 +263,14 @@ export default function DashboardPage() {
         title: `Trade Placed on Deriv (${selectedDerivAccountType})`,
         description: `ID: ${tradeResult.contract_id}. Entry: ${tradeResult.entry_spot}, Buy: ${tradeResult.buy_price.toFixed(getInstrumentDecimalPlaces(currentInstrument))}`
       });
+
+      // Attempt to refresh balance after successful trade
+      if (selectedDerivAccountType) {
+        console.log(`[Dashboard] Attempting post-trade balance refresh for ${selectedDerivAccountType} account.`);
+        await updateSelectedDerivAccountType(selectedDerivAccountType);
+        // Toast for balance refresh success/failure is handled within AuthContext or not shown to avoid too many toasts
+      }
+
     } catch (error) {
       console.error(`[Dashboard] Deriv trade placement error on account ${targetAccountId}:`, error);
       toast({
@@ -346,13 +345,12 @@ export default function DashboardPage() {
       toast({ title: "Invalid Stake", description: `Total stake $${autoTradeTotalStake} must be positive and within balance $${currentBalance.toFixed(2)}.`, variant: "destructive" });
       return;
     }
-    // Cooldown logic
     if (consecutiveAiCallCount >= 2 && lastAiCallTimestamp && (Date.now() - lastAiCallTimestamp) < AI_COOLDOWN_DURATION_MS) {
       const remainingMinutes = Math.ceil((AI_COOLDOWN_DURATION_MS - (Date.now() - lastAiCallTimestamp)) / 60000);
       toast({ title: "AI Cooldown", description: `Please wait ${remainingMinutes} min.`, variant: "default" });
       return;
     } else if (consecutiveAiCallCount >=2) {
-      setConsecutiveAiCallCount(0); // Reset if cooldown passed
+      setConsecutiveAiCallCount(0);
     }
 
     setIsPreparingAutoTrades(true);
@@ -362,74 +360,178 @@ export default function DashboardPage() {
     logAutomatedTradingEvent(`Initializing AI Auto-Trading with $${autoTradeTotalStake} in ${selectedDerivAccountType || 'paper'} mode using strategy ${selectedAiStrategyId}.`);
 
     const token = userInfo?.derivApiToken?.access_token;
-    // ... (rest of the logic, ensure getCandles uses token, and paperTradingMode is replaced with selectedDerivAccountType)
-    // This part remains complex and relies on many local functions not fully shown in diff, but the key is token and selectedDerivAccountType usage.
-    // For brevity, assuming the inner logic of fetching data and generating strategy is adapted.
-    // Critical: The actual trade execution within this automated flow would need to use the correct targetAccountId.
-    // Since this example simulates trades client-side or logs them, ensure `selectedDerivAccountType` is used for metadata.
-    // If it were to call `placeTrade`, it would need the `targetAccountId` logic similar to `handleExecuteTrade`.
-
-    // Simplified version of data fetching loop for illustration
     const instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst));
     if (instrumentsToTrade.length === 0) {
         logAutomatedTradingEvent("No markets open for auto-trading.");
         toast({ title: "Markets Closed", description: "No suitable markets for auto-trading.", variant: "default" });
         setIsAutoTradingActive(false); setIsPreparingAutoTrades(false); return;
     }
-    // ... further logic would go here ...
-    // For now, just simulating preparation finish
-    setTimeout(() => {
-        logAutomatedTradingEvent("AI analysis and trade preparation complete (simulated).");
-        setIsPreparingAutoTrades(false);
-        // If no trades generated by AI, reset active state
-        // setIsAutoTradingActive(false);
-        // toast({ title: "AI Auto-Trade", description: "AI found no trades.", duration: 7000 });
-    }, 3000);
 
+    const instrumentTicksData: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {} as any;
+    const instrumentIndicatorsData: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {} as any;
 
-    setConsecutiveAiCallCount(prev => prev + 1);
-    setLastAiCallTimestamp(Date.now());
+    for (const inst of instrumentsToTrade) {
+      try {
+        const candles = await getCandles(inst as InstrumentType, 60, 60, token);
+         if (candles && candles.length > 0) {
+          instrumentTicksData[inst] = candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+          const closePrices = candles.map(c => c.close);
+          const highPrices = candles.map(c => c.high);
+          const lowPrices = candles.map(c => c.low);
+          instrumentIndicatorsData[inst] = {
+            rsi: calculateRSI(closePrices) ?? undefined,
+            macd: calculateMACD(closePrices) ?? undefined,
+            bollingerBands: calculateBollingerBands(closePrices) ?? undefined,
+            ema: calculateEMA(closePrices) ?? undefined,
+            atr: calculateATR(highPrices, lowPrices, closePrices) ?? undefined,
+          };
+        } else {
+          instrumentTicksData[inst] = []; instrumentIndicatorsData[inst] = {};
+          logAutomatedTradingEvent(`No candle data for ${inst}. It will be excluded.`);
+        }
+      } catch (err) {
+          instrumentTicksData[inst] = []; instrumentIndicatorsData[inst] = {};
+          logAutomatedTradingEvent(`Error fetching data for ${inst}: ${(err as Error).message}. It will be excluded.`);
+      }
+    }
 
-  }, [authStatus, selectedDerivAccountType, autoTradeTotalStake, currentBalance, tradingMode, selectedAiStrategyId, userInfo, consecutiveAiCallCount, lastAiCallTimestamp, toast, router]);
+    const strategyInput: AutomatedTradingStrategyInput = {
+      totalStake: autoTradeTotalStake,
+      instruments: instrumentsToTrade.filter(inst => instrumentTicksData[inst] && instrumentTicksData[inst].length > 0), // Only trade instruments with data
+      tradingMode,
+      aiStrategyId: selectedAiStrategyId,
+      stopLossPercentage: selectedStopLossPercentage,
+      instrumentTicks: instrumentTicksData,
+      instrumentIndicators: instrumentIndicatorsData,
+     };
+
+    try {
+      const strategyResult = await generateAutomatedTradingStrategy(strategyInput);
+      logAutomatedTradingEvent(`AI strategy received. Proposed: ${strategyResult.tradesToExecute.length}. Reasoning: ${strategyResult.overallReasoning}`);
+      setConsecutiveAiCallCount(prev => prev + 1);
+      setLastAiCallTimestamp(Date.now());
+      setIsPreparingAutoTrades(false);
+
+      if (!strategyResult || strategyResult.tradesToExecute.length === 0) {
+        logAutomatedTradingEvent(strategyResult?.overallReasoning || "AI determined no optimal trades.");
+        toast({ title: "AI Auto-Trade", description: strategyResult?.overallReasoning || "No optimal trades.", duration: 7000 });
+        setIsAutoTradingActive(false);
+        return;
+      }
+      // UI update for proposed trades
+      toast({ title: "AI Strategy Generated", description: `AI proposes ${strategyResult.tradesToExecute.length} trades for ${selectedDerivAccountType || 'paper'} account.`, duration: 5000});
+
+      // For now, this automated session does not execute real trades with placeTrade
+      // It simulates the execution flow and logs.
+      // If real execution is needed, each trade in tradesToExecute would need to be passed to placeTrade
+      // along with the correct targetAccountId.
+      const simulatedTrades: ActiveAutomatedTrade[] = strategyResult.tradesToExecute.map(p => ({
+        id: uuidv4(),
+        instrument: p.instrument as ForexCryptoCommodityInstrumentType,
+        action: p.action,
+        stake: p.stake,
+        durationSeconds: p.durationSeconds,
+        reasoning: p.reasoning,
+        entryPrice: instrumentTicksData[p.instrument as ForexCryptoCommodityInstrumentType]?.slice(-1)[0]?.price || 0,
+        stopLossPrice: 0, // Placeholder
+        startTime: Date.now(),
+        status: 'active', // Will be managed by useEffect
+        currentPrice: instrumentTicksData[p.instrument as ForexCryptoCommodityInstrumentType]?.slice(-1)[0]?.price || 0,
+        pnl: 0,
+      }));
+      setActiveAutomatedTrades(simulatedTrades);
+
+    } catch (error) {
+      logAutomatedTradingEvent(`Error during AI auto-trading session: ${(error as Error).message}`);
+      toast({ title: "AI Auto-Trading Error", description: (error as Error).message, variant: "destructive" });
+      setIsAutoTradingActive(false);
+      setIsPreparingAutoTrades(false);
+    }
+  }, [authStatus, selectedDerivAccountType, autoTradeTotalStake, currentBalance, tradingMode, selectedAiStrategyId, userInfo, consecutiveAiCallCount, lastAiCallTimestamp, toast, router, selectedStopLossPercentage]);
 
   const handleStopAiAutoTrade = () => {
     setIsAutoTradingActive(false); 
     tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
     tradeIntervals.current.clear();
-    // Update metadata to use selectedDerivAccountType
-    setActiveAutomatedTrades(prevTrades => prevTrades.map(trade => trade.status === 'active' ? ({ ...trade, status: 'closed_manual', pnl: -trade.stake, reasoning: (trade.reasoning || "") + " Manually stopped." }) : trade));
-    toast({ title: "AI Auto-Trading Stopped", description: `Session for ${selectedDerivAccountType || 'paper'} account stopped.`});
-    // PNL and DB logging logic would need to use selectedDerivAccountType for metadata.accountType
-    // For brevity, the detailed fetch/DB logging part of this function is condensed.
+    const accountTypeForLogging = selectedDerivAccountType || 'paper';
+    setActiveAutomatedTrades(prevTrades =>
+      prevTrades.map(trade => {
+        if (trade.status === 'active') {
+          // Log to DB if necessary, using accountTypeForLogging in metadata
+        }
+        return trade.status === 'active' ? ({ ...trade, status: 'closed_manual', pnl: -trade.stake, reasoning: (trade.reasoning || "") + " Manually stopped." }) : trade;
+      })
+    );
+    toast({ title: "AI Auto-Trading Stopped", description: `Session for ${accountTypeForLogging} account stopped.`});
   };
   
   useEffect(() => {
-    // Manages active automated trades (simulated execution)
     if (!isAutoTradingActive || activeAutomatedTrades.length === 0) {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
       return;
     }
-    // ... (rest of the useEffect for managing trade intervals)
-    // Ensure selectedDerivAccountType is used for logging, toasts, and metadata.accountType in DB calls.
-    // Direct setCurrentBalance calls are removed; balance updates should come from context.
-    // Updating profitsClaimable (local state) is fine.
+
+    activeAutomatedTrades.forEach(trade => {
+      if (trade.status === 'active' && !tradeIntervals.current.has(trade.id)) {
+        const intervalId = setInterval(() => {
+          setActiveAutomatedTrades(prevTrades => {
+            return prevTrades.map(currentTrade => {
+              if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
+                return currentTrade;
+              }
+              // Simplified PNL logic for simulation - actual PNL would come from API for real trades
+              let newStatus = currentTrade.status;
+              let pnl = currentTrade.pnl ?? 0;
+              // Simulate price movement and check conditions (simplified)
+              // ...
+              if (Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
+                newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration'; // Simplified outcome
+                pnl = newStatus === 'won' ? currentTrade.stake * 0.85 : -currentTrade.stake; // Simplified PNL
+
+                clearInterval(tradeIntervals.current.get(trade.id)!);
+                tradeIntervals.current.delete(trade.id);
+
+                // Log to DB for simulated trades
+                if (userInfo?.id && (newStatus === 'won' || newStatus === 'lost_duration')) {
+                  // ... fetch call to log trade ...
+                }
+
+                setTimeout(() => {
+                  setProfitsClaimable(prevProfits => ({
+                    totalNetProfit: prevProfits.totalNetProfit + pnl,
+                    tradeCount: prevProfits.tradeCount + 1,
+                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                    losingTrades: newStatus !== 'won' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+                  }));
+                  toast({
+                    title: `Auto-Trade Ended (${selectedDerivAccountType || 'paper'}): ${currentTrade.instrument}`,
+                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
+                    variant: pnl > 0 ? "default" : "destructive"
+                  });
+                }, 0);
+              }
+              return { ...currentTrade, status: newStatus, pnl };
+            });
+          });
+        }, 2000 + Math.random() * 1000); // Stagger updates
+        tradeIntervals.current.set(trade.id, intervalId);
+      }
+    });
+
     return () => {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, userInfo, tradingMode, selectedAiStrategyId, /*profitsClaimable, setProfitsClaimable*/]);
+  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, userInfo, profitsClaimable]);
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
-    // Map 'paper' to 'demo' and 'live' to 'real' if TradeControls sends these
     const newApiType = (newTypeFromControl === 'paper' || newTypeFromControl === 'demo') ? 'demo' : 'real';
-
-    if (!userInfo?.derivAccessToken) { // Check for derivAccessToken as an indicator of Deriv linkage
+    if (!userInfo?.derivAccessToken) {
         toast({ title: "Deriv Account Not Linked", description: "Please connect your Deriv account via Profile page to switch modes.", variant: "destructive" });
         return;
     }
     if (newApiType === selectedDerivAccountType) return;
-
     try {
         await updateSelectedDerivAccountType(newApiType);
         toast({ title: "Account Switched", description: `Switched to ${newApiType} account. Balances reflected.`, variant: "default" });
@@ -442,7 +544,11 @@ export default function DashboardPage() {
     <div className="container mx-auto py-2">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <BalanceDisplay balance={currentBalance} accountType={selectedDerivAccountType || 'paper'} />
+          <BalanceDisplay
+            balance={currentBalance}
+            selectedAccountType={selectedDerivAccountType}
+            displayAccountId={selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId}
+          />
           <TradingChart 
                 instrument={currentInstrument}
                 onInstrumentChange={handleInstrumentChange}

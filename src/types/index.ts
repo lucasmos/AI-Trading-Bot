@@ -140,26 +140,32 @@ export interface UserInfo {
   id: string;
   email?: string | null;
   name?: string | null;
-  avatarUrl?: string | null;
-  photoURL?: string | null;
-  paperBalance?: number;
-  liveBalance?: number;
+  avatarUrl?: string | null; // Consider consolidating with photoURL or image from NextAuth
+  photoURL?: string | null; // From Firebase Auth
+  image?: string | null;    // From NextAuth session.user
   authMethod?: AuthMethod | null;
-  provider?: string;
-  derivId?: string | null;
-  derivEmail?: string | null;
-  derivPreferredLanguage?: string | null;
-  derivAccountList?: DerivAccount[];
-  derivActiveAccount?: DerivAccountShort | null;
-  derivDemoBalance?: number | null;
-  derivRealBalance?: number | null;
-  derivActiveLoginId?: string | null;
-  derivDemoAccountId?: string | null;
-  derivRealAccountId?: string | null;
-  derivApiToken?: {
+  provider?: string; // From NextAuth account
+
+  // Deriv Specific fields - these should align with what's passed from NextAuth session and used in AuthContext
+  derivAccessToken?: string; // The raw access token from Deriv
+  derivApiToken?: { // Structured token, potentially for easier use or if it includes more than just access_token
     access_token: string;
     // Potentially other token-related fields like expiry if available/needed later
   };
+  derivAccountId?: string | null; // The currently selected Deriv account ID (CR... or VRTC...)
+  derivDemoAccountId?: string | null;
+  derivRealAccountId?: string | null;
+  derivDemoBalance?: number | null;
+  derivRealBalance?: number | null;
+  selectedDerivAccountType?: 'demo' | 'real' | null; // User's preferred account type to use by default
+
+  // Older Deriv fields from a previous structure - review if still needed or can be deprecated
+  derivId?: string | null; // Potentially the Deriv User ID (providerAccountId)
+  derivEmail?: string | null;
+  derivPreferredLanguage?: string | null;
+  derivAccountList?: DerivAccount[]; // Full list from API
+  derivActiveAccount?: DerivAccountShort | null; // Simplified active account
+  derivActiveLoginId?: string | null; // Redundant if derivAccountId is the selected one
 }
 
 export type AuthStatus = 'authenticated' | 'unauthenticated' | 'pending';

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import type { TradingMode, TradeDuration, PaperTradingMode, ForexCryptoCommodityInstrumentType, InstrumentType } from '@/types';
+import type { TradingMode, TradeDuration, InstrumentType, ForexCryptoCommodityInstrumentType } from '@/types'; // Removed PaperTradingMode
 import { TrendingUp, TrendingDown, Bot, DollarSign, Play, Square, Briefcase, UserCheck } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 
@@ -18,8 +18,8 @@ interface TradeControlsProps {
   onAiStrategyChange: (strategyId: string) => void;
   tradeDuration: TradeDuration;
   onTradeDurationChange: (duration: TradeDuration) => void;
-  paperTradingMode: PaperTradingMode; 
-  onPaperTradingModeChange: (mode: PaperTradingMode) => void;
+  accountType: 'demo' | 'real' | null; // Changed from paperTradingMode
+  onAccountTypeChange: (mode: 'demo' | 'real') => void; // Changed from onPaperTradingModeChange
   stakeAmount: number;
   onStakeAmountChange: (amount: number) => void;
   onExecuteTrade: (action: 'CALL' | 'PUT') => void;
@@ -55,14 +55,14 @@ export function TradeControls({
   onAiStrategyChange,
   tradeDuration,
   onTradeDurationChange,
-  paperTradingMode, 
-  onPaperTradingModeChange,
+  accountType,
+  onAccountTypeChange,
   stakeAmount,
   onStakeAmountChange,
   onExecuteTrade,
-  onGetAiRecommendation, // Keep this prop
-  isFetchingManualRecommendation, // Use this for manual AI button
-  isPreparingAutoTrades, // Use this for auto-trade button and disabling controls
+  onGetAiRecommendation,
+  isFetchingManualRecommendation,
+  isPreparingAutoTrades,
   autoTradeTotalStake,
   onAutoTradeTotalStakeChange,
   onStartAiAutoTrade,
@@ -85,7 +85,6 @@ export function TradeControls({
   isTradeable,
 }: TradeControlsProps) {
   const tradingModes: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
-  // const tradeDurations: TradeDuration[] = ['30s', '1m', '5m', '15m', '30m']; // Removed hardcoded durations
 
   const handleStakeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(event.target.value);
@@ -105,15 +104,13 @@ export function TradeControls({
     }
   };
 
-  const handleAccountTypeChange = (isRealAccount: boolean) => {
-    onPaperTradingModeChange(isRealAccount ? 'live' : 'paper');
+  const handleAccountSwitchChange = (isRealAccountChecked: boolean) => {
+    onAccountTypeChange(isRealAccountChecked ? 'real' : 'demo');
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;
-  // Combine isTradeable with other conditions for disabling manual trade actions
   const combinedManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected || !isTradeable;
 
-  // Determine if the selected instrument is a Forex or Commodity that is subject to market hours
   const isForexOrCommoditySubjectToMarketHours = 
     supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) &&
     !['BTC/USD', 'ETH/USD'].includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) && 
@@ -123,13 +120,13 @@ export function TradeControls({
     isAnyAiLoading || 
     disableManualControls || 
     !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) ||
-    (isForexOrCommoditySubjectToMarketHours && !isMarketOpenForSelected); // <-- Condition for market hours
+    (isForexOrCommoditySubjectToMarketHours && !isMarketOpenForSelected);
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle>Trade Terminal</CardTitle>
-        <CardDescription>Configure and execute your trades. This terminal is for Forex/Crypto/Commodity instruments.</CardDescription>
+        <CardDescription>Configure and execute your trades for Forex/Crypto/Commodity instruments.</CardDescription>
         {marketStatusMessage && (
           <Badge 
             variant={isMarketOpenForSelected ? 'default' : 'destructive'} 
@@ -145,24 +142,23 @@ export function TradeControls({
           <div className="flex items-center space-x-2">
             <Switch
               id="account-type-switch"
-              checked={paperTradingMode === 'live'} 
-              onCheckedChange={handleAccountTypeChange}
+              checked={accountType === 'real'}
+              onCheckedChange={handleAccountSwitchChange}
               disabled={isAutoTradingActive || isAnyAiLoading} 
               aria-label="Account Type Switch"
             />
             <Label htmlFor="account-type-switch" className="text-sm font-medium flex items-center">
-              {paperTradingMode === 'live' ? (
-                <><Briefcase className="mr-2 h-4 w-4 text-green-500" /> Real Account (Simulated)</>
+              {accountType === 'real' ? (
+                <><Briefcase className="mr-2 h-4 w-4 text-green-500" /> Real Account</>
               ) : (
                 <><UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Demo Account</>
               )}
             </Label>
           </div>
-           <Badge variant={paperTradingMode === 'live' ? "destructive" : "default"} className={paperTradingMode === 'live' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
-            {paperTradingMode === 'live' ? 'REAL' : 'DEMO'}
+           <Badge variant={accountType === 'real' ? "destructive" : "default"} className={accountType === 'real' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
+            {accountType === 'real' ? 'REAL' : 'DEMO'}
            </Badge>
         </div>
-
 
         {!isAutoTradingActive && (
           <>
@@ -260,7 +256,6 @@ export function TradeControls({
               </div>
             </div>
             
-            {/* Added back AI Recommendation Button */}
             <Button
               onClick={onGetAiRecommendation}
               className="w-full bg-gradient-to-r from-primary to-purple-600 text-primary-foreground hover:opacity-90 transition-opacity"
@@ -302,13 +297,12 @@ export function TradeControls({
           </>
         )}
        
-
         <Separator />
 
         <div>
           <Label htmlFor="auto-stake-amount" className="text-sm font-medium text-muted-foreground">AI Auto-Trade Total Stake ($)</Label>
            <p className="text-xs text-muted-foreground mb-1">
-            AI will apportion this stake across Forex/Crypto/Commodity trades for the selected account type ({paperTradingMode === 'live' ? 'Real - Simulated' : 'Demo'}).
+            AI will apportion this stake across Forex/Crypto/Commodity trades for the selected account type ({accountType === 'real' ? 'Real' : 'Demo'}).
           </p>
           <div className="relative mt-1">
             <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -332,7 +326,7 @@ export function TradeControls({
           <Button
             onClick={onStopAiAutoTrade}
             className="w-full bg-red-600 hover:bg-red-700 text-primary-foreground"
-            disabled={isPreparingAutoTrades} // Disable stopping only while initially preparing
+            disabled={isPreparingAutoTrades}
           >
             <Square className="mr-2 h-5 w-5" />
             Stop AI Auto-Trading
@@ -356,4 +350,3 @@ export function TradeControls({
     </Card>
   );
 }
-
