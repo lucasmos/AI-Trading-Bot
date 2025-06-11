@@ -188,4 +188,85 @@ export function calculateATR(
 ): number | undefined {
   const fullATR = calculateFullATR(highPrices, lowPrices, closePrices, period);
   return fullATR.length > 0 ? fullATR[fullATR.length - 1] : undefined;
-} 
+}
+
+// Import types needed for calculateAllIndicators - adjust path if your project structure is different
+import type { CandleData, InstrumentIndicatorData } from '@/types';
+
+// Helper function to extract closing prices
+const getClosingPrices = (candles: CandleData[]): number[] => {
+  return candles.map(c => c.close);
+};
+
+// Helper function to extract high prices
+const getHighPrices = (candles: CandleData[]): number[] => {
+  return candles.map(c => c.high);
+};
+
+// Helper function to extract low prices
+const getLowPrices = (candles: CandleData[]): number[] => {
+  return candles.map(c => c.low);
+};
+
+// Main function to calculate all indicators for a given set of candles
+// This function will use the existing calculator functions in this file
+export function calculateAllIndicators(
+    candles: CandleData[],
+    rsiPeriod: number = 14,
+    macdFastPeriod: number = 12,
+    macdSlowPeriod: number = 26,
+    macdSignalPeriod: number = 9,
+    bbPeriod: number = 20,
+    bbStdDev: number = 2,
+    emaPeriod: number = 50, // Example EMA period, e.g., for a 50-day EMA
+    atrPeriod: number = 14
+): InstrumentIndicatorData {
+    const prices = getClosingPrices(candles);
+    if (prices.length === 0) {
+        console.warn("[calculateAllIndicators] No closing prices available from candles. Returning empty indicators.");
+        return {}; // Return empty if no prices
+    }
+
+    const indicators: InstrumentIndicatorData = {};
+
+    // RSI - uses existing calculateRSI
+    const rsiValue = calculateRSI(prices, rsiPeriod);
+    if (rsiValue !== undefined) {
+        indicators.rsi = rsiValue;
+    }
+
+    // MACD - uses existing calculateMACD
+    const macdResult = calculateMACD(prices, macdFastPeriod, macdSlowPeriod, macdSignalPeriod);
+    if (macdResult) { // calculateMACD returns an object or undefined
+        indicators.macd = macdResult;
+    }
+
+    // Bollinger Bands - uses existing calculateBollingerBands
+    const bbResult = calculateBollingerBands(prices, bbPeriod, bbStdDev);
+    if (bbResult) { // calculateBollingerBands returns an object or undefined
+        indicators.bollingerBands = bbResult;
+    }
+
+    // EMA (e.g., EMA50) - uses existing calculateEMA
+    const emaValue = calculateEMA(prices, emaPeriod);
+    if (emaValue !== undefined) {
+        indicators.ema = emaValue; // Assuming InstrumentIndicatorData expects a single EMA value
+                                   // If multiple EMAs are needed, this part needs adjustment.
+    }
+
+    // ATR - uses existing calculateATR
+    // ATR requires high, low, and close prices.
+    if (candles.every(c => c.high !== undefined && c.low !== undefined && c.close !== undefined)) {
+        const highPrices = getHighPrices(candles);
+        const lowPrices = getLowPrices(candles);
+        // Closing prices already extracted as 'prices'
+        const atrValue = calculateATR(highPrices, lowPrices, prices, atrPeriod);
+        if (atrValue !== undefined) {
+            indicators.atr = atrValue;
+        }
+    } else {
+        console.warn("[calculateAllIndicators] Not all candles have high, low, and close prices. Skipping ATR calculation.");
+    }
+
+    return indicators;
+}

@@ -119,11 +119,12 @@ export const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
 export async function getCandles(
   instrument: InstrumentType,
   count: number = 120,
-  granularity: number = 60
+  granularity: number = 60,
+  token?: string // Optional token parameter
 ): Promise<CandleData[]> {
-  console.log('[DerivService/getCandles Client-Side Check] process.env.NEXT_PUBLIC_DERIV_WS_URL inside getCandles:', process.env.NEXT_PUBLIC_DERIV_WS_URL);
-  console.log('[DerivService/getCandles Client-Side Check] process.env.NEXT_PUBLIC_DERIV_APP_ID inside getCandles:', process.env.NEXT_PUBLIC_DERIV_APP_ID);
-  console.log('[DerivService/getCandles Client-Side Check] DERIV_API_URL inside getCandles:', DERIV_API_URL);
+  // console.log('[DerivService/getCandles Client-Side Check] process.env.NEXT_PUBLIC_DERIV_WS_URL inside getCandles:', process.env.NEXT_PUBLIC_DERIV_WS_URL);
+  // console.log('[DerivService/getCandles Client-Side Check] process.env.NEXT_PUBLIC_DERIV_APP_ID inside getCandles:', process.env.NEXT_PUBLIC_DERIV_APP_ID);
+  // console.log('[DerivService/getCandles Client-Side Check] DERIV_API_URL inside getCandles:', DERIV_API_URL);
   // Get the correct symbol for the Deriv API
   const symbol = instrumentToDerivSymbol(instrument);
   const decimalPlaces = getInstrumentDecimalPlaces(instrument);
@@ -132,12 +133,21 @@ export async function getCandles(
 
   return new Promise((resolve, reject) => {
     ws.onopen = () => {
-      // First authorize if we have a token
-      if (DERIV_API_TOKEN) {
+      let authorized = false;
+      if (token) {
+        console.log('[DerivService/getCandles] Authorizing with provided token.');
+        ws.send(JSON.stringify({ authorize: token }));
+        authorized = true;
+      } else if (DERIV_API_TOKEN) { // Fallback to global demo token if no specific token provided
+        console.log('[DerivService/getCandles] Authorizing with global DERIV_API_TOKEN.');
         ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
+        authorized = true;
+      } else {
+        console.log('[DerivService/getCandles] No token provided, proceeding without explicit authorization for candles.');
       }
 
-      // Wait a short moment after authorization before sending the ticks request
+      // Wait a short moment after authorization attempt before sending the ticks request
+      // or send immediately if no authorization was attempted.
       setTimeout(() => {
         const request = {
           ticks_history: symbol,
@@ -151,13 +161,13 @@ export async function getCandles(
         
         console.log('[DerivService/getCandles] Sending request:', request);
         ws.send(JSON.stringify(request));
-      }, DERIV_API_TOKEN ? 1000 : 0); // Wait 1 second if we need to authorize
+      }, authorized ? 500 : 0); // Reduced delay if authorized, 0 if not.
     };
 
     ws.onmessage = (event) => {
       try {
         const response = JSON.parse(event.data as string);
-        console.log('[DerivService/getCandles] Received response:', response);
+        // console.log('[DerivService/getCandles] Received response:', response); // Verbose, can be enabled for debug
         
         if (response.error) {
           console.error('[DerivService/getCandles] API Error:', response.error);
@@ -168,22 +178,31 @@ export async function getCandles(
         
         if (response.msg_type === 'candles') {
           const candles: CandleData[] = (response.candles || []).map((candle: any) => ({
-            time: formatTickTime(candle.epoch),
+            time: formatTickTime(candle.epoch), // Ensure formatTickTime is defined
             epoch: candle.epoch,
             open: parseFloat(candle.open.toFixed(decimalPlaces)),
             high: parseFloat(candle.high.toFixed(decimalPlaces)),
             low: parseFloat(candle.low.toFixed(decimalPlaces)),
             close: parseFloat(candle.close.toFixed(decimalPlaces)),
           }));
-          resolve(candles.slice(-count));
+          resolve(candles.slice(-count)); // Ensure only requested count is resolved
           ws.close();
         } else if (response.msg_type === 'authorize') {
           if (response.error) {
             console.error('[DerivService/getCandles] Authorization Error:', response.error);
-            reject(new Error(`Authorization failed: ${response.error.message}`));
-            ws.close();
-        }
-          // Successfully authorized, waiting for candles
+            // Don't necessarily reject here, as candle data might still be public for some symbols.
+            // The ticks_history request will be sent after the timeout.
+            // If ticks_history fails due to auth, its own error handling will trigger.
+          } else {
+            console.log('[DerivService/getCandles] Authorization successful/response received.');
+          }
+          // The main logic for sending ticks_history is in the setTimeout after onopen.
+        } else if (response.msg_type === 'tick_history') { // Alternative response type for ticks_history
+             console.warn('[DerivService/getCandles] Received tick_history instead of candles. This might indicate an issue or different API version for the symbol.');
+             // Attempt to process if structure is similar or known, otherwise reject or handle as error.
+             // For now, let's assume it might be an error in expectation for 'candles' style.
+             reject(new Error("Received 'tick_history' msg_type when 'candles' was expected."));
+             ws.close();
         }
       } catch (e) {
         console.error('[DerivService/getCandles] Error processing message:', e);
