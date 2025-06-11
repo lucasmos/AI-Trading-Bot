@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react'; // Added useEffect
+import { useSession } from 'next-auth/react'; // Import useSession
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,7 +51,27 @@ export function AutomatedTradingControls() {
   const [executionResults, setExecutionResults] = useState<TradeExecutionResult[]>([]);
   const [aiReasoning, setAiReasoning] = useState<string>('');
 
-  const isBusy = isFetchingData || isProcessingAi || isExecutingTrades;
+  // Session
+  const { data: session, status: sessionStatus } = useSession();
+  const [isTokenFromSession, setIsTokenFromSession] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (sessionStatus === 'authenticated' && session?.user?.derivAccessToken) {
+      // Only set from session if apiToken is currently empty
+      // or if it was previously set by the session (to allow session updates)
+      if (apiToken === '' || isTokenFromSession) {
+        setApiToken(session.user.derivAccessToken as string); // Assuming derivAccessToken is string
+        setIsTokenFromSession(true);
+      }
+    } else if (sessionStatus !== 'loading' && isTokenFromSession) {
+      // If session becomes unauthenticated or token disappears, and token was from session, clear it
+      // setApiToken(''); // Optional: decide if you want to clear it or leave manual input
+      // setIsTokenFromSession(false); // Handled by manual input change
+    }
+  }, [session, sessionStatus, apiToken, isTokenFromSession]); // Add apiToken and isTokenFromSession to deps
+
+
+  const isBusy = isFetchingData || isProcessingAi || isExecutingTrades || sessionStatus === 'loading';
 
   const handleInstrumentChange = (instrument: ForexCryptoCommodityInstrumentType) => {
     setSelectedInstruments(prev =>
@@ -60,7 +81,13 @@ export function AutomatedTradingControls() {
     );
   };
 
-  const fetchMarketDataForSelectedInstruments = async (): Promise<boolean> => {
+  const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<boolean> => {
+    if (!currentToken) {
+      console.error('[fetchMarketData] Attempted to fetch market data without a valid API token.');
+      toast({ title: 'Internal Error', description: 'API token was missing when fetching data.', variant: 'destructive' });
+      setIsFetchingData(false); // Ensure loading state is reset
+      return false;
+    }
     if (selectedInstruments.length === 0) return true; // No data to fetch
 
     setIsFetchingData(true);
@@ -72,7 +99,7 @@ export function AutomatedTradingControls() {
     for (const instrument of selectedInstruments) {
       try {
         // Use the user's API token for fetching candles
-        const candles = await getCandles(instrument, 150, 60, apiToken || undefined); // Fetch 150 1-min candles
+        const candles = await getCandles(instrument, 150, 60, currentToken); // Fetch 150 1-min candles
         if (candles && candles.length > 0) {
           const indicators = calculateAllIndicators(candles);
           newMarketData[instrument] = { candles, indicators };
@@ -118,7 +145,7 @@ export function AutomatedTradingControls() {
     setAiReasoning('');
 
     // 1. Fetch live market data and calculate indicators
-    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments();
+    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
     if (!dataFetchSuccess) {
       // Error messages already toasted by fetchMarketDataForSelectedInstruments
       return;
@@ -213,13 +240,13 @@ export function AutomatedTradingControls() {
           <Input
             id="apiToken"
             type="password"
-            placeholder="Enter your Deriv API Token"
+            placeholder={isTokenFromSession && apiToken ? "Deriv session token active (override to change)" : "Enter your Deriv API Token"}
             value={apiToken}
-            onChange={(e) => setApiToken(e.target.value)}
+            onChange={(e) => { setApiToken(e.target.value); setIsTokenFromSession(false); }}
             disabled={isBusy}
           />
           <p className="text-xs text-muted-foreground">
-            Your API token is used to place trades and fetch market data.
+            Uses token from your Deriv session if logged in. Manually enter a token here to override.
           </p>
         </div>
 
@@ -293,14 +320,22 @@ export function AutomatedTradingControls() {
         {/* Control Button */}
         <Button
           onClick={handleStartAutomatedTrading}
-          disabled={isBusy || !apiToken || selectedInstruments.length === 0}
+          disabled={isBusy || sessionStatus === 'loading' || !apiToken || selectedInstruments.length === 0}
           className="w-full"
         >
-          {isFetchingData && 'Fetching Data...'}
-          {isProcessingAi && !isFetchingData && 'AI Processing...'}
-          {isExecutingTrades && !isFetchingData && !isProcessingAi && 'Executing Trades...'}
-          {!isBusy && 'Start Automated Trading'}
+          {(() => {
+            if (sessionStatus === 'loading') return 'Authenticating Session...';
+            if (isFetchingData) return 'Fetching Market Data...';
+            if (isProcessingAi) return 'AI Processing...';
+            if (isExecutingTrades) return 'Executing Trades...';
+            return 'Start Automated Trading';
+          })()}
         </Button>
+        {sessionStatus === 'unauthenticated' && !apiToken && (
+          <p className="text-sm text-center text-amber-600 dark:text-amber-500 mt-2">
+            Please sign in with Deriv or enter an API token manually to enable trading.
+          </p>
+        )}
       </CardContent>
 
       {/* Status Display (market data errors can also be shown here if desired) */}
