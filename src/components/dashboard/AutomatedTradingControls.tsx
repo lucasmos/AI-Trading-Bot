@@ -36,13 +36,6 @@ type MarketDataState = Record<ForexCryptoCommodityInstrumentType, {
   error?: string;
 }>;
 
-/**
- * Provides an interactive AI-powered automated trading interface using live market data and Deriv API integration.
- *
- * Users can configure trading parameters, fetch real-time market data, generate AI trading strategies, review proposed trades, and execute them upon confirmation. The component manages authentication, market data retrieval, AI strategy generation, trade execution, and displays detailed feedback and results throughout the process.
- *
- * @remark The trading flow is explicitly separated into two phases: AI strategy generation and user confirmation before execution. No trades are executed without explicit user approval.
- */
 export function AutomatedTradingControls() {
   const { toast } = useToast();
   const { data: session, status: sessionStatus } = useSession();
@@ -63,17 +56,23 @@ export function AutomatedTradingControls() {
   const [aiReasoning, setAiReasoning] = useState<string>('');
   const [isTokenFromSession, setIsTokenFromSession] = useState<boolean>(false);
 
-  // New state variables for confirmation flow
   const [aiStrategyForConfirmation, setAiStrategyForConfirmation] = useState<AutomatedTradingStrategyOutput | null>(null);
   const [showAiConfirmationDialog, setShowAiConfirmationDialog] = useState<boolean>(false);
 
 
   useEffect(() => {
+    console.log('[ATC useEffect/apiToken] Running. sessionStatus:', sessionStatus);
     if (sessionStatus === 'authenticated' && session?.user?.derivAccessToken) {
+      console.log('[ATC useEffect/apiToken] Session authenticated, token available:', session.user.derivAccessToken ? 'YES' : 'NO');
       if (apiToken === '' || isTokenFromSession) {
+        console.log('[ATC useEffect/apiToken] Setting apiToken from session:', session.user.derivAccessToken.substring(0, 5) + '...');
         setApiToken(session.user.derivAccessToken as string);
         setIsTokenFromSession(true);
+      } else {
+        console.log('[ATC useEffect/apiToken] apiToken already set manually, not overwriting from session.');
       }
+    } else if (sessionStatus !== 'loading' && isTokenFromSession) {
+      console.log('[ATC useEffect/apiToken] Session no longer authenticated or token missing, was from session. Current apiToken:', apiToken ? 'Exists' : 'Empty');
     }
   }, [session, sessionStatus, apiToken, isTokenFromSession]);
 
@@ -88,6 +87,7 @@ export function AutomatedTradingControls() {
   };
 
   const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<boolean> => {
+    console.log('[ATC fetchMarketData] Called with currentToken:', currentToken ? currentToken.substring(0,5) + '...' : 'EMPTY_OR_NULL');
     if (!currentToken) {
       toast({ title: 'Internal Error', description: 'API token missing for data fetch.', variant: 'destructive' });
       return false;
@@ -98,7 +98,8 @@ export function AutomatedTradingControls() {
     const newMarketData: MarketDataState = {};
      for (const instrument of selectedInstruments) {
       try {
-        const candles = await getCandles(instrument, 150, 60, currentToken);
+        console.log('[ATC fetchMarketData] DIAGNOSTIC: Fetching reduced number of candles (30).');
+        const candles = await getCandles(instrument, 30, 60, currentToken); // Reduced from 150 to 30
         if (candles && candles.length > 0) {
           const indicators = calculateAllIndicators(candles);
           newMarketData[instrument] = { candles, indicators };
@@ -119,20 +120,22 @@ export function AutomatedTradingControls() {
   };
 
   const handleStartAutomatedTrading = async () => {
-    // ... (initial checks for apiToken, selectedInstruments, totalStake remain the same)
+    console.log('[ATC handleStartAutomatedTrading] Called. Current apiToken state:', apiToken ? apiToken.substring(0,5) + '...' : 'EMPTY_OR_NULL');
     if (!apiToken || selectedInstruments.length === 0 || totalStake < 1 || sessionStatus !== 'authenticated' || !session?.user?.id) {
-      // Simplified error messages, specific checks are good
       toast({ title: 'Error', description: 'Please ensure API token, instruments, stake are set, and you are logged in.', variant: 'destructive' });
       return;
     }
 
     setExecutionResults([]);
     setAiReasoning('');
-    setAiStrategyForConfirmation(null); // Clear previous confirmation
-    setShowAiConfirmationDialog(false); // Hide previous dialog
+    setAiStrategyForConfirmation(null);
+    setShowAiConfirmationDialog(false);
 
     const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
-    if (!dataFetchSuccess) return;
+    if (!dataFetchSuccess) {
+        setIsProcessingAi(false);
+        return;
+    }
 
     const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
     const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
@@ -147,8 +150,13 @@ export function AutomatedTradingControls() {
       }
     }
 
+    console.log('[ATC handleStartAutomatedTrading] After data prep. hasDataForAtLeastOneInstrument:', hasDataForAtLeastOneInstrument);
+    console.log('[ATC handleStartAutomatedTrading] instrumentTicksForAi keys:', Object.keys(instrumentTicksForAi));
+    console.log('[ATC handleStartAutomatedTrading] instrumentIndicatorsForAi keys:', Object.keys(instrumentIndicatorsForAi));
+
     if (!hasDataForAtLeastOneInstrument) {
-        toast({ title: 'AI Strategy Halted', description: 'No valid market data for strategy.', variant: 'destructive' });
+        toast({ title: 'AI Strategy Halted', description: 'No valid market data available to generate a strategy.', variant: 'destructive' });
+        setIsProcessingAi(false);
         return;
     }
 
@@ -165,26 +173,34 @@ export function AutomatedTradingControls() {
         aiStrategyId: aiStrategyId,
       };
 
+      console.log('[ATC] strategyInput.instrumentIndicators being sent to AI flow:', JSON.stringify(strategyInput.instrumentIndicators, null, 2));
       const aiStrategyResult: AutomatedTradingStrategyOutput = await generateAutomatedTradingStrategy(strategyInput as any);
+
+      console.log('[ATC] Received aiStrategyResult from AI flow:', JSON.stringify(aiStrategyResult, null, 2));
+      if (aiStrategyResult) {
+          console.log('[ATC] Overall Reasoning from result:', aiStrategyResult.overallReasoning);
+          if (aiStrategyResult.tradesToExecute) {
+              aiStrategyResult.tradesToExecute.forEach((trade, index) => {
+                  console.log(`[ATC] Trade ${index + 1} Reasoning from result:`, trade.reasoning);
+              });
+          }
+      }
 
       if (!aiStrategyResult || !aiStrategyResult.tradesToExecute || aiStrategyResult.tradesToExecute.length === 0) {
         setAiReasoning(aiStrategyResult?.overallReasoning || 'AI determined no optimal trades at this moment.');
         toast({ title: 'AI Strategy', description: aiStrategyResult?.overallReasoning || 'AI did not propose any trades.', variant: 'default' });
-        setIsProcessingAi(false);
-        // Do not show confirmation dialog if no trades
       } else {
         setAiStrategyForConfirmation(aiStrategyResult);
-        setAiReasoning(aiStrategyResult.overallReasoning); // Keep this for the main display area too
-        setShowAiConfirmationDialog(true); // Show confirmation
+        setAiReasoning(aiStrategyResult.overallReasoning);
+        setShowAiConfirmationDialog(true);
         toast({ title: 'AI Strategy Ready', description: `AI proposed ${aiStrategyResult.tradesToExecute.length} trade(s). Please confirm.`, duration: 5000 });
-        setIsProcessingAi(false); // AI processing done, waiting for user confirmation
       }
     } catch (error: any) {
       console.error('Error during AI strategy generation:', error);
       toast({ title: 'Error', description: error.message || 'Unexpected error during AI strategy generation.', variant: 'destructive' });
+    } finally {
       setIsProcessingAi(false);
     }
-    // NOTE: executeAiTradingStrategy is NOT called here anymore. It's called by handleExecuteConfirmedTrades.
   };
 
   const handleExecuteConfirmedTrades = async () => {
@@ -215,7 +231,7 @@ export function AutomatedTradingControls() {
     }
 
     setIsExecutingTrades(true);
-    setShowAiConfirmationDialog(false); // Hide dialog once execution starts
+    setShowAiConfirmationDialog(false);
     toast({ title: 'Executing Trades...', description: `Processing ${aiStrategyForConfirmation.tradesToExecute.length} AI proposed trade(s).` });
 
     try {
@@ -239,7 +255,6 @@ export function AutomatedTradingControls() {
         }
       });
 
-      // Add summary toast
       const successfulPlacements = results.filter(r => r.success).length;
       const failedPlacements = results.length - successfulPlacements;
       toast({
@@ -253,15 +268,15 @@ export function AutomatedTradingControls() {
       toast({ title: 'Execution Error', description: error.message || 'Unexpected error during trade execution.', variant: 'destructive' });
     } finally {
       setIsExecutingTrades(false);
-      setAiStrategyForConfirmation(null); // Clear confirmed strategy
+      setAiStrategyForConfirmation(null);
     }
   };
 
   const handleCancelAiConfirmation = () => {
     setShowAiConfirmationDialog(false);
     setAiStrategyForConfirmation(null);
-    setIsProcessingAi(false); // Reset this as well
-    setAiReasoning(''); // Clear main reasoning display too if desired
+    setIsProcessingAi(false);
+    setAiReasoning('');
     toast({ title: 'AI Trading Cancelled', description: 'Automated trading was cancelled by the user.' });
   };
 
@@ -272,7 +287,6 @@ export function AutomatedTradingControls() {
         <CardDescription>Configure and start AI-powered automated trading with your Deriv account using live market data.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Configuration UI remains the same */}
         <div className="space-y-2">
           <Label htmlFor="apiToken">Deriv API Token</Label>
           <Input id="apiToken" type="password" placeholder={isTokenFromSession && apiToken ? "Deriv session token active (override to change)" : "Enter your Deriv API Token"} value={apiToken} onChange={(e) => { setApiToken(e.target.value); setIsTokenFromSession(false); }} disabled={isBusy || showAiConfirmationDialog} />
@@ -309,8 +323,7 @@ export function AutomatedTradingControls() {
             {(() => {
               if (sessionStatus === 'loading') return 'Authenticating Session...';
               if (isFetchingData) return 'Fetching Market Data...';
-              if (isProcessingAi) return 'AI Processing...'; // This state is now brief before confirmation
-              // if (isExecutingTrades) return 'Executing Trades...'; // This button is hidden during execution
+              if (isProcessingAi) return 'AI Processing...';
               return 'Start Automated Trading Analysis';
             })()}
           </Button>
@@ -318,61 +331,74 @@ export function AutomatedTradingControls() {
         {sessionStatus === 'unauthenticated' && !apiToken && ( <p className="text-sm text-center text-amber-600 dark:text-amber-500 mt-2"> Please sign in with Deriv or enter an API token manually to enable trading. </p> )}
       </CardContent>
 
-      {/* Confirmation Dialog Section */}
-      {showAiConfirmationDialog && aiStrategyForConfirmation && (
-        <CardFooter className="flex flex-col items-start space-y-4 border-t pt-6">
-          <CardTitle className="text-lg">Confirm AI Trading Strategy</CardTitle>
-          {aiReasoning && (
+      {showAiConfirmationDialog && aiStrategyForConfirmation && (() => {
+        // Logging block for UI render state
+        console.log('[ATC UI Render] Rendering Confirmation Dialog. States:');
+        console.log('[ATC UI Render]   showAiConfirmationDialog:', showAiConfirmationDialog);
+        console.log('[ATC UI Render]   aiReasoning (for overall):', aiReasoning);
+        console.log('[ATC UI Render]   aiStrategyForConfirmation.overallReasoning (from strategy object):', aiStrategyForConfirmation.overallReasoning);
+        if (aiStrategyForConfirmation.tradesToExecute && aiStrategyForConfirmation.tradesToExecute.length > 0) {
+            aiStrategyForConfirmation.tradesToExecute.forEach((trade, index) => {
+                console.log(`[ATC UI Render]   Trade ${index + 1} (${trade.instrument}) Reasoning from strategy object:`, trade.reasoning);
+            });
+        } else {
+            console.log('[ATC UI Render]   No trades to execute in aiStrategyForConfirmation.');
+        }
+        // End of logging block
+
+        return (
+          <CardFooter className="flex flex-col items-start space-y-4 border-t pt-6">
+            <CardTitle className="text-lg">Confirm AI Trading Strategy</CardTitle>
+            {aiReasoning && (
+              <div>
+                <h4 className="font-semibold mb-1">AI Overall Reasoning:</h4>
+                <ScrollArea className="h-20 w-full rounded-md border p-2 text-sm">
+                  {aiReasoning}
+                </ScrollArea>
+              </div>
+            )}
             <div>
-              <h4 className="font-semibold mb-1">AI Overall Reasoning:</h4>
-              <ScrollArea className="h-20 w-full rounded-md border p-2 text-sm">
-                {aiReasoning}
+              <h4 className="font-semibold mb-2">Proposed Trades ({aiStrategyForConfirmation.tradesToExecute.length}):</h4>
+              <ScrollArea className="h-40 w-full">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Instrument</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Stake</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {aiStrategyForConfirmation.tradesToExecute.map((trade, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{trade.instrument}</TableCell>
+                        <TableCell>{trade.action}</TableCell>
+                        <TableCell>${trade.stake.toFixed(2)}</TableCell>
+                        <TableCell>{trade.durationSeconds}s</TableCell>
+                        <TableCell className="text-xs whitespace-pre-wrap max-w-sm" title={trade.reasoning}>{trade.reasoning}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </ScrollArea>
             </div>
-          )}
-          <div>
-            <h4 className="font-semibold mb-2">Proposed Trades ({aiStrategyForConfirmation.tradesToExecute.length}):</h4>
-            <ScrollArea className="h-40 w-full">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Instrument</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Stake</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {aiStrategyForConfirmation.tradesToExecute.map((trade, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{trade.instrument}</TableCell>
-                      <TableCell>{trade.action}</TableCell>
-                      <TableCell>${trade.stake.toFixed(2)}</TableCell>
-                      <TableCell>{trade.durationSeconds}s</TableCell>
-                      <TableCell className="text-xs max-w-xs truncate" title={trade.reasoning}>{trade.reasoning}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </div>
-          <div className="flex w-full space-x-4 mt-4">
-            <Button onClick={handleExecuteConfirmedTrades} className="flex-1 bg-green-600 hover:bg-green-700" disabled={isExecutingTrades}>
-              {isExecutingTrades ? 'Executing...' : 'Confirm & Execute Trades'}
-            </Button>
-            <Button onClick={handleCancelAiConfirmation} className="flex-1" variant="outline" disabled={isExecutingTrades}>
-              Cancel
-            </Button>
-          </div>
-        </CardFooter>
-      )}
+            <div className="flex w-full space-x-4 mt-4">
+              <Button onClick={handleExecuteConfirmedTrades} className="flex-1 bg-green-600 hover:bg-green-700" disabled={isExecutingTrades}>
+                {isExecutingTrades ? 'Executing...' : 'Confirm & Execute Trades'}
+              </Button>
+              <Button onClick={handleCancelAiConfirmation} className="flex-1" variant="outline" disabled={isExecutingTrades}>
+                Cancel
+              </Button>
+            </div>
+          </CardFooter>
+        );
+      })()}
 
-      {/* Existing Results Display Section (after confirmation or if no confirmation needed) */}
       {!showAiConfirmationDialog && (aiReasoning || executionResults.length > 0 || Object.values(marketData).some(d => d.error)) && (
         <CardFooter className="flex flex-col items-start space-y-4 border-t pt-6">
           {Object.entries(marketData).map(([instrument, data]) => data.error ? ( <div key={instrument} className="text-red-500 text-sm"> Market Data Error for {instrument}: {data.error} </div> ) : null )}
-          {/* Display overall reasoning if AI processing happened but no trades to confirm (e.g. AI decided not to trade) */}
           {aiReasoning && !aiStrategyForConfirmation && ( <div> <h4 className="font-semibold mb-2">AI Overall Reasoning:</h4> <p className="text-sm text-muted-foreground whitespace-pre-wrap">{aiReasoning}</p> </div> )}
           {executionResults.length > 0 && (
             <div>

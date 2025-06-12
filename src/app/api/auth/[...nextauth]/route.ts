@@ -3,6 +3,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client'; // Added for Prisma.JsonNull
 import bcrypt from 'bcryptjs';
 import { getDerivAccountList } from '@/services/deriv'; // Import for fetching account details
 
@@ -205,6 +206,7 @@ export const authOptions: NextAuthOptions = {
                     derivDemoAccountId: demoAccountIdFromApi,
                     derivRealAccountId: realAccountIdFromApi,
                     selectedDerivAccountType: "demo", // Default, user can change later
+                    settings: Prisma.JsonNull, // Added required field
                     // derivDemoBalance: demoBalanceFromApi, // Store initial balance
                     // derivRealBalance: realBalanceFromApi, // Store initial balance
                     // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
