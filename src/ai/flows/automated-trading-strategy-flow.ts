@@ -60,17 +60,51 @@ const InferredAutomatedTradingStrategyOutputSchema = zod.object({
   overallReasoning: zod.string(),
 });
 
+// --- Original Prompt Start ---
+// const originalPromptText = `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data.\r\r\nYou MUST aim for a minimum 83% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Instruments (Forex/Crypto/Commodities): {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\nUser-defined Stop-Loss Percentage: {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (This will override the default system stop-loss){{else}}System Default 5%{{/if}}\r\n\r\nRecent Price Ticks (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
+// {{{formattedIndicatorsString}}}
+// Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n
+// IMPORTANT: For this task, providing detailed, indicator-based reasoning is CRITICAL.
+// - The \`overallReasoning\` field MUST summarize your multi-indicator analysis.
+// - EACH \`AutomatedTradeProposal\` object in the \`tradesToExecute\` array MUST have a \`reasoning\` field. This field CANNOT be empty or generic. It MUST detail the specific BB, MACD, RSI, and ATR signals that justify that particular trade.
+// \r\nYour Task:\r\n1.  Your primary analysis MUST focus on the provided technical indicators: Bollinger Bands (BB), MACD, RSI, and ATR. Use the recent price ticks for context.\r\n    *   For Bollinger Bands: Identify periods of low/high volatility (squeeze/expansion), and potential breakouts or mean reversion signals.\r\n    *   For MACD: Look for crossovers (MACD line vs. Signal line), divergence with price, and histogram strength.\r\n    *   For RSI: Identify overbought/oversold conditions and potential divergences.\r\n    *   For ATR: Use ATR to understand current market volatility for each instrument, which can inform trade duration, confidence, or perceived risk.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the >=83% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals. Aim for >=85% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Smaller stakes relative to total stake are preferred.\r\n    *   Balanced: Mix of clear opportunities and calculated risks. Aim for >=83% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Moderate stakes.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments or counter-trend opportunities if signals are strong. Aim for >=80% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Larger stakes if confidence is high.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration in SECONDS (e.g., 30, 60, 180, 300). Durations MUST be positive integers representing seconds, with a minimum value of 1.\r\n    *   The system will set a {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss. Your reasoning should reflect an understanding of this.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.\r\n5.  Provide MANDATORY DETAILED REASONING:\r\n    *   For \`overallReasoning\`: Concisely explain your general market outlook and strategy derived from the combined signals of Bollinger Bands, MACD, RSI, and ATR for the chosen instruments.\r\n    *   For EACH \`AutomatedTradeProposal\`'s \`reasoning\` field: This is a CRITICAL field. It MUST NOT be generic. Provide a specific, concise explanation (1-3 sentences) detailing:\r\n        *   Which of the four indicators (BB, MACD, RSI, ATR) provided the primary signal(s) for THIS trade.\r\n        *   What those signals were (e.g., 'RSI (<30) indicated oversold', 'MACD bullish cross above zero line', 'Price broke above upper Bollinger Band on expanding volatility (BB width increasing)', 'ATR confirmed sufficient volatility for movement').\r\n        *   How these signals justify the CALL/PUT decision and the chosen duration.\r\n        *   Example of good reasoning: 'EUR/USD CALL: RSI was oversold at 28. MACD histogram turned positive. Price touched lower Bollinger Band and showed signs of reversal. ATR is moderate, supporting a 180s duration for potential mean reversion.'\r\n    *   Your reasoning must clearly demonstrate analytical rigor and direct application of the provided indicator data to achieve the >=83% win rate target, while respecting the system's stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.\r\nEach trade's 'durationSeconds' must be an integer number of seconds (e.g., 30, 60, 300) and at least 1.\r\nStrict Adherence to Output Schema: Ensure your entire response is a single, valid JSON object matching the output schema. All fields specified in the schema for \`AutomatedTradeProposal\` (instrument, action, stake, durationSeconds, reasoning) are expected for each trade. The \`reasoning\` field for each trade is mandatory.\r\n\r\nBegin your response with the JSON object.\r\n`;
+// --- Original Prompt End ---
+
+console.log('[AI Flow] DIAGNOSTIC: Using MINIMIZED STATIC PROMPT TEMPLATE and MINIMIZED DYNAMIC DATA for this test.');
+const simplifiedDiagnosticPromptText = `
+You are a test assistant.
+User Total Stake: {{{totalStake}}}
+Selected Instruments: {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
+Trading Mode: {{{tradingMode}}}
+Formatted Indicators (placeholder): {{{formattedIndicatorsString}}}
+Price Ticks (placeholder): {{#each instrumentTicks}}Instrument: {{@key}} - {{#each this}}T:{{time}},P:{{price}}; {{/each}}{{/each}}
+
+Your task is to propose one simple trade.
+Output a JSON object with "overallReasoning" and "tradesToExecute".
+The "tradesToExecute" array should contain one trade object with "instrument", "action", "stake", "durationSeconds", and "reasoning".
+Make reasoning very short, e.g., "Test trade based on minimal data."
+
+Example JSON structure for output:
+{
+  "overallReasoning": "This is a diagnostic test with minimal data and a simplified prompt.",
+  "tradesToExecute": [
+    {
+      "instrument": "{{#if instruments.0}}{{{instruments.0}}}{{else}}EUR/USD{{/if}}",
+      "action": "CALL",
+      "stake": 1,
+      "durationSeconds": 60,
+      "reasoning": "Diagnostic test trade."
+    }
+  ]
+}
+Begin your response with the JSON object.
+`;
+
 const prompt = ai.definePrompt({
-  name: 'automatedTradingStrategyPrompt',
-  input: {schema: AutomatedTradingStrategyInputZodSchema},
-  output: {schema: InferredAutomatedTradingStrategyOutputSchema},
-  prompt: `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data.\r\r\nYou MUST aim for a minimum 83% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Instruments (Forex/Crypto/Commodities): {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\nUser-defined Stop-Loss Percentage: {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (This will override the default system stop-loss){{else}}System Default 5%{{/if}}\r\n\r\nRecent Price Ticks (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
-{{{formattedIndicatorsString}}} 
-Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n
-IMPORTANT: For this task, providing detailed, indicator-based reasoning is CRITICAL.
-- The \`overallReasoning\` field MUST summarize your multi-indicator analysis.
-- EACH \`AutomatedTradeProposal\` object in the \`tradesToExecute\` array MUST have a \`reasoning\` field. This field CANNOT be empty or generic. It MUST detail the specific BB, MACD, RSI, and ATR signals that justify that particular trade.
-\r\nYour Task:\r\n1.  Your primary analysis MUST focus on the provided technical indicators: Bollinger Bands (BB), MACD, RSI, and ATR. Use the recent price ticks for context.\r\n    *   For Bollinger Bands: Identify periods of low/high volatility (squeeze/expansion), and potential breakouts or mean reversion signals.\r\n    *   For MACD: Look for crossovers (MACD line vs. Signal line), divergence with price, and histogram strength.\r\n    *   For RSI: Identify overbought/oversold conditions and potential divergences.\r\n    *   For ATR: Use ATR to understand current market volatility for each instrument, which can inform trade duration, confidence, or perceived risk.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the >=83% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals. Aim for >=85% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Smaller stakes relative to total stake are preferred.\r\n    *   Balanced: Mix of clear opportunities and calculated risks. Aim for >=83% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Moderate stakes.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments or counter-trend opportunities if signals are strong. Aim for >=80% win rate. Base decisions heavily on confirming signals from multiple indicators (BB, MACD, RSI, ATR). Larger stakes if confidence is high.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration in SECONDS (e.g., 30, 60, 180, 300). Durations MUST be positive integers representing seconds, with a minimum value of 1.\r\n    *   The system will set a {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss. Your reasoning should reflect an understanding of this.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.\r\n5.  Provide MANDATORY DETAILED REASONING:\r\n    *   For \`overallReasoning\`: Concisely explain your general market outlook and strategy derived from the combined signals of Bollinger Bands, MACD, RSI, and ATR for the chosen instruments.\r\n    *   For EACH \`AutomatedTradeProposal\`'s \`reasoning\` field: This is a CRITICAL field. It MUST NOT be generic. Provide a specific, concise explanation (1-3 sentences) detailing:\r\n        *   Which of the four indicators (BB, MACD, RSI, ATR) provided the primary signal(s) for THIS trade.\r\n        *   What those signals were (e.g., 'RSI (<30) indicated oversold', 'MACD bullish cross above zero line', 'Price broke above upper Bollinger Band on expanding volatility (BB width increasing)', 'ATR confirmed sufficient volatility for movement').\r\n        *   How these signals justify the CALL/PUT decision and the chosen duration.\r\n        *   Example of good reasoning: 'EUR/USD CALL: RSI was oversold at 28. MACD histogram turned positive. Price touched lower Bollinger Band and showed signs of reversal. ATR is moderate, supporting a 180s duration for potential mean reversion.'\r\n    *   Your reasoning must clearly demonstrate analytical rigor and direct application of the provided indicator data to achieve the >=83% win rate target, while respecting the system's stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.\r\nEach trade's 'durationSeconds' must be an integer number of seconds (e.g., 30, 60, 300) and at least 1.\r\nStrict Adherence to Output Schema: Ensure your entire response is a single, valid JSON object matching the output schema. All fields specified in the schema for \`AutomatedTradeProposal\` (instrument, action, stake, durationSeconds, reasoning) are expected for each trade. The \`reasoning\` field for each trade is mandatory.\r\n\r\nBegin your response with the JSON object.\r\n`,
+  name: 'automatedTradingStrategyPrompt', // Keep the same name for consistency
+  input: {schema: AutomatedTradingStrategyInputZodSchema}, // Keep original input schema
+  output: {schema: InferredAutomatedTradingStrategyOutputSchema}, // Keep original output schema
+  prompt: simplifiedDiagnosticPromptText, // USE THE SIMPLIFIED DIAGNOSTIC PROMPT TEXT
 });
 
 const automatedTradingStrategyFlow = ai.defineFlow(
@@ -136,7 +170,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
 
     const promptInputForCall: AutomatedTradingStrategyFlowInput = {
       ...diagnosticInput,
-      instruments: diagnosticInput.instruments as ForexCryptoCommodityInstrumentType[], // This is already instrumentsForDiagnosis
+      instruments: diagnosticInput.instruments as ForexCryptoCommodityInstrumentType[],
       instrumentTicks: minimalTicksForPrompt,
       instrumentIndicators: minimalInstrumentIndicators,
       formattedIndicatorsString: minimalFormattedIndicatorsString,
@@ -147,10 +181,9 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     console.log('[AI Flow] DIAGNOSTIC: MINIMIZED promptInputForCall.instrumentTicks:', JSON.stringify(promptInputForCall.instrumentTicks, null, 2));
     console.log('[AI Flow] DIAGNOSTIC: MINIMIZED promptInputForCall.formattedIndicatorsString:', promptInputForCall.formattedIndicatorsString);
 
-    console.log('[AI Flow] About to call prompt() with MINIMIZED dynamic data.');
+    console.log('[AI Flow] About to call prompt() with MINIMIZED dynamic data and MINIMIZED STATIC PROMPT.');
     const result = await prompt(promptInputForCall) as any;
 
-    // console.log('[AI Flow] Full result object from AI prompt:', JSON.stringify(result, null, 2)); // This was the line causing issues
     if (result && typeof result.text === 'function') {
         console.log('[AI Flow] Raw AI response text (attempt 1):', await result.text());
     } else if (result && result.raw) {
