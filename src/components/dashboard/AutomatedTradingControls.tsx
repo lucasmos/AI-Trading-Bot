@@ -61,11 +61,18 @@ export function AutomatedTradingControls() {
 
 
   useEffect(() => {
+    console.log('[ATC useEffect/apiToken] Running. sessionStatus:', sessionStatus);
     if (sessionStatus === 'authenticated' && session?.user?.derivAccessToken) {
+      console.log('[ATC useEffect/apiToken] Session authenticated, token available:', session.user.derivAccessToken ? 'YES' : 'NO');
       if (apiToken === '' || isTokenFromSession) {
+        console.log('[ATC useEffect/apiToken] Setting apiToken from session:', session.user.derivAccessToken.substring(0, 5) + '...');
         setApiToken(session.user.derivAccessToken as string);
         setIsTokenFromSession(true);
+      } else {
+        console.log('[ATC useEffect/apiToken] apiToken already set manually, not overwriting from session.');
       }
+    } else if (sessionStatus !== 'loading' && isTokenFromSession) {
+      console.log('[ATC useEffect/apiToken] Session no longer authenticated or token missing, was from session. Current apiToken:', apiToken ? 'Exists' : 'Empty');
     }
   }, [session, sessionStatus, apiToken, isTokenFromSession]);
 
@@ -80,6 +87,7 @@ export function AutomatedTradingControls() {
   };
 
   const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<boolean> => {
+    console.log('[ATC fetchMarketData] Called with currentToken:', currentToken ? currentToken.substring(0,5) + '...' : 'EMPTY_OR_NULL');
     if (!currentToken) {
       toast({ title: 'Internal Error', description: 'API token missing for data fetch.', variant: 'destructive' });
       return false;
@@ -111,6 +119,7 @@ export function AutomatedTradingControls() {
   };
 
   const handleStartAutomatedTrading = async () => {
+    console.log('[ATC handleStartAutomatedTrading] Called. Current apiToken state:', apiToken ? apiToken.substring(0,5) + '...' : 'EMPTY_OR_NULL');
     if (!apiToken || selectedInstruments.length === 0 || totalStake < 1 || sessionStatus !== 'authenticated' || !session?.user?.id) {
       toast({ title: 'Error', description: 'Please ensure API token, instruments, stake are set, and you are logged in.', variant: 'destructive' });
       return;
@@ -122,7 +131,10 @@ export function AutomatedTradingControls() {
     setShowAiConfirmationDialog(false);
 
     const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
-    if (!dataFetchSuccess) return;
+    if (!dataFetchSuccess) {
+        setIsProcessingAi(false); // Ensure this is reset if data fetch fails
+        return;
+    }
 
     const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
     const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
@@ -137,8 +149,13 @@ export function AutomatedTradingControls() {
       }
     }
 
+    console.log('[ATC handleStartAutomatedTrading] After data prep. hasDataForAtLeastOneInstrument:', hasDataForAtLeastOneInstrument);
+    console.log('[ATC handleStartAutomatedTrading] instrumentTicksForAi keys:', Object.keys(instrumentTicksForAi));
+    console.log('[ATC handleStartAutomatedTrading] instrumentIndicatorsForAi keys:', Object.keys(instrumentIndicatorsForAi));
+
     if (!hasDataForAtLeastOneInstrument) {
-        toast({ title: 'AI Strategy Halted', description: 'No valid market data for strategy.', variant: 'destructive' });
+        toast({ title: 'AI Strategy Halted', description: 'No valid market data available to generate a strategy.', variant: 'destructive' });
+        setIsProcessingAi(false); // Add this line
         return;
     }
 
@@ -171,17 +188,19 @@ export function AutomatedTradingControls() {
       if (!aiStrategyResult || !aiStrategyResult.tradesToExecute || aiStrategyResult.tradesToExecute.length === 0) {
         setAiReasoning(aiStrategyResult?.overallReasoning || 'AI determined no optimal trades at this moment.');
         toast({ title: 'AI Strategy', description: aiStrategyResult?.overallReasoning || 'AI did not propose any trades.', variant: 'default' });
-        setIsProcessingAi(false);
+        // setIsProcessingAi(false); // This will be handled by finally
       } else {
         setAiStrategyForConfirmation(aiStrategyResult);
         setAiReasoning(aiStrategyResult.overallReasoning);
         setShowAiConfirmationDialog(true);
         toast({ title: 'AI Strategy Ready', description: `AI proposed ${aiStrategyResult.tradesToExecute.length} trade(s). Please confirm.`, duration: 5000 });
-        setIsProcessingAi(false);
       }
     } catch (error: any) {
       console.error('Error during AI strategy generation:', error);
       toast({ title: 'Error', description: error.message || 'Unexpected error during AI strategy generation.', variant: 'destructive' });
+    } finally {
+      // Set isProcessingAi to false here if not showing confirmation, or after confirmation is handled.
+      // If showAiConfirmationDialog is true, user interaction will follow, so isProcessingAi should be false.
       setIsProcessingAi(false);
     }
   };
