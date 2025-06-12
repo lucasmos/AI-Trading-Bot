@@ -48,6 +48,14 @@ interface TradeControlsProps {
   isTradeable: boolean;
 }
 
+/**
+ * Renders the trading terminal UI for configuring and executing manual or AI-assisted trades on Forex, Crypto, and Commodity instruments.
+ *
+ * Provides controls for selecting trading mode, AI strategy, trade duration, account type, stake amounts, stop loss/take profit, and instrument. Enables manual trade execution (CALL/PUT), AI recommendations, and AI auto-trading with validation and state-dependent disabling. Displays market status, balance checks, and contextual tooltips for user feedback.
+ *
+ * @remark
+ * AI recommendations and auto-trading are only available for supported instruments and may be restricted by market hours or instrument type. Real account trading is simulated within this UI.
+ */
 export function TradeControls({
   tradingMode,
   onTradingModeChange,
