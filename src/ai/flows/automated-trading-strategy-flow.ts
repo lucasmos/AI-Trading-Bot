@@ -107,7 +107,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
 
     const result = await prompt(promptInput) as any;
 
-    console.log('[AI Flow] Full result object from AI prompt:', JSON.stringify(result, null, 2));
+    // console.log('[AI Flow] Full result object from AI prompt:', JSON.stringify(result, null, 2)); // REMOVED this line
     // Attempt to log raw text if available
     if (result && typeof result.text === 'function') {
         console.log('[AI Flow] Raw AI response text (attempt 1):', await result.text());
