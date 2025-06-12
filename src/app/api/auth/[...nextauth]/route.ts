@@ -22,11 +22,12 @@ interface ExtendedToken {
   id?: string;
   provider?: string;
   derivAccessToken?: string;
-  derivAccountId?: string;
+  derivAccountId?: string; // This can be the currently selected one (demo/real) or default
   derivDemoAccountId?: string;
   derivDemoBalance?: number;
   derivRealAccountId?: string;
   derivRealBalance?: number;
+  selectedDerivAccountType?: string; // "demo" or "real"
   name?: string | null;
   email?: string | null;
   picture?: string | null;
@@ -187,42 +188,123 @@ export const authOptions: NextAuthOptions = {
               console.log('[NextAuth Callbacks] JWT - Successfully fetched Deriv account list.');
               const accounts = accountListResponse.account_list as any[];
 
-              const defaultAccount = accounts.find(acc => acc.is_default === 1);
-              if (defaultAccount) {
-                extendedToken.derivAccountId = defaultAccount.loginid;
-              }
+              const apiDemoAccount = accounts.find(acc => acc.is_virtual === 1);
+              const apiRealAccount = accounts.find(acc => acc.is_virtual === 0); // Simplified: taking the first real, default logic can be more complex
 
-              const demoAccount = accounts.find(acc => acc.is_virtual === 1);
-              if (demoAccount) {
-                extendedToken.derivDemoAccountId = demoAccount.loginid;
-                extendedToken.derivDemoBalance = parseFloat(demoAccount.balance);
-                if (!extendedToken.derivAccountId && demoAccount.is_default === 1) {
-                    extendedToken.derivAccountId = demoAccount.loginid;
-                }
-              }
+              const demoAccountIdFromApi = apiDemoAccount?.loginid;
+              const realAccountIdFromApi = apiRealAccount?.loginid;
+              // Balances from API are fresh but we might not store them directly in token yet, rather in DB first
+              // const demoBalanceFromApi = apiDemoAccount ? parseFloat(apiDemoAccount.balance) : undefined;
+              // const realBalanceFromApi = apiRealAccount ? parseFloat(apiRealAccount.balance) : undefined;
 
-              let realAccount = accounts.find(acc => acc.is_virtual === 0 && acc.is_default === 1);
-              if (!realAccount) {
-                realAccount = accounts.find(acc => acc.is_virtual === 0);
-              }
-              if (realAccount) {
-                extendedToken.derivRealAccountId = realAccount.loginid;
-                extendedToken.derivRealBalance = parseFloat(realAccount.balance);
-                if (!extendedToken.derivAccountId) {
-                    extendedToken.derivAccountId = realAccount.loginid;
+              try {
+                const userSettings = await prisma.userSettings.upsert({
+                  where: { userId: u.id! },
+                  create: {
+                    userId: u.id!,
+                    derivDemoAccountId: demoAccountIdFromApi,
+                    derivRealAccountId: realAccountIdFromApi,
+                    selectedDerivAccountType: "demo", // Default, user can change later
+                    // derivDemoBalance: demoBalanceFromApi, // Store initial balance
+                    // derivRealBalance: realBalanceFromApi, // Store initial balance
+                    // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
+                  },
+                  update: {
+                    derivDemoAccountId: demoAccountIdFromApi, // Update if different
+                    derivRealAccountId: realAccountIdFromApi, // Update if different
+                    // derivDemoBalance: demoBalanceFromApi, // Update with fresh balance
+                    // derivRealBalance: realBalanceFromApi, // Update with fresh balance
+                    // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
+                  },
+                });
+                console.log('[NextAuth Callbacks] JWT - UserSettings updated/created for user:', u.id);
+
+                // Populate token from these newly saved/updated settings
+                extendedToken.derivDemoAccountId = userSettings.derivDemoAccountId ?? undefined;
+                extendedToken.derivRealAccountId = userSettings.derivRealAccountId ?? undefined;
+                extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
+                extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
+                extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+
+                // Determine the primary derivAccountId for the token based on selected type
+                if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
+                  extendedToken.derivAccountId = userSettings.derivRealAccountId;
+                } else if (userSettings.selectedDerivAccountType === "demo" && userSettings.derivDemoAccountId) {
+                  extendedToken.derivAccountId = userSettings.derivDemoAccountId;
+                } else {
+                  // Fallback if selected type is somehow not set or ID for it is missing
+                  extendedToken.derivAccountId = userSettings.derivRealAccountId ?? userSettings.derivDemoAccountId ?? undefined;
                 }
+
+                console.log('[NextAuth Callbacks] JWT - Token populated from UserSettings DB.');
+                // TODO: Fetch initial demo balance using getDerivAccountBalance(demoAccountIdFromApi) and update UserSettings + token.
+                // TODO: Fetch initial real balance using getDerivAccountBalance(realAccountIdFromApi) and update UserSettings + token.
+                // This would involve another call to prisma.userSettings.update after fetching balances.
+
+              } catch (dbError: any) {
+                console.error('[NextAuth Callbacks] JWT - Error saving/fetching UserSettings to/from DB:', dbError.message || dbError);
+                // Fallback: Populate token with IDs directly from API if DB operation fails
+                extendedToken.derivDemoAccountId = demoAccountIdFromApi;
+                extendedToken.derivRealAccountId = realAccountIdFromApi;
+                // Balances from API could be used here if needed, but primary source should be DB for consistency
+                // extendedToken.derivDemoBalance = demoBalanceFromApi;
+                // extendedToken.derivRealBalance = realBalanceFromApi;
+                if (extendedToken.derivDemoAccountId) extendedToken.derivAccountId = extendedToken.derivDemoAccountId; // Default to demo if DB fails
               }
-              
-              if (!extendedToken.derivAccountId) {
-                if (extendedToken.derivRealAccountId) extendedToken.derivAccountId = extendedToken.derivRealAccountId;
-                else if (extendedToken.derivDemoAccountId) extendedToken.derivAccountId = extendedToken.derivDemoAccountId;
-              }
-              console.log('[NextAuth Callbacks] JWT - Processed account list details.');
             } else {
-              console.warn('[NextAuth Callbacks] JWT - Failed to fetch or parse Deriv account list response:', accountListResponse?.error?.message || 'No account_list found');
+              console.warn('[NextAuth Callbacks] JWT - Failed to fetch Deriv account list. Attempting to load from DB.');
+              if (u.id) {
+                try {
+                  const userSettings = await prisma.userSettings.findUnique({ where: { userId: u.id } });
+                  if (userSettings) {
+                    extendedToken.derivDemoAccountId = userSettings.derivDemoAccountId ?? undefined;
+                    extendedToken.derivRealAccountId = userSettings.derivRealAccountId ?? undefined;
+                    extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
+                    extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
+                    extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+                    if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
+                      extendedToken.derivAccountId = userSettings.derivRealAccountId;
+                    } else if (userSettings.selectedDerivAccountType === "demo" && userSettings.derivDemoAccountId) {
+                      extendedToken.derivAccountId = userSettings.derivDemoAccountId;
+                    } else {
+                      extendedToken.derivAccountId = userSettings.derivRealAccountId ?? userSettings.derivDemoAccountId ?? undefined;
+                    }
+                    console.log('[NextAuth Callbacks] JWT - Token populated from existing UserSettings due to API fail.');
+                  } else {
+                    console.log('[NextAuth Callbacks] JWT - No existing UserSettings found for user after API fail:', u.id);
+                  }
+                } catch (dbError: any) {
+                  console.error('[NextAuth Callbacks] JWT - Error fetching existing UserSettings from DB after API fail:', dbError.message || dbError);
+                }
+              }
             }
-          } catch (error: any) {
-            console.error('[NextAuth Callbacks] JWT - Error fetching Deriv account list:', error.message || error);
+          } catch (error: any) { // Catch for getDerivAccountList
+            console.error('[NextAuth Callbacks] JWT - Error during Deriv account list processing or DB operations:', error.message || error);
+            console.warn('[NextAuth Callbacks] JWT - Deriv account details could not be fetched/processed. Attempting to load from DB.');
+            if (u.id) {
+                try {
+                  const userSettings = await prisma.userSettings.findUnique({ where: { userId: u.id } });
+                  if (userSettings) {
+                    extendedToken.derivDemoAccountId = userSettings.derivDemoAccountId ?? undefined;
+                    extendedToken.derivRealAccountId = userSettings.derivRealAccountId ?? undefined;
+                    extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
+                    extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
+                    extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+                     if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
+                      extendedToken.derivAccountId = userSettings.derivRealAccountId;
+                    } else if (userSettings.selectedDerivAccountType === "demo" && userSettings.derivDemoAccountId) {
+                      extendedToken.derivAccountId = userSettings.derivDemoAccountId;
+                    } else {
+                      extendedToken.derivAccountId = userSettings.derivRealAccountId ?? userSettings.derivDemoAccountId ?? undefined;
+                    }
+                    console.log('[NextAuth Callbacks] JWT - Token populated from existing UserSettings due to outer catch.');
+                  } else {
+                     console.log('[NextAuth Callbacks] JWT - No existing UserSettings found for user after outer catch:', u.id);
+                  }
+                } catch (dbError: any) {
+                  console.error('[NextAuth Callbacks] JWT - Error fetching existing UserSettings from DB after outer catch:', dbError.message || dbError);
+                }
+            }
           }
         }
       }
@@ -239,38 +321,41 @@ export const authOptions: NextAuthOptions = {
         provider: extendedToken.provider,
         name: extendedToken.name,
         email: extendedToken.email,
-        derivAccessTokenPresent: !!extendedToken.derivAccessToken,
-        derivAccountId: extendedToken.derivAccountId,
+        derivAccessTokenPresent: !!extendedToken.derivAccessToken, // Keep this for quick check
+        derivAccountId: extendedToken.derivAccountId, // Main selected account ID
         derivDemoAccountId: extendedToken.derivDemoAccountId,
         derivDemoBalance: extendedToken.derivDemoBalance,
         derivRealAccountId: extendedToken.derivRealAccountId,
         derivRealBalance: extendedToken.derivRealBalance,
+        selectedDerivAccountType: extendedToken.selectedDerivAccountType,
       });
       return extendedToken;
     },
 
     async session({ session, token }) {
       const extendedToken = token as ExtendedToken;
-      console.log('[NextAuth Callbacks] Session callback - before processing:', { 
-        session: JSON.stringify(session, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2),
-        token: JSON.stringify(extendedToken, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2)
-      });
+      // It's good practice to log less in production, but for dev this is fine.
+      // console.log('[NextAuth Callbacks] Session callback - token received:', JSON.stringify(extendedToken, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2));
 
       if (session.user) {
-        (session.user as any).id = extendedToken.id;
-        (session.user as any).provider = extendedToken.provider;
-        (session.user as any).derivAccessToken = extendedToken.derivAccessToken;
-        if (extendedToken.derivAccessToken) {
-            (session.user as any).derivApiToken = { access_token: extendedToken.derivAccessToken };
+        const sessionUser = session.user as any; // Cast to any to attach custom properties
+        sessionUser.id = extendedToken.id;
+        sessionUser.provider = extendedToken.provider;
+
+        // Deriv related fields from token to session.user
+        sessionUser.derivAccessToken = extendedToken.derivAccessToken; // The actual token for API calls
+        if (extendedToken.derivAccessToken) { // Convenience structure for some parts of the app
+            sessionUser.derivApiToken = { access_token: extendedToken.derivAccessToken };
         }
-        (session.user as any).derivAccountId = extendedToken.derivAccountId;
-        (session.user as any).derivDemoAccountId = extendedToken.derivDemoAccountId;
-        (session.user as any).derivDemoBalance = extendedToken.derivDemoBalance;
-        (session.user as any).derivRealAccountId = extendedToken.derivRealAccountId;
-        (session.user as any).derivRealBalance = extendedToken.derivRealBalance;
+        sessionUser.derivAccountId = extendedToken.derivAccountId; // Currently selected/active Deriv account ID
+        sessionUser.derivDemoAccountId = extendedToken.derivDemoAccountId;
+        sessionUser.derivDemoBalance = extendedToken.derivDemoBalance;
+        sessionUser.derivRealAccountId = extendedToken.derivRealAccountId;
+        sessionUser.derivRealBalance = extendedToken.derivRealBalance;
+        sessionUser.selectedDerivAccountType = extendedToken.selectedDerivAccountType;
       }
       
-      console.log('[NextAuth Callbacks] Session callback - after processing:', JSON.stringify(session, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2));
+      // console.log('[NextAuth Callbacks] Session callback - session object to be returned:', JSON.stringify(session, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2));
       return session;
     },
   },

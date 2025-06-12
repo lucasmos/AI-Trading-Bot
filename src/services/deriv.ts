@@ -487,41 +487,295 @@ export async function authorizeDeriv(token: string): Promise<any> {
  * @returns The account_list response.
  */
 export async function getDerivAccountList(token: string): Promise<any> {
-  const ws = new WebSocket(DERIV_API_URL);
-  return new Promise((resolve, reject) => {
+  const functionStartTime = Date.now();
+  console.log(`[DerivService/getDerivAccountList] Starting at ${new Date(functionStartTime).toISOString()}. Token: ${token ? token.substring(0, 5) + '...' : 'N/A'}`);
+
+  const operationTimeout = 10000; // 10 seconds
+  let timeoutId: NodeJS.Timeout;
+  let ws: WebSocket | null = null; // Declare ws here to make it accessible in timeout and cleanup
+  let connectedTime: number | null = null;
+  let requestSentTime: number | null = null;
+
+  const cleanup = (message: string, isError: boolean = false) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    if (ws) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        console.log(`[DerivService/getDerivAccountList] cleanup: Closing WebSocket (readyState: ${ws.readyState}). ${message}`);
+        ws.close();
+      } else {
+        console.log(`[DerivService/getDerivAccountList] cleanup: WebSocket already closed or closing (readyState: ${ws.readyState}). ${message}`);
+      }
+    }
+    const duration = Date.now() - functionStartTime;
+    console.log(`[DerivService/getDerivAccountList] Finished. Duration: ${duration}ms. ${message}`);
+    if (isError) {
+        // console.error is already called by the specific error handlers typically
+    }
+  };
+
+  return Promise.race([
+    new Promise((resolve, reject) => {
+      ws = new WebSocket(DERIV_API_URL);
+      console.log(`[DerivService/getDerivAccountList] WebSocket instance created. URL: ${DERIV_API_URL}`);
+
+      ws.onopen = () => {
+        connectedTime = Date.now();
+        const timeToConnect = connectedTime - functionStartTime;
+        console.log(`[DerivService/getDerivAccountList] WebSocket connection opened at ${new Date(connectedTime).toISOString()}. Time to connect: ${timeToConnect}ms.`);
+
+        console.log('[DerivService/getDerivAccountList] Authorizing...');
+        ws!.send(JSON.stringify({ authorize: token }));
+        // No explicit timeout here for auth, rely on overall operationTimeout.
+        // Account list request will be sent on 'authorize' success or if no auth error for public data.
+      };
+
+      ws.onmessage = (event) => {
+        const messageReceivedTime = Date.now();
+        console.log(`[DerivService/getDerivAccountList] Message received at ${new Date(messageReceivedTime).toISOString()}.`);
+        try {
+          const response = JSON.parse(event.data as string);
+          console.log('[DerivService/getDerivAccountList] Parsed response:', JSON.stringify(response, null, 2));
+
+          if (response.error) {
+            console.error(`[DerivService/getDerivAccountList] API Error: ${response.error.message}`, response.error);
+            cleanup(`API Error: ${response.error.message}`, true);
+            reject(new Error(response.error.message || 'Failed to process request due to API error'));
+            return;
+          }
+
+          if (response.msg_type === 'authorize') {
+            if (response.authorize) {
+              console.log('[DerivService/getDerivAccountList] Authorization successful.');
+              requestSentTime = Date.now();
+              console.log(`[DerivService/getDerivAccountList] Sending account_list request at ${new Date(requestSentTime).toISOString()}.`);
+              ws!.send(JSON.stringify({ account_list: 1 }));
+            } else {
+              // This case might not happen if error object is always present for auth failures
+              console.error('[DerivService/getDerivAccountList] Authorization failed, response did not contain expected authorize object:', response);
+              cleanup('Authorization failed.', true);
+              reject(new Error('Authorization failed.'));
+            }
+          } else if (response.msg_type === 'account_list') {
+            const timeToAccountList = requestSentTime ? messageReceivedTime - requestSentTime : messageReceivedTime - (connectedTime || functionStartTime);
+            console.log(`[DerivService/getDerivAccountList] Account list received. Time from request/connect: ${timeToAccountList}ms.`);
+            cleanup('Account list received successfully.');
+            resolve(response);
+          } else {
+            console.log(`[DerivService/getDerivAccountList] Received other message type: ${response.msg_type}`);
+            // Potentially handle other message types or ignore
+          }
+        } catch (e) {
+          const errorTime = Date.now();
+          console.error(`[DerivService/getDerivAccountList] Error processing message at ${new Date(errorTime).toISOString()}:`, e);
+          cleanup('Error processing message.', true);
+          reject(e instanceof Error ? e : new Error('Failed to process message for account list.'));
+        }
+      };
+
+      ws.onerror = (event) => {
+        const errorTime = Date.now();
+        // Try to get more details from the event
+        let errorMessage = 'WebSocket error during account list fetch.';
+        if (event && typeof event === 'object') {
+            if ('message' in event && (event as any).message) {
+                errorMessage = `WebSocket Error: ${(event as any).message}`;
+            } else {
+                errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+            }
+        }
+        console.error(`[DerivService/getDerivAccountList] WebSocket Error Event at ${new Date(errorTime).toISOString()}: ${errorMessage}`, event);
+        cleanup(`WebSocket error: ${errorMessage}`, true);
+        reject(new Error(errorMessage));
+      };
+
+      ws.onclose = (event) => {
+        const closeTime = Date.now();
+        console.log(`[DerivService/getDerivAccountList] WebSocket connection closed at ${new Date(closeTime).toISOString()}. Code: ${event.code}, Reason: ${event.reason}, WasClean: ${event.wasClean}`);
+        // If the promise hasn't been settled by an explicit resolve/reject (e.g. from onmessage or onerror)
+        // or by the timeout, this means an unexpected closure.
+        // We check if it's already being cleaned up to avoid redundant rejections.
+        // This check might be tricky; relying on timeout to eventually reject if no other resolution.
+        // For now, the cleanup function handles clearing timeout. If it's an unexpected close,
+        // and no data received, the main promise might still be pending until timeout.
+        // Consider rejecting here if !event.wasClean and no account_list received.
+        // However, the timeout is the primary mechanism for unresolved promises.
+        cleanup(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+        // Do not reject here if cleanup is already called by resolve/reject, to prevent "already settled" errors.
+        // The timeout or specific handlers should be responsible for rejection.
+      };
+    }),
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const timeoutTime = Date.now();
+        const errorMessage = `Deriv API call for account list timed out after ${operationTimeout / 1000} seconds.`;
+        console.error(`[DerivService/getDerivAccountList] Operation timed out at ${new Date(timeoutTime).toISOString()}.`);
+
+        // Attempt to close WebSocket if it exists and is open
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          console.log('[DerivService/getDerivAccountList] Timeout: Attempting to close WebSocket.');
+          ws.close(1000, "Operation timed out"); // 1000 is a normal closure
+        }
+        // Cleanup will be called by the main promise's onclose or onerror eventually if ws.close() triggers them,
+        // but we ensure resources tied to this specific operation (like this timeout) are cleared.
+        // Directly call cleanup for timeout specific logging and ensure rejection.
+        cleanup(errorMessage, true); // Ensure cleanup logs reflect timeout
+        reject(new Error(errorMessage));
+      }, operationTimeout);
+    })
+  ]);
+}
+
+/**
+ * Fetches the balance for a specific Deriv account.
+ * @param token The Deriv API token.
+ * @param accountId The loginid of the Deriv account for which to fetch the balance.
+ * @returns A promise that resolves to an object containing the balance, currency, and loginid.
+ */
+export async function getDerivAccountBalance(token: string, accountId: string): Promise<{ balance: number, currency: string, loginid: string }> {
+  const operationTimeout = 12000; // 12 seconds, slightly longer for auth + balance
+  let timeoutId: NodeJS.Timeout;
+  let ws: WebSocket | null = null; // Initialize ws to null
+
+  const startTime = Date.now();
+  console.log(`[DerivService/getDerivAccountBalance] Initiated for accountId: ${accountId} at ${new Date(startTime).toISOString()}`);
+
+  // This promise encapsulates the WebSocket logic
+  const promiseLogic = new Promise<{ balance: number, currency: string, loginid: string }>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
+
+    const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+      if (timeoutId) clearTimeout(timeoutId);
+
+      const duration = Date.now() - startTime;
+      const fullLogMessage = `[DerivService/getDerivAccountBalance] AccountID: ${accountId}. ${logMessage}. Duration: ${duration}ms.`;
+      if (isError) console.error(fullLogMessage);
+      else console.log(fullLogMessage);
+
+      if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+        console.log(`[DerivService/getDerivAccountBalance] Closing WebSocket for accountId: ${accountId}. Original log: ${logMessage}`);
+        wsToClose.close(1000, logMessage.substring(0, 100)); // Normal closure, reason limited
+      }
+    };
+
     ws.onopen = () => {
-      console.log('[DerivService/getDerivAccountList] Sending account_list request.');
-      ws.send(JSON.stringify({ authorize: token })); // Authorize first
-      setTimeout(() => {
-        ws.send(JSON.stringify({ account_list: 1 }));
-      }, 500); // Small delay after authorization
+      const openTime = Date.now();
+      console.log(`[DerivService/getDerivAccountBalance] WebSocket opened for accountId: ${accountId} at ${new Date(openTime).toISOString()}. Time to open: ${openTime - startTime}ms.`);
+      console.log(`[DerivService/getDerivAccountBalance] Sending authorize request for accountId: ${accountId}.`);
+      ws!.send(JSON.stringify({ authorize: token }));
     };
 
     ws.onmessage = (event) => {
+      const messageTime = Date.now();
+      // console.log(`[DerivService/getDerivAccountBalance] Message received for accountId: ${accountId} at ${new Date(messageTime).toISOString()}.`);
       try {
         const response = JSON.parse(event.data as string);
-        console.log('[DerivService/getDerivAccountList] Received response:', response);
+        // console.log(`[DerivService/getDerivAccountBalance] Raw response for ${accountId}:`, JSON.stringify(response, null, 2));
+
         if (response.error) {
-          console.error('[DerivService/getDerivAccountList] API Error:', response.error);
-          reject(new Error(response.error.message || 'Failed to get account list'));
-        } else if (response.msg_type === 'account_list') {
-          resolve(response);
+          cleanupAndLog(`API Error: ${response.error.message}`, true);
+          reject(new Error(response.error.message || `Deriv API error for account ${accountId}`));
+          return;
         }
-      } catch (e) {
-        console.error('[DerivService/getDerivAccountList] Error processing message:', e);
-        reject(e);
-      } finally {
-        ws.close();
+
+        if (response.msg_type === 'authorize') {
+          if (response.authorize) {
+            console.log(`[DerivService/getDerivAccountBalance] Authorization successful for ${accountId}. User: ${response.authorize.loginid}.`);
+            console.log(`[DerivService/getDerivAccountBalance] Sending balance request for ${accountId}.`);
+            ws!.send(JSON.stringify({ balance: 1, subscribe: 0 })); // subscribe: 0 for one-time response
+          } else {
+            cleanupAndLog('Authorization failed. Response did not contain expected authorize object.', true);
+            reject(new Error(`Deriv authorization failed for account ${accountId}.`));
+          }
+        } else if (response.msg_type === 'balance') {
+          console.log(`[DerivService/getDerivAccountBalance] Balance response received for ${accountId}.`);
+
+          let targetAccountData;
+          if (response.balance?.accounts && typeof response.balance.accounts === 'object') {
+             // Check if accountId exists as a key in the accounts object
+            targetAccountData = response.balance.accounts[accountId];
+          }
+
+          // If not found in accounts object, or accounts object doesn't exist, check main balance object
+          if (!targetAccountData && response.balance?.loginid === accountId) {
+            targetAccountData = response.balance; // Use the main balance object
+            console.log(`[DerivService/getDerivAccountBalance] Using main balance object for ${accountId} as it matches.`);
+          }
+
+          if (targetAccountData && targetAccountData.loginid === accountId) {
+            const result = {
+              balance: parseFloat(targetAccountData.balance),
+              currency: targetAccountData.currency,
+              loginid: targetAccountData.loginid,
+            };
+            cleanupAndLog(`Balance successfully retrieved for ${accountId}.`);
+            resolve(result);
+          } else {
+            const availableAccounts = response.balance?.accounts ? Object.keys(response.balance.accounts) : (response.balance?.loginid || 'N/A');
+            cleanupAndLog(`Account ${accountId} not found in balance response. Available/main accounts: ${JSON.stringify(availableAccounts)}`, true);
+            reject(new Error(`Account ${accountId} not found in Deriv balance response.`));
+          }
+        } else {
+          console.log(`[DerivService/getDerivAccountBalance] Received other message type for ${accountId}: ${response.msg_type}`, response);
+          // Potentially ignore or handle other message types.
+        }
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message: ${e?.message || String(e)}`, true);
+        reject(e instanceof Error ? e : new Error('Failed to process message for balance.'));
       }
     };
 
     ws.onerror = (event) => {
-      console.error('[DerivService/getDerivAccountList] WebSocket Error:', event);
-      reject(new Error('WebSocket error during account list fetch'));
-      ws.close();
+      // Attempt to get more details from the event
+      let errorMessage = 'WebSocket error during balance fetch.';
+       if (event && typeof event === 'object') {
+          if ('message' in event && (event as any).message) {
+              errorMessage = `WebSocket Error: ${(event as any).message}`;
+          } else {
+              errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+          }
+      }
+      cleanupAndLog(`WebSocket Error: ${errorMessage}`, true);
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      // This log might be redundant if cleanupAndLog is called before close in resolve/reject paths
+      // but useful for unexpected closures.
+      const duration = Date.now() - startTime;
+      console.log(`[DerivService/getDerivAccountBalance] WebSocket connection closed for accountId: ${accountId}. Code: ${event.code}, Reason: ${event.reason}, WasClean: ${event.wasClean}. Duration: ${duration}ms.`);
+      // If the promise hasn't been settled, it means an unexpected closure.
+      // The timeout handler will eventually reject. Or, we could reject here if !event.wasClean
+      // and the promise is still pending. For now, relying on timeout.
+      // Ensure timeout is cleared if it wasn't already by an explicit resolve/reject.
+      if (timeoutId) clearTimeout(timeoutId);
     };
   });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<{ balance: number, currency: string, loginid: string }>((_, reject) => { // Ensure this Promise generic matches
+      timeoutId = setTimeout(() => {
+        const reason = `Operation timed out after ${operationTimeout / 1000} seconds for accountId: ${accountId}.`;
+        // Cleanup is called by the main promise's handlers if ws.close() triggers them.
+        // However, if ws is null or already closed, or if onclose doesn't reject,
+        // we need to ensure rejection here.
+        // The cleanupAndLog in the main promise's handlers should ideally cover logging.
+        console.error(`[DerivService/getDerivAccountBalance] Timeout: ${reason}`);
+        if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+          console.log(`[DerivService/getDerivAccountBalance] Timeout: Attempting to close WebSocket for accountId: ${accountId}.`);
+          ws.close(1000, "Operation timed out");
+        } else if (!ws) {
+           console.log(`[DerivService/getDerivAccountBalance] Timeout: WebSocket instance was null for accountId: ${accountId}.`);
+        }
+        // Ensure rejection if promiseLogic hasn't already settled.
+        reject(new Error(reason));
+      }, operationTimeout);
+    })
+  ]);
 }
+
 
 /**
  * Fetches user settings from Deriv API for the authorized user.
@@ -587,56 +841,85 @@ export interface PlaceTradeResponse {
 }
 
 /**
- * Places a trade on the Deriv API.
+ * Places a trade on the Deriv API for a specific account.
  * @param tradeDetails The details of the trade to place.
+ * @param accountId The Deriv account ID (loginid) on which to place the trade.
  * @returns A promise that resolves with the contract details or rejects with an error.
  */
-export async function placeTrade(tradeDetails: TradeDetails): Promise<PlaceTradeResponse> {
-  const ws = new WebSocket(DERIV_API_URL);
-  // Using a Promise to handle WebSocket interactions asynchronously
-  return new Promise((resolve, reject) => {
-    let proposalId: string | null = null;
-    let entrySpot: number | null = null;
-    const timeoutDuration = 15000; // 15 seconds for the entire operation
+export async function placeTrade(tradeDetails: TradeDetails, accountId: string): Promise<PlaceTradeResponse> {
+  let ws: WebSocket | null = null; // Initialize ws to null
+  let operationTimeout: NodeJS.Timeout | null = null;
+  let proposalId: string | null = null;
+  let entrySpot: number | null = null;
+  const startTime = Date.now();
+  const timeoutDuration = 18000; // 18 seconds, slightly increased for account switching
 
-    const operationTimeout = setTimeout(() => {
-      console.error('[DerivService/placeTrade] Operation timed out.');
-      ws.close();
-      reject(new Error('Trade operation timed out.'));
-    }, timeoutDuration);
+  console.log(`[DerivService/placeTrade] Initiated for accountId: ${accountId}, symbol: ${tradeDetails.symbol} at ${new Date(startTime).toISOString()}`);
+
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+    if (operationTimeout) clearTimeout(operationTimeout);
+
+    const duration = Date.now() - startTime;
+    const fullLogMessage = `[DerivService/placeTrade] AccountID: ${accountId}. ${logMessage}. Duration: ${duration}ms.`;
+    if (isError) console.error(fullLogMessage);
+    else console.log(fullLogMessage);
+
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+      console.log(`[DerivService/placeTrade] Closing WebSocket for accountId: ${accountId}. Original log: ${logMessage}`);
+      wsToClose.close(1000, logMessage.substring(0, 100));
+    }
+  };
+
+  // Using a Promise to handle WebSocket interactions asynchronously
+  const promiseLogic = new Promise<PlaceTradeResponse>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
 
     ws.onopen = () => {
-      console.log('[DerivService/placeTrade] WebSocket connection opened. Authorizing...');
-      ws.send(JSON.stringify({ authorize: tradeDetails.token }));
+      const openTime = Date.now();
+      console.log(`[DerivService/placeTrade] WebSocket opened for accountId: ${accountId}. Time to open: ${openTime - startTime}ms. Authorizing...`);
+      ws!.send(JSON.stringify({ authorize: tradeDetails.token }));
     };
 
     ws.onmessage = (event) => {
       try {
         const response = JSON.parse(event.data as string);
-        console.log('[DerivService/placeTrade] Received response:', response);
+        // console.log(`[DerivService/placeTrade] Raw response for ${accountId}:`, JSON.stringify(response, null, 2));
 
         if (response.error) {
-          console.error('[DerivService/placeTrade] API Error:', response.error);
-          clearTimeout(operationTimeout);
-          ws.close();
-          reject(new Error(response.error.message || 'Unknown API error during trade placement.'));
+          cleanupAndLog(`API Error: ${response.error.message}`, true);
+          reject(new Error(response.error.message || `Unknown API error during trade placement for account ${accountId}.`));
           return;
         }
 
         if (response.msg_type === 'authorize') {
           if (response.authorize?.loginid) {
-            console.log('[DerivService/placeTrade] Authorization successful. Requesting proposal...');
+            console.log(`[DerivService/placeTrade] Authorization successful for account ${accountId}. Current loginid: ${response.authorize.loginid}. Attempting to switch to target accountId: ${accountId}.`);
+            ws!.send(JSON.stringify({ account_switch: accountId }));
+          } else {
+            cleanupAndLog('Authorization failed. No loginid in response.', true);
+            reject(new Error(`Authorization failed for placing trade on account ${accountId}.`));
+          }
+        } else if (response.msg_type === 'account_switch') {
+          if (response.error) {
+            cleanupAndLog(`Error switching to account ${accountId}: ${response.error.message}`, true);
+            reject(new Error(response.error.message || `Failed to switch to Deriv account ${accountId}.`));
+            return;
+          }
 
+          const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid; // Deriv API might use either
+          if (switchedToLoginId === accountId) {
+            console.log(`[DerivService/placeTrade] Successfully switched to account: ${accountId}. Requesting proposal...`);
+
+            // Construct and send proposal request
             let apiContractType: "CALL" | "PUT";
             if (tradeDetails.contract_type === 'CALL') {
-              apiContractType = 'PUT'; // User's CALL (predicts rise) maps to Deriv's PUT for Rise/Fall
-            } else { // Assuming it's 'PUT'
-              apiContractType = 'CALL'; // User's PUT (predicts fall) maps to Deriv's CALL for Rise/Fall
+              apiContractType = 'PUT';
+            } else {
+              apiContractType = 'CALL';
             }
-
             const proposalRequest: any = {
               proposal: 1,
-              subscribe: 1, // Useful to get updates, can be removed if not needed
+              subscribe: 1,
               amount: tradeDetails.amount,
               basis: tradeDetails.basis,
               contract_type: apiContractType,
@@ -645,102 +928,90 @@ export async function placeTrade(tradeDetails: TradeDetails): Promise<PlaceTrade
               duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
             };
-
-            // Removed conditional stop_loss and take_profit addition
-            // if (tradeDetails.stop_loss !== undefined) {
-            //   proposalRequest.stop_loss = tradeDetails.stop_loss;
-            // }
-            // if (tradeDetails.take_profit !== undefined) {
-            //   proposalRequest.take_profit = tradeDetails.take_profit;
-            // }
-
-            console.log('[DerivService/placeTrade] Sending proposal request:', proposalRequest);
-            ws.send(JSON.stringify(proposalRequest));
+            console.log(`[DerivService/placeTrade] Sending proposal request for account ${accountId}:`, proposalRequest);
+            ws!.send(JSON.stringify(proposalRequest));
           } else {
-            console.error('[DerivService/placeTrade] Authorization failed:', response);
-            clearTimeout(operationTimeout);
-            ws.close();
-            reject(new Error('Authorization failed.'));
+            cleanupAndLog(`Failed to switch to account ${accountId}. Expected ${accountId} but got ${switchedToLoginId}. Response: ${JSON.stringify(response)}`, true);
+            reject(new Error(`Failed to switch to Deriv account ${accountId}. Active account is ${switchedToLoginId}.`));
           }
         } else if (response.msg_type === 'proposal') {
           if (response.proposal && response.proposal.id && response.proposal.spot) {
             proposalId = response.proposal.id;
-            entrySpot = response.proposal.spot; // Store the spot price from proposal
-            console.log(`[DerivService/placeTrade] Proposal received. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
+            entrySpot = response.proposal.spot;
+            console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
 
-            // Unsubscribe from proposal stream if it was subscribed
             if (response.subscription && response.subscription.id) {
-              ws.send(JSON.stringify({ forget: response.subscription.id }));
+              ws!.send(JSON.stringify({ forget: response.subscription.id }));
             }
 
-            const buyRequest = {
-              buy: proposalId,
-              price: tradeDetails.amount, // This should match the amount in the proposal
-              // subscribe: 1 // Optional: if you want updates on this specific contract
-            };
-            console.log('[DerivService/placeTrade] Sending buy request:', buyRequest);
-            ws.send(JSON.stringify(buyRequest));
+            const buyRequest = { buy: proposalId, price: tradeDetails.amount };
+            console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, buyRequest);
+            ws!.send(JSON.stringify(buyRequest));
           } else {
-            console.error('[DerivService/placeTrade] Invalid proposal response:', response);
-            clearTimeout(operationTimeout);
-            ws.close();
-            reject(new Error('Invalid proposal response received from Deriv API.'));
+            cleanupAndLog(`Invalid proposal response for account ${accountId}: ${JSON.stringify(response)}`, true);
+            reject(new Error(`Invalid proposal response received from Deriv API for account ${accountId}.`));
           }
         } else if (response.msg_type === 'buy') {
           if (response.buy && response.buy.contract_id) {
-            console.log('[DerivService/placeTrade] Contract purchased successfully:', response.buy);
-            clearTimeout(operationTimeout);
-
-            // Unsubscribe from buy stream if it was subscribed (if subscribe:1 was added to buy request)
-            // if (response.subscription && response.subscription.id) {
-            //   ws.send(JSON.stringify({ forget: response.subscription.id }));
-            // }
-
-            ws.close();
+            cleanupAndLog(`Contract purchased successfully on account ${accountId}: ${JSON.stringify(response.buy)}`);
             resolve({
               contract_id: response.buy.contract_id,
               buy_price: response.buy.buy_price,
               longcode: response.buy.longcode,
-              entry_spot: entrySpot!, // Non-null assertion as it's set when proposal is valid
+              entry_spot: entrySpot!,
             });
           } else {
-            console.error('[DerivService/placeTrade] Buy contract error:', response);
-            clearTimeout(operationTimeout);
-            ws.close();
-            reject(new Error(response.error?.message || 'Failed to buy contract.'));
+            cleanupAndLog(`Buy contract error on account ${accountId}: ${JSON.stringify(response)}`, true);
+            reject(new Error(response.error?.message || `Failed to buy contract on account ${accountId}.`));
           }
+        } else {
+          console.log(`[DerivService/placeTrade] Received other message type for ${accountId}: ${response.msg_type}`, response);
         }
-      } catch (e) {
-        console.error('[DerivService/placeTrade] Error processing message:', e);
-        clearTimeout(operationTimeout);
-        ws.close();
-        reject(e instanceof Error ? e : new Error('Failed to process message from Deriv API.'));
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message for account ${accountId}: ${e?.message || String(e)}`, true);
+        reject(e instanceof Error ? e : new Error(`Failed to process message from Deriv API for account ${accountId}.`));
       }
     };
 
     ws.onerror = (event) => {
       let errorMessage = 'WebSocket error during trade placement.';
-       if (event && typeof event === 'object') {
-        if ('message' in event && (event as any).message) {
-            errorMessage = `WebSocket Error: ${(event as any).message}`;
-        } else {
-            errorMessage = `WebSocket Error: type=${event.type}. Check console for details.`;
-        }
+      if (event && typeof event === 'object' && 'message' in event && (event as any).message) {
+        errorMessage = `WebSocket Error: ${(event as any).message}`;
+      } else if (event) {
+        errorMessage = `WebSocket Error: type=${event.type}. Check console for details.`;
       }
-      console.error('[DerivService/placeTrade] WebSocket Error Event:', event);
-      clearTimeout(operationTimeout);
-      ws.close(); // Ensure closed on error
+      cleanupAndLog(`WebSocket Error Event for account ${accountId}: ${errorMessage}`, true, ws);
       reject(new Error(errorMessage));
     };
 
     ws.onclose = (event) => {
-      console.log('[DerivService/placeTrade] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
-      clearTimeout(operationTimeout); // Clear timeout if connection closes prematurely for other reasons
-      // If the promise hasn't been resolved/rejected yet, it might mean an unexpected closure
-      // For example, if it closes before 'buy' response after 'proposal' was successful
-      // This specific case needs careful handling or could be part of the timeout logic
+      const duration = Date.now() - startTime;
+      console.log(`[DerivService/placeTrade] WebSocket connection closed for accountId: ${accountId}. Code: ${event.code}, Reason: '${event.reason}', WasClean: ${event.wasClean}. Duration: ${duration}ms.`);
+      if (operationTimeout) clearTimeout(operationTimeout); // Ensure timeout is cleared
+      // If promise is still pending, it means it wasn't resolved by 'buy' or rejected by other handlers/timeout.
+      // This could happen if connection drops unexpectedly after proposal but before buy confirmation.
+      // The timeout is the primary mechanism for such cases.
     };
   });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<PlaceTradeResponse>((_, reject) => {
+      operationTimeout = setTimeout(() => {
+        const reason = `Trade operation timed out after ${timeoutDuration / 1000} seconds for accountId: ${accountId}.`;
+        // cleanupAndLog is called by promiseLogic's handlers if ws.close() triggers them.
+        // Direct call here for timeout specific logging & ensuring rejection.
+        console.error(`[DerivService/placeTrade] Timeout: ${reason}`);
+        if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+          console.log(`[DerivService/placeTrade] Timeout: Attempting to close WebSocket for accountId: ${accountId}.`);
+          ws.close(1000, "Operation timed out");
+        } else if (!ws) {
+           console.log(`[DerivService/placeTrade] Timeout: WebSocket instance was null for accountId: ${accountId}.`);
+        }
+        reject(new Error(reason));
+      }, timeoutDuration);
+    })
+  ]);
 }
 
 

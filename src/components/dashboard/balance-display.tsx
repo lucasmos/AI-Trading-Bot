@@ -2,16 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, UserCheck, Briefcase } from 'lucide-react'; // Added UserCheck, Briefcase
-import type { PaperTradingMode } from '@/types';
+import { DollarSign, UserCheck, Briefcase } from 'lucide-react';
 
 interface BalanceDisplayProps {
   balance: number;
   currency?: string;
-  accountType: PaperTradingMode; // 'paper' for Demo, 'live' for Real (simulated)
+  selectedAccountType: 'demo' | 'real' | null; // Changed from accountType: PaperTradingMode
+  displayAccountId: string | null; // New prop for Deriv Account ID
 }
 
-export function BalanceDisplay({ balance, currency = 'USD', accountType }: BalanceDisplayProps) {
+export function BalanceDisplay({
+  balance,
+  currency = 'USD',
+  selectedAccountType,
+  displayAccountId
+}: BalanceDisplayProps) {
   const [formattedBalance, setFormattedBalance] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,14 +30,24 @@ export function BalanceDisplay({ balance, currency = 'USD', accountType }: Balan
     );
   }, [balance, currency]);
 
-  const AccountIcon = accountType === 'live' ? Briefcase : UserCheck;
-  const accountLabel = accountType === 'live' ? 'Real Account Balance (Simulated)' : 'Demo Account Balance';
+  const isValidDerivAccount = selectedAccountType === 'demo' || selectedAccountType === 'real';
+  const AccountIcon = selectedAccountType === 'real' ? Briefcase : UserCheck;
+
+  let accountLabel = 'Paper Balance'; // Default for null or non-Deriv
+  if (selectedAccountType === 'demo') {
+    accountLabel = `Demo Account ${displayAccountId ? `(${displayAccountId})` : ''}`;
+  } else if (selectedAccountType === 'real') {
+    accountLabel = `Real Account ${displayAccountId ? `(${displayAccountId})` : ''}`;
+  } else if (selectedAccountType === null) { // Guest or user without Deriv link
+     accountLabel = 'Practice Balance'; // Or "Paper Trading Balance"
+  }
+
 
   return (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
-          <AccountIcon className={`mr-2 h-5 w-5 ${accountType === 'live' ? 'text-green-500' : 'text-blue-500'}`} />
+          <AccountIcon className={`mr-2 h-5 w-5 ${selectedAccountType === 'real' ? 'text-green-500' : (selectedAccountType === 'demo' ? 'text-blue-500' : 'text-gray-500')}`} />
           {accountLabel}
         </CardTitle>
         <DollarSign className="h-5 w-5 text-accent" />
@@ -42,7 +57,9 @@ export function BalanceDisplay({ balance, currency = 'USD', accountType }: Balan
           {formattedBalance !== null ? formattedBalance : `${currency === 'USD' ? '$' : currency}0.00 (Loading...`}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Available for trading in {accountType === 'live' ? 'simulated real' : 'demo'} mode.
+          {isValidDerivAccount
+            ? `Available for trading in your selected Deriv ${selectedAccountType} account.`
+            : "Practice balance for trading."}
         </p>
       </CardContent>
     </Card>
