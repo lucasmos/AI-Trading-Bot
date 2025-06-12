@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -56,6 +55,25 @@ const chartConfig = {
   }
 };
 
+// Define a more specific type for chartConfig
+// This mirrors the structure of the chartConfig object
+type ChartConfigType = {
+  price: { label: string; color: string };
+  bbUpper: { label: string; color: string };
+  bbMiddle: { label: string; color: string };
+  bbLower: { label: string; color: string };
+  ema: { label: string; color: string };
+  rsi: { label: string; color: string };
+  macdLine: { label: string; color: string };
+  macdSignal: { label: string; color: string };
+  macdHistogram: { label: string; colorPositive: string; colorNegative: string };
+  atr: { label: string; color: string };
+};
+
+// Explicitly type chartConfig
+const typedChartConfig: ChartConfigType = chartConfig;
+
+
 interface SingleInstrumentChartDisplayProps {
   instrument: InstrumentType;
 }
@@ -100,24 +118,40 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   }, [chartData]);
 
   useEffect(() => {
+    // isActive flag: Prevents state updates if the component unmounts or dependencies change before an async operation completes.
     let isActive = true; 
-      setIsLoading(true);
-      setError(null);
+    let lastFetchTime = 0; // Used with Page Visibility API
+
+    setIsLoading(true);
+    setError(null);
 
     async function fetchDataAndIndicators() {
+      // If the tab is hidden, don't fetch.
+      // This is a simple way to pause polling when the user is not viewing the tab.
+      if (document.hidden) {
+        // console.log(`Tab hidden, skipping fetch for ${instrument}`); // Optional: for debugging
+        return;
+      }
+      lastFetchTime = Date.now(); // Record time of fetch attempt
+
       try {
-        const candles = await getCandles(instrument, 120); // Fetch candles
-        if (!isActive) return;
+        // Fetch latest candle data for the instrument.
+        // Polling is used here for simplicity; a WebSocket stream would be more efficient for real-time updates.
+        const candles: CandleData[] | null = await getCandles(instrument, 120);
+        if (!isActive) return; // Check isActive after await
 
         if (!candles || candles.length === 0) {
-          setError("No price data available for this instrument.");
-          setChartData([]);
-          setIsLoading(false);
+          if (isActive) { // Ensure component is still active before setting state
+            setError(`No price data available for ${instrument}.`);
+            setChartData([]); // Clear data if instrument has no candles
+            setIsLoading(false); // Stop loading if no data
+          }
           return;
         }
 
-        const prices = candles.map(candle => candle.close); // Use close prices for indicators
+        const prices = candles.map(candle => candle.close);
         
+        // Calculate various technical indicators
         const rsiPeriod = 14;
         const macdFast = 12, macdSlow = 26, macdSignal = 9;
         const bbPeriod = 20, bbStdDev = 2;
@@ -125,21 +159,44 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         const fullRSI = calculateFullRSI(prices, rsiPeriod);
         const fullMACD = calculateFullMACD(prices, macdFast, macdSlow, macdSignal);
         const fullBB = calculateFullBollingerBands(prices, bbPeriod, bbStdDev);
-        const fullEMA = calculateFullEMA(prices, 20);
-        const fullATR = calculateFullATR(candles.map(c => c.high), candles.map(c => c.low), candles.map(c => c.close), 14);
+        const fullEMA = calculateFullEMA(prices, 20); // EMA 20
+        const fullATR = calculateFullATR(candles.map(c => c.high), candles.map(c => c.low), candles.map(c => c.close), 14); // ATR 14
 
-        // Align indicators with price ticks. Indicators will have fewer leading values.
-        const combinedData: ChartDataPoint[] = candles.map((candle, index) => { // Iterate over candles
-          const rsiIndex = index - (prices.length - fullRSI.length); // Adjust index for RSI series
-          const macdIndex = index - (prices.length - fullMACD.length); // Adjust index for MACD series
-          const bbIndex = index - (prices.length - fullBB.length); // Adjust index for BB series
+        // Combine candle data with calculated indicators.
+        // Technical indicators (like RSI, MACD, EMA, Bollinger Bands, ATR) require a certain number of initial data points (their 'period')
+        // to compute their first value. For example, a 14-period RSI cannot be calculated for the first 13 data points.
+        // Consequently, the arrays returned by indicator calculation functions (`fullRSI`, `fullMACD`, etc.)
+        // will be shorter than the input `prices` array, missing values at the beginning.
+        //
+        // The logic below aligns these shorter indicator arrays with the main `candles` array.
+        // It calculates an `indicatorIndex` for each candle. If this `indicatorIndex` is negative,
+        // it means the indicator doesn't have a value for that particular candle (it's too early in the dataset),
+        // so `undefined` is assigned. Otherwise, the value from the indicator array at `indicatorIndex` is used.
+        //
+        // The term `(prices.length - indicatorArray.length)` calculates the number of leading candles
+        // for which the specific indicator is not yet available. Let this be `offset`.
+        // The `indicatorIndex` is then `candleIndex - offset`.
+        // So, when `candleIndex` equals `offset`, `indicatorIndex` becomes `0`, correctly mapping
+        // the first available indicator value to the candle at `candles[offset]`.
+        const combinedData: ChartDataPoint[] = candles.map((candle, index) => {
+          // Calculate the effective index for each indicator array.
+          // If (prices.length - indicatorArray.length) is, for example, 13 (for a 14-period RSI),
+          // then for the first candle (index 0), rsiIndex = 0 - 13 = -13 (undefined).
+          // For the 14th candle (index 13), rsiIndex = 13 - 13 = 0 (first RSI value).
+          const rsiIndex = index - (prices.length - fullRSI.length);
+          const macdIndex = index - (prices.length - fullMACD.length); // MACD calculations also result in shorter arrays due to multiple EMAs and signal lines.
+          const bbIndex = index - (prices.length - fullBB.length);
           const emaIndex = index - (prices.length - fullEMA.length);
           const atrIndex = index - (prices.length - fullATR.length);
 
+          // Construct the data point for the chart.
+          // If `indicatorIndex` is negative (or if the indicator array was empty to begin with, making `indicatorIndex` always < 0 for valid candle `index`),
+          // the conditional access `indicatorIndex >= 0 ? indicatorArray[indicatorIndex] : undefined`
+          // correctly assigns `undefined`. Recharts handles `undefined` values by creating gaps in lines.
           return {
             epoch: candle.epoch,
             time: candle.time,
-            price: candle.close, // Use close price as the primary 'price' for the chart
+            price: candle.close,
             open: candle.open,
             high: candle.high,
             low: candle.low,
@@ -155,32 +212,57 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           };
         });
         
-        setChartData(combinedData);
-
+        if (isActive) { // Ensure component is still active
+          setChartData(combinedData);
+          setError(null); // Clear any previous error on successful fetch
+        }
       } catch (err) {
-        if (!isActive) return;
-        console.error("Error fetching chart data or calculating indicators:", err);
-        setError(err instanceof Error ? err.message : "Failed to load chart data.");
-        setChartData([]);
+        if (!isActive) return; // Check isActive after await
+        console.error(`Error fetching chart data or calculating indicators for ${instrument}:`, err);
+        if (isActive) { // Ensure component is still active
+          setError(err instanceof Error ? err.message : "Failed to load chart data.");
+          // Optionally, decide if chartData should be cleared or kept stale on error
+          // setChartData([]); // Current behavior is to clear, which might be fine.
+        }
       } finally {
-        if (isActive) setIsLoading(false);
+        if (isActive) setIsLoading(false); // Stop loading regardless of success/failure
       }
     }
 
+    // Initial data fetch when component mounts or instrument changes
     fetchDataAndIndicators();
     
-    // Set up polling for live data updates
-    const pollInterval = setInterval(() => {
-      if (isActive) {
+    // Set up polling for live data updates at a 10-second interval.
+    const pollingIntervalMs = 10000;
+    const pollIntervalId = setInterval(() => {
+      if (isActive) { // Only fetch if component is active
         fetchDataAndIndicators();
       }
-    }, 10000); // Poll every 10 seconds
+    }, pollingIntervalMs);
 
-    return () => {
-      isActive = false; 
-      clearInterval(pollInterval);
+    // Handler for page visibility changes
+    const handleVisibilityChange = () => {
+      if (isActive && !document.hidden) {
+        // If tab becomes visible and a fetch was likely missed (e.g., more than pollingIntervalMs since last fetch attempt)
+        // or simply fetch immediately to refresh data.
+        // Adding a small buffer (e.g., 1s) to pollingIntervalMs to avoid fetching too close to a scheduled poll.
+        if (Date.now() - lastFetchTime > pollingIntervalMs - 1000) {
+          // console.log(`Tab became visible, fetching data for ${instrument}`); // Optional: for debugging
+          fetchDataAndIndicators();
+        }
+      }
     };
-  }, [instrument]); 
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup function:
+    // This runs when the component unmounts or when the `instrument` dependency changes.
+    return () => {
+      isActive = false; // Set isActive to false to stop any pending async operations from updating state.
+      clearInterval(pollIntervalId); // Clear the interval to stop polling.
+      document.removeEventListener('visibilitychange', handleVisibilityChange); // Remove visibility change listener.
+    };
+  }, [instrument]); // Re-run effect if instrument changes
 
   if (isLoading) {
     return (
@@ -201,7 +283,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   }
 
   return (
-    <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
+    <ChartContainer config={typedChartConfig} className="min-h-[200px] w-full">
       {/* Price + Bollinger Bands Chart */}
       <div style={{ width: '100%', height: '250px' }} className="mb-4">
       <ResponsiveContainer width="100%" height="100%">
@@ -212,7 +294,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               yAxisId="left"
               orientation="left" 
               domain={yDomainPrice} 
-              tickFormatter={(value) => value.toFixed(decimalPlaces)} 
+              tickFormatter={(value: number) => value.toFixed(decimalPlaces)}
               tick={{ fontSize: 10 }}
               tickMargin={5}
             />
