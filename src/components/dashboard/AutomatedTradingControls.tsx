@@ -98,7 +98,8 @@ export function AutomatedTradingControls() {
     const newMarketData: MarketDataState = {};
      for (const instrument of selectedInstruments) {
       try {
-        const candles = await getCandles(instrument, 150, 60, currentToken);
+        console.log('[ATC fetchMarketData] DIAGNOSTIC: Fetching reduced number of candles (30).');
+        const candles = await getCandles(instrument, 30, 60, currentToken); // Reduced from 150 to 30
         if (candles && candles.length > 0) {
           const indicators = calculateAllIndicators(candles);
           newMarketData[instrument] = { candles, indicators };
@@ -132,7 +133,7 @@ export function AutomatedTradingControls() {
 
     const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
     if (!dataFetchSuccess) {
-        setIsProcessingAi(false); // Ensure this is reset if data fetch fails
+        setIsProcessingAi(false);
         return;
     }
 
@@ -155,7 +156,7 @@ export function AutomatedTradingControls() {
 
     if (!hasDataForAtLeastOneInstrument) {
         toast({ title: 'AI Strategy Halted', description: 'No valid market data available to generate a strategy.', variant: 'destructive' });
-        setIsProcessingAi(false); // Add this line
+        setIsProcessingAi(false);
         return;
     }
 
@@ -188,7 +189,6 @@ export function AutomatedTradingControls() {
       if (!aiStrategyResult || !aiStrategyResult.tradesToExecute || aiStrategyResult.tradesToExecute.length === 0) {
         setAiReasoning(aiStrategyResult?.overallReasoning || 'AI determined no optimal trades at this moment.');
         toast({ title: 'AI Strategy', description: aiStrategyResult?.overallReasoning || 'AI did not propose any trades.', variant: 'default' });
-        // setIsProcessingAi(false); // This will be handled by finally
       } else {
         setAiStrategyForConfirmation(aiStrategyResult);
         setAiReasoning(aiStrategyResult.overallReasoning);
@@ -199,8 +199,6 @@ export function AutomatedTradingControls() {
       console.error('Error during AI strategy generation:', error);
       toast({ title: 'Error', description: error.message || 'Unexpected error during AI strategy generation.', variant: 'destructive' });
     } finally {
-      // Set isProcessingAi to false here if not showing confirmation, or after confirmation is handled.
-      // If showAiConfirmationDialog is true, user interaction will follow, so isProcessingAi should be false.
       setIsProcessingAi(false);
     }
   };
