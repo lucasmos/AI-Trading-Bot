@@ -343,7 +343,7 @@ export function AutomatedTradingControls() {
                       <TableCell>{trade.action}</TableCell>
                       <TableCell>${trade.stake.toFixed(2)}</TableCell>
                       <TableCell>{trade.durationSeconds}s</TableCell>
-                      <TableCell className="text-xs max-w-xs truncate" title={trade.reasoning}>{trade.reasoning}</TableCell>
+                      <TableCell className="text-xs whitespace-pre-wrap max-w-sm" title={trade.reasoning}>{trade.reasoning}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
