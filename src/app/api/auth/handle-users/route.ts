@@ -24,6 +24,17 @@ type UserWithBaseSettings = Prisma.UserGetPayload<{
   }
 }>;
 
+/**
+ * Handles POST requests to create, update, or reconcile user records in the database based on provided user data.
+ *
+ * Accepts a JSON payload containing user identification and authentication details. Attempts to find an existing user by ID or email, updates user fields as needed, or creates a new user if none exists. Handles user ID conflicts, unique constraint violations, and conditional updates based on authentication method. Returns a JSON response with the processed user data or an error message.
+ *
+ * @returns A JSON response indicating success or failure, including user information if successful.
+ *
+ * @remark
+ * - Returns HTTP 400 if the request body is empty, missing required fields, or contains invalid JSON.
+ * - Returns HTTP 500 for unexpected errors or if user processing fails.
+ */
 export async function POST(request: Request) {
   try {
     const rawBody = await request.text();

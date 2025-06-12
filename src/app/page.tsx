@@ -59,6 +59,13 @@ function validateTradeParameters(stake: number, balance: number, accountType: 'd
   return null;
 }
 
+/**
+ * Renders the main trading dashboard page with manual and AI-assisted trading features for Forex, Crypto, and Commodity instruments.
+ *
+ * Provides real-time balance display, instrument selection, trading controls, AI recommendations, and automated trading session management. Integrates with Deriv API for trade execution and AI services for market sentiment analysis and strategy generation. Manages state for active trades, profits, and user notifications.
+ *
+ * @returns The trading dashboard React component.
+ */
 export default function DashboardPage() {
   const { 
     authStatus, 

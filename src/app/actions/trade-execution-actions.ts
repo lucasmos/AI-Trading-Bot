@@ -20,6 +20,18 @@ export interface TradeExecutionResult {
   dbTradeId?: string; // To return the ID of the trade record in our DB
 }
 
+/**
+ * Executes a series of trades based on an AI-generated trading strategy, places them on the specified Deriv account, and records each trade in the database.
+ *
+ * For each trade proposal in the strategy, attempts to execute the trade via the Deriv API and persist the trade details. Returns an array of results indicating the success or failure of each trade, including error messages and database record IDs where applicable.
+ *
+ * @param strategy - The AI-generated trading strategy containing trade proposals to execute.
+ * @param userDerivApiToken - The API token used to authenticate with the Deriv platform.
+ * @param targetAccountId - The Deriv account ID where trades will be executed.
+ * @param selectedAccountType - Specifies whether the trades are executed on a 'demo' or 'real' account.
+ * @param userId - The unique identifier of the user executing the trades.
+ * @returns An array of trade execution results, each detailing the outcome of an attempted trade.
+ */
 export async function executeAiTradingStrategy(
   strategy: AutomatedTradingStrategyOutput,
   userDerivApiToken: string,
