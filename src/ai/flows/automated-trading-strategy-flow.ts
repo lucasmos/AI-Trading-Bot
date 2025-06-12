@@ -82,73 +82,88 @@ const automatedTradingStrategyFlow = ai.defineFlow(
   async (input: AutomatedTradingStrategyFlowInput): Promise<ImportedAutomatedTradingStrategyOutput> => {
     console.log('[AI Flow] DIAGNOSTIC: Original input instruments:', JSON.stringify(input.instruments));
     const instrumentsForDiagnosis = input.instruments.slice(0, 2);
-    console.log('[AI Flow] DIAGNOSTIC: Processing with reduced instruments:', JSON.stringify(instrumentsForDiagnosis));
+    console.log('[AI Flow] DIAGNOSTIC: Processing with reduced instruments (max 2):', JSON.stringify(instrumentsForDiagnosis));
 
     const filteredInstrumentTicks: typeof input.instrumentTicks = {};
     let filteredInstrumentIndicators: typeof input.instrumentIndicators = input.instrumentIndicators ? {} : undefined;
 
     for (const inst of instrumentsForDiagnosis) {
-        if (input.instrumentTicks[inst as ForexCryptoCommodityInstrumentType]) {
-            filteredInstrumentTicks[inst as ForexCryptoCommodityInstrumentType] = input.instrumentTicks[inst as ForexCryptoCommodityInstrumentType];
+        const instKey = inst as ForexCryptoCommodityInstrumentType;
+        if (input.instrumentTicks[instKey]) {
+            filteredInstrumentTicks[instKey] = input.instrumentTicks[instKey];
         }
-        if (input.instrumentIndicators && input.instrumentIndicators[inst as ForexCryptoCommodityInstrumentType] && filteredInstrumentIndicators) {
-            filteredInstrumentIndicators[inst as ForexCryptoCommodityInstrumentType] = input.instrumentIndicators[inst as ForexCryptoCommodityInstrumentType];
+        if (input.instrumentIndicators && input.instrumentIndicators[instKey] && filteredInstrumentIndicators) {
+            filteredInstrumentIndicators[instKey] = input.instrumentIndicators[instKey];
         }
     }
 
-    const diagnosticInput = {
+    const diagnosticInput = { // Base for further minimization or for full diagnostic run
         ...input,
         instruments: instrumentsForDiagnosis,
         instrumentTicks: filteredInstrumentTicks,
         instrumentIndicators: filteredInstrumentIndicators,
     };
 
-    console.log('[AI Flow] Received input.instrumentIndicators (after diagnostic filtering):', JSON.stringify(diagnosticInput.instrumentIndicators, null, 2));
+    console.log('[AI Flow] DIAGNOSTIC: input.instrumentIndicators (for up to 2 instruments, 30 candles each):', JSON.stringify(diagnosticInput.instrumentIndicators, null, 2));
 
-    let formattedIndicators = '';
+    let formattedIndicatorsBasedOnDiagnostic = '';
     if (diagnosticInput.instrumentIndicators) {
-      formattedIndicators = '\n\nCalculated Technical Indicators:\n';
+      formattedIndicatorsBasedOnDiagnostic = '\n\nCalculated Technical Indicators:\n';
       for (const inst in diagnosticInput.instrumentIndicators) {
         const ind = diagnosticInput.instrumentIndicators[inst as ForexCryptoCommodityInstrumentType];
         if (ind) {
-            formattedIndicators += `Instrument: ${inst}\n`;
-            formattedIndicators += `  RSI: ${ind.rsi?.toFixed(4) ?? 'N/A'}\n`;
-            formattedIndicators += `  MACD: ${ind.macd ? `Line(${ind.macd.macd.toFixed(4)}), Signal(${ind.macd.signal.toFixed(4)}), Hist(${ind.macd.histogram.toFixed(4)})` : 'N/A'}\n`;
-            formattedIndicators += `  Bollinger Bands: ${ind.bollingerBands ? `Upper(${ind.bollingerBands.upper.toFixed(4)}), Middle(${ind.bollingerBands.middle.toFixed(4)}), Lower(${ind.bollingerBands.lower.toFixed(4)})` : 'N/A'}\n`;
-            formattedIndicators += `  EMA: ${ind.ema?.toFixed(4) ?? 'N/A'}\n`;
-            formattedIndicators += `  ATR: ${ind.atr?.toFixed(4) ?? 'N/A'}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `Instrument: ${inst}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `  RSI: ${ind.rsi?.toFixed(4) ?? 'N/A'}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `  MACD: ${ind.macd ? `Line(${ind.macd.macd.toFixed(4)}), Signal(${ind.macd.signal.toFixed(4)}), Hist(${ind.macd.histogram.toFixed(4)})` : 'N/A'}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `  Bollinger Bands: ${ind.bollingerBands ? `Upper(${ind.bollingerBands.upper.toFixed(4)}), Middle(${ind.bollingerBands.middle.toFixed(4)}), Lower(${ind.bollingerBands.lower.toFixed(4)})` : 'N/A'}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `  EMA: ${ind.ema?.toFixed(4) ?? 'N/A'}\n`;
+            formattedIndicatorsBasedOnDiagnostic += `  ATR: ${ind.atr?.toFixed(4) ?? 'N/A'}\n`;
         }
       }
     }
-    console.log('[AI Flow] Constructed formattedIndicatorsString (from diagnostic data):', formattedIndicators);
+    console.log('[AI Flow] DIAGNOSTIC: Constructed formattedIndicatorsString (based on up to 2 instruments, 30 candles each):', formattedIndicatorsBasedOnDiagnostic);
 
-    const promptInputForDiagnosis: AutomatedTradingStrategyFlowInput = {
+    // Create further minimized data for the actual prompt() call
+    const minimalTicksForPrompt: typeof diagnosticInput.instrumentTicks = {};
+    if (diagnosticInput.instruments && diagnosticInput.instruments.length > 0) {
+        for (const inst of diagnosticInput.instruments) {
+            minimalTicksForPrompt[inst as ForexCryptoCommodityInstrumentType] = [{ epoch: Math.floor(Date.now()/1000), price: 100, time: new Date().toLocaleTimeString() }]; // Single mock tick
+        }
+    }
+
+    const minimalInstrumentIndicators: typeof diagnosticInput.instrumentIndicators = {}; // Empty object
+    const minimalFormattedIndicatorsString = "\n[Technical indicators data drastically minimized for diagnosis - only 1-2 instruments, 1 mock tick each, no indicator values listed here]\n";
+
+    const promptInputForCall: AutomatedTradingStrategyFlowInput = {
       ...diagnosticInput,
-      instruments: diagnosticInput.instruments as ForexCryptoCommodityInstrumentType[],
-      formattedIndicatorsString: formattedIndicators,
+      instruments: diagnosticInput.instruments as ForexCryptoCommodityInstrumentType[], // This is already instrumentsForDiagnosis
+      instrumentTicks: minimalTicksForPrompt,
+      instrumentIndicators: minimalInstrumentIndicators,
+      formattedIndicatorsString: minimalFormattedIndicatorsString,
     };
 
-    console.log('[AI Flow] DIAGNOSTIC: Calling prompt with reduced data set (promptInputForDiagnosis):', JSON.stringify(promptInputForDiagnosis.instruments, null, 2));
-    // console.log('[AI Flow] DIAGNOSTIC: Ticks for prompt:', JSON.stringify(promptInputForDiagnosis.instrumentTicks, null, 2)); // Potentially too verbose
-    // console.log('[AI Flow] DIAGNOSTIC: Indicators for prompt:', JSON.stringify(promptInputForDiagnosis.instrumentIndicators, null, 2)); // Potentially too verbose
+    console.log('[AI Flow] DIAGNOSTIC: Using MINIMIZED dynamic data (ticks, indicators) for actual prompt() call.');
+    console.log('[AI Flow] DIAGNOSTIC: MINIMIZED promptInputForCall.instruments:', JSON.stringify(promptInputForCall.instruments, null, 2));
+    console.log('[AI Flow] DIAGNOSTIC: MINIMIZED promptInputForCall.instrumentTicks:', JSON.stringify(promptInputForCall.instrumentTicks, null, 2));
+    console.log('[AI Flow] DIAGNOSTIC: MINIMIZED promptInputForCall.formattedIndicatorsString:', promptInputForCall.formattedIndicatorsString);
 
+    console.log('[AI Flow] About to call prompt() with MINIMIZED dynamic data.');
+    const result = await prompt(promptInputForCall) as any;
 
-    const result = await prompt(promptInputForDiagnosis) as any;
-
-    // console.log('[AI Flow] Full result object from AI prompt:', JSON.stringify(result, null, 2)); // REMOVED this line
+    // console.log('[AI Flow] Full result object from AI prompt:', JSON.stringify(result, null, 2)); // This was the line causing issues
     if (result && typeof result.text === 'function') {
         console.log('[AI Flow] Raw AI response text (attempt 1):', await result.text());
     } else if (result && result.raw) {
         console.log('[AI Flow] Raw AI response data (attempt 2):', JSON.stringify(result.raw, null, 2));
     } else if (result && result.output && typeof result.output === 'object') {
-        console.log('[AI Flow] AI result.output (potentially parsed by Zod):', JSON.stringify(result.output, null, 2));
+        console.log('[AI Flow] AI result.output (potentially Zod-parsed):', JSON.stringify(result.output, null, 2));
     } else {
         console.log('[AI Flow] Could not determine standard method to log raw AI text from result object.');
     }
 
     if (!result || !result.output) {
-      console.error("[AI Flow] AI prompt result or result.output is null/undefined. Full result:", JSON.stringify(result, null, 2));
-      throw new Error("AI failed to generate an automated trading strategy for Forex/Crypto/Commodities. Output was null.");
+      console.error("[AI Flow] AI prompt result or result.output is null/undefined. Full result (if available, else error):", result ? JSON.stringify(result, null, 2) : "Result object itself is null/undefined.");
+      throw new Error("AI failed to generate a trading strategy. Output was null.");
     }
 
     const output = result.output as ImportedAutomatedTradingStrategyOutput;
@@ -163,7 +178,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
             console.log('[AI Flow] Parsed AI Output - No trades proposed.');
         }
     } else {
-        console.log('[AI Flow] Parsed AI Output is null or undefined after initial checks.');
+        console.log('[AI Flow] Parsed AI Output is null or undefined after initial checks (should have been caught by throw).');
     }
     
     output.tradesToExecute = output.tradesToExecute.filter(trade => {
@@ -177,10 +192,8 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     let totalProposedStake = output.tradesToExecute.reduce((sum, trade: ImportedAutomatedTradeProposal) => sum + (trade.stake || 0), 0);
     totalProposedStake = parseFloat(totalProposedStake.toFixed(2));
 
-    // Note: totalProposedStake is now based on potentially reduced number of trades if instruments were filtered.
-    // This might be fine for diagnostics or needs adjustment if original totalStake logic is critical.
-    if (totalProposedStake > diagnosticInput.totalStake) { // Compare with diagnosticInput's totalStake
-      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${diagnosticInput.totalStake} (Forex/Crypto/Commodities). Trades may be capped or rejected by execution logic.`);
+    if (totalProposedStake > promptInputForCall.totalStake) {
+      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${promptInputForCall.totalStake}. Trades may be capped/rejected.`);
     }
 
     console.log('[AI Flow] Final output object being returned (may be based on diagnostic data):', JSON.stringify(
