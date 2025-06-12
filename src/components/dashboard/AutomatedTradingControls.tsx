@@ -54,29 +54,33 @@ export function AutomatedTradingControls() {
   const [stopLossPercentage, setStopLossPercentage] = useState<number | undefined>(5);
   const [aiStrategyId, setAiStrategyId] = useState<string | undefined>(undefined);
 
-  const [isFetchingData, setIsFetchingData] = useState<boolean>(false);
-  const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false);
-  const [isExecutingTrades, setIsExecutingTrades] = useState<boolean>(false);
+  // State flags to manage UI busy states during different phases of automated trading.
+  const [isFetchingData, setIsFetchingData] = useState<boolean>(false); // True when fetching market data (candles, indicators).
+  const [isProcessingAi, setIsProcessingAi] = useState<boolean>(false); // True when the AI is generating a trading strategy.
+  const [isExecutingTrades, setIsExecutingTrades] = useState<boolean>(false); // True when confirmed trades are being sent to the backend for execution.
 
-  const [marketData, setMarketData] = useState<MarketDataState>({});
-  const [executionResults, setExecutionResults] = useState<TradeExecutionResult[]>([]);
-  const [aiReasoning, setAiReasoning] = useState<string>('');
-  const [isTokenFromSession, setIsTokenFromSession] = useState<boolean>(false);
+  const [marketData, setMarketData] = useState<MarketDataState>({}); // Stores fetched candle and indicator data for selected instruments.
+  const [executionResults, setExecutionResults] = useState<TradeExecutionResult[]>([]); // Stores results of executed trades.
+  const [aiReasoning, setAiReasoning] = useState<string>(''); // Stores the overall reasoning from the AI strategy.
+  const [isTokenFromSession, setIsTokenFromSession] = useState<boolean>(false); // Tracks if the API token is from the user's session.
 
-  // New state variables for confirmation flow
-  const [aiStrategyForConfirmation, setAiStrategyForConfirmation] = useState<AutomatedTradingStrategyOutput | null>(null);
-  const [showAiConfirmationDialog, setShowAiConfirmationDialog] = useState<boolean>(false);
+  // State variables for managing the AI trade confirmation dialog.
+  // This ensures user review before any AI-proposed trades are executed.
+  const [aiStrategyForConfirmation, setAiStrategyForConfirmation] = useState<AutomatedTradingStrategyOutput | null>(null); // Stores the AI-generated strategy awaiting confirmation.
+  const [showAiConfirmationDialog, setShowAiConfirmationDialog] = useState<boolean>(false); // Controls visibility of the confirmation dialog.
 
 
   useEffect(() => {
+    // Auto-fill API token from session if available and not manually overridden.
     if (sessionStatus === 'authenticated' && session?.user?.derivAccessToken) {
-      if (apiToken === '' || isTokenFromSession) {
-        setApiToken(session.user.derivAccessToken as string);
-        setIsTokenFromSession(true);
+      if (apiToken === '' || isTokenFromSession) { // Only set if apiToken is empty or was previously set from session
+        setApiToken(session.user.derivAccessToken as string); // Use token from session
+        setIsTokenFromSession(true); // Mark that token is from session
       }
     }
-  }, [session, sessionStatus, apiToken, isTokenFromSession]);
+  }, [session, sessionStatus, apiToken, isTokenFromSession]); // Rerun if session, status, or local token state changes.
 
+  // Combined busy state for disabling UI elements during critical operations.
   const isBusy = isFetchingData || isProcessingAi || isExecutingTrades || sessionStatus === 'loading';
 
   const handleInstrumentChange = (instrument: ForexCryptoCommodityInstrumentType) => {
@@ -87,106 +91,179 @@ export function AutomatedTradingControls() {
     );
   };
 
-  const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<boolean> => {
+  interface FetchMarketDataResult {
+    success: boolean;
+    successfulInstruments: ForexCryptoCommodityInstrumentType[];
+    failedInstruments: ForexCryptoCommodityInstrumentType[];
+  }
+
+  const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<FetchMarketDataResult> => {
+    const result: FetchMarketDataResult = {
+      success: false,
+      successfulInstruments: [],
+      failedInstruments: [],
+    };
+
     if (!currentToken) {
       toast({ title: 'Internal Error', description: 'API token missing for data fetch.', variant: 'destructive' });
-      return false;
+      return result; // Early return with success: false
     }
-    if (selectedInstruments.length === 0) return true;
+    if (selectedInstruments.length === 0) {
+      result.success = true; // No instruments selected, technically a success.
+      return result;
+    }
+
     setIsFetchingData(true);
     toast({ title: 'Fetching Market Data...', description: `Fetching candles for ${selectedInstruments.join(', ')}.` });
+
     const newMarketData: MarketDataState = {};
-     for (const instrument of selectedInstruments) {
+    const promises = selectedInstruments.map(async (instrument) => {
       try {
         const candles = await getCandles(instrument, 150, 60, currentToken);
         if (candles && candles.length > 0) {
           const indicators = calculateAllIndicators(candles);
           newMarketData[instrument] = { candles, indicators };
+          result.successfulInstruments.push(instrument);
         } else {
           newMarketData[instrument] = { candles: [], error: 'No candle data returned.' };
+          result.failedInstruments.push(instrument);
         }
       } catch (error: any) {
         newMarketData[instrument] = { candles: [], error: error.message || 'Failed to fetch data.' };
+        result.failedInstruments.push(instrument);
       }
-    }
-    setMarketData(newMarketData);
+    });
+
+    await Promise.all(promises); // Wait for all fetches to complete
+
+    setMarketData(newMarketData); // Update state once after all fetches
     setIsFetchingData(false);
-    if (Object.values(newMarketData).every(d => d.error && d.candles.length === 0)) {
-        toast({ title: 'Market Data Error', description: 'Failed to fetch market data for all selected instruments.', variant: 'destructive'});
-        return false;
+
+    if (result.successfulInstruments.length > 0) {
+      result.success = true; // Success if at least one instrument's data was fetched
     }
-    return true;
+
+    // Update toasts based on the outcome
+    if (!result.success) {
+      toast({ title: 'Market Data Error', description: 'Failed to fetch market data for all selected instruments.', variant: 'destructive'});
+    } else if (result.failedInstruments.length > 0) {
+      toast({ title: 'Partial Market Data', description: `Successfully fetched data for ${result.successfulInstruments.join(', ')}. Failed for ${result.failedInstruments.join(', ')}.`, variant: 'warning', duration: 7000 });
+    } else {
+      toast({ title: 'Market Data Fetched', description: `Successfully fetched data for all selected instruments.`, duration: 3000 });
+    }
+
+    return result;
   };
 
+  // Handles the initiation of an automated trading session.
+  // This involves several steps:
+  // 1. Basic validation of inputs (API token, selected instruments, stake).
+  // 2. Fetching market data (candles and indicators) for the selected instruments.
+  // 3. If data fetching is successful (even partially), preparing the data for the AI.
+  // 4. Calling the AI to generate a trading strategy.
+  // 5. If the AI proposes trades, displaying them in a confirmation dialog for user review.
+  //    If no trades are proposed, informing the user.
   const handleStartAutomatedTrading = async () => {
-    // ... (initial checks for apiToken, selectedInstruments, totalStake remain the same)
+    // Initial validation checks
     if (!apiToken || selectedInstruments.length === 0 || totalStake < 1 || sessionStatus !== 'authenticated' || !session?.user?.id) {
-      // Simplified error messages, specific checks are good
-      toast({ title: 'Error', description: 'Please ensure API token, instruments, stake are set, and you are logged in.', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Please ensure API token, selected instruments, and total stake are valid, and you are logged in.', variant: 'destructive' });
       return;
     }
 
+    // Reset states from any previous session
     setExecutionResults([]);
     setAiReasoning('');
-    setAiStrategyForConfirmation(null); // Clear previous confirmation
-    setShowAiConfirmationDialog(false); // Hide previous dialog
+    setAiStrategyForConfirmation(null);
+    setShowAiConfirmationDialog(false);
 
-    const dataFetchSuccess = await fetchMarketDataForSelectedInstruments(apiToken);
-    if (!dataFetchSuccess) return;
+    // Step 1: Fetch market data for selected instruments.
+    // `isFetchingData` will be true during this phase.
+    const fetchResult = await fetchMarketDataForSelectedInstruments(apiToken);
 
+    // If data fetching failed for all instruments or no instruments had successful data, halt.
+    if (!fetchResult.success || fetchResult.successfulInstruments.length === 0) {
+      toast({ title: 'AI Strategy Halted', description: 'No market data available for any selected instrument to proceed with strategy generation.', variant: 'destructive' });
+      return;
+    }
+
+    // Use only instruments for which data was successfully fetched.
+    const activeInstruments = fetchResult.successfulInstruments;
+
+    // Notify user if proceeding with partial data.
+    if (fetchResult.failedInstruments.length > 0) {
+      toast({ title: 'Proceeding with Partial Data', description: `Generating AI strategy using data for: ${activeInstruments.join(', ')}. Failed for: ${fetchResult.failedInstruments.join(', ')}.`, variant: 'info', duration: 7000});
+    }
+
+    // Step 2: Prepare data (ticks and indicators) for the AI.
     const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
     const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
-    let hasDataForAtLeastOneInstrument = false;
 
-    for (const instrument of selectedInstruments) {
+    for (const instrument of activeInstruments) {
       const currentInstrumentData = marketData[instrument];
+      // Data for `activeInstruments` should be valid as per `fetchResult` logic.
       if (currentInstrumentData && !currentInstrumentData.error && currentInstrumentData.candles.length > 0) {
         instrumentTicksForAi[instrument] = currentInstrumentData.candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
-        if (currentInstrumentData.indicators) instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
-        hasDataForAtLeastOneInstrument = true;
+        if (currentInstrumentData.indicators) {
+          instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
+        }
+      } else {
+        // This is a fallback/warning for an unlikely scenario where an instrument marked 'successful'
+        // might still have missing data. This could indicate an issue in data handling upstream.
+        console.warn(`Data integrity issue: Instrument ${instrument} was marked successful but has no valid data for AI input.`);
+        toast({ title: 'Internal Warning', description: `Could not prepare AI data for supposedly successful instrument: ${instrument}. It will be skipped.`, variant: 'warning'});
       }
     }
 
-    if (!hasDataForAtLeastOneInstrument) {
-        toast({ title: 'AI Strategy Halted', description: 'No valid market data for strategy.', variant: 'destructive' });
+    // If, after attempting to prepare data, no instruments have valid data for the AI, halt.
+    if (Object.keys(instrumentTicksForAi).length === 0) {
+        toast({ title: 'AI Strategy Halted', description: 'Failed to prepare any valid market data for the AI strategy generation.', variant: 'destructive' });
         return;
     }
 
+    // Step 3: Call AI to generate trading strategy.
+    // `isProcessingAi` will be true during this phase.
     setIsProcessingAi(true);
     try {
-      toast({ title: 'AI Thinking...', description: 'Generating trading strategy...' });
+      toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${activeInstruments.join(', ')}...` });
+
       const strategyInput = {
         totalStake,
-        instruments: selectedInstruments.filter(inst => marketData[inst] && !marketData[inst].error && marketData[inst].candles.length > 0),
+        instruments: activeInstruments, // Pass only successfully processed instruments
         tradingMode,
         stopLossPercentage: stopLossPercentage || undefined,
         instrumentTicks: instrumentTicksForAi,
         instrumentIndicators: instrumentIndicatorsForAi,
-        aiStrategyId: aiStrategyId,
+        aiStrategyId: aiStrategyId, // Optional custom strategy ID
       };
 
-      const aiStrategyResult: AutomatedTradingStrategyOutput = await generateAutomatedTradingStrategy(strategyInput as any);
+      // Call the AI flow. This is an async operation.
+      const aiStrategyResult: AutomatedTradingStrategyOutput = await generateAutomatedTradingStrategy(strategyInput as any); // `as any` if type mismatch, should be resolved ideally
 
+      // Step 4: Handle AI strategy result.
       if (!aiStrategyResult || !aiStrategyResult.tradesToExecute || aiStrategyResult.tradesToExecute.length === 0) {
+        // AI decided not to trade or no strategy was generated.
         setAiReasoning(aiStrategyResult?.overallReasoning || 'AI determined no optimal trades at this moment.');
-        toast({ title: 'AI Strategy', description: aiStrategyResult?.overallReasoning || 'AI did not propose any trades.', variant: 'default' });
-        setIsProcessingAi(false);
-        // Do not show confirmation dialog if no trades
+        toast({ title: 'AI Strategy Update', description: aiStrategyResult?.overallReasoning || 'AI did not propose any trades.', variant: 'default' });
+        // No confirmation dialog needed if no trades.
       } else {
-        setAiStrategyForConfirmation(aiStrategyResult);
-        setAiReasoning(aiStrategyResult.overallReasoning); // Keep this for the main display area too
-        setShowAiConfirmationDialog(true); // Show confirmation
-        toast({ title: 'AI Strategy Ready', description: `AI proposed ${aiStrategyResult.tradesToExecute.length} trade(s). Please confirm.`, duration: 5000 });
-        setIsProcessingAi(false); // AI processing done, waiting for user confirmation
+        // AI proposed trades, set them up for user confirmation.
+        setAiStrategyForConfirmation(aiStrategyResult); // Store the full strategy for confirmation and later execution.
+        setAiReasoning(aiStrategyResult.overallReasoning); // Display overall reasoning.
+        setShowAiConfirmationDialog(true); // Trigger the confirmation dialog.
+        toast({ title: 'AI Strategy Ready', description: `AI proposed ${aiStrategyResult.tradesToExecute.length} trade(s). Please review and confirm.`, duration: 5000 });
       }
     } catch (error: any) {
       console.error('Error during AI strategy generation:', error);
-      toast({ title: 'Error', description: error.message || 'Unexpected error during AI strategy generation.', variant: 'destructive' });
-      setIsProcessingAi(false);
+      toast({ title: 'AI Strategy Error', description: error.message || 'An unexpected error occurred during AI strategy generation.', variant: 'destructive' });
+    } finally {
+      setIsProcessingAi(false); // AI processing is finished, whether successful or not.
     }
-    // NOTE: executeAiTradingStrategy is NOT called here anymore. It's called by handleExecuteConfirmedTrades.
+    // Note: Actual execution of trades (`executeAiTradingStrategy`) is handled by `handleExecuteConfirmedTrades`
+    // after user confirms via the dialog.
   };
 
+  // Handles the execution of trades that have been confirmed by the user via the AI strategy dialog.
+  // `isExecutingTrades` will be true during this phase.
   const handleExecuteConfirmedTrades = async () => {
     if (!aiStrategyForConfirmation) {
       toast({ title: 'Error', description: 'No AI strategy available for confirmation.', variant: 'destructive' });
@@ -250,19 +327,20 @@ export function AutomatedTradingControls() {
 
     } catch (error: any) {
       console.error('Error during confirmed trade execution:', error);
-      toast({ title: 'Execution Error', description: error.message || 'Unexpected error during trade execution.', variant: 'destructive' });
+      toast({ title: 'Trade Execution Error', description: error.message || 'An unexpected error occurred during trade execution.', variant: 'destructive' });
     } finally {
-      setIsExecutingTrades(false);
-      setAiStrategyForConfirmation(null); // Clear confirmed strategy
+      setIsExecutingTrades(false); // Trade execution phase is finished.
+      setAiStrategyForConfirmation(null); // Clear the strategy from confirmation state.
     }
   };
 
+  // Handles the cancellation of AI-proposed trades from the confirmation dialog.
   const handleCancelAiConfirmation = () => {
-    setShowAiConfirmationDialog(false);
-    setAiStrategyForConfirmation(null);
-    setIsProcessingAi(false); // Reset this as well
-    setAiReasoning(''); // Clear main reasoning display too if desired
-    toast({ title: 'AI Trading Cancelled', description: 'Automated trading was cancelled by the user.' });
+    setShowAiConfirmationDialog(false); // Hide the dialog.
+    setAiStrategyForConfirmation(null); // Clear the stored strategy.
+    setIsProcessingAi(false); // Ensure AI processing state is reset if it was stuck.
+    setAiReasoning(''); // Optionally clear reasoning from main display.
+    toast({ title: 'AI Trading Cancelled', description: 'Automated trading strategy was cancelled by the user.' });
   };
 
   return (

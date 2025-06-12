@@ -109,13 +109,37 @@ export function TradeControls({
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;
-  const combinedManualTradeDisabled = stakeAmount <= 0 || disableManualControls || isAutoTradingActive || isAnyAiLoading || stakeAmount > currentBalance || !isMarketOpenForSelected || !isTradeable;
 
+  // Consolidated boolean for disabling manual trade execution (CALL/PUT buttons).
+  // Trades are disabled if:
+  // - Stake is invalid or exceeds balance.
+  // - Manual controls are globally disabled (e.g., by parent component).
+  // - AI auto-trading is active.
+  // - Any AI process (manual recommendation fetching, auto-trade prep) is ongoing.
+  // - The market for the selected instrument is closed.
+  // - The selected instrument/duration is not currently tradeable via this UI.
+  const combinedManualTradeDisabled =
+    stakeAmount <= 0 ||
+    disableManualControls ||
+    isAutoTradingActive ||
+    isAnyAiLoading ||
+    stakeAmount > currentBalance ||
+    !isMarketOpenForSelected ||
+    !isTradeable;
+
+  // Determines if the current selected instrument is a Forex/Commodity that has specific market hours
+  // (excluding 24/7 crypto like BTC/USD, ETH/USD and Volatility Indices).
   const isForexOrCommoditySubjectToMarketHours = 
     supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) &&
-    !['BTC/USD', 'ETH/USD'].includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) && 
-    !currentSelectedInstrument.startsWith('Volatility');
+    !['BTC/USD', 'ETH/USD'].includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) && // Assuming BTC/ETH are 24/7
+    !currentSelectedInstrument.startsWith('Volatility'); // Volatility indices are typically 24/7
 
+  // Consolidated boolean for disabling the "Get Manual AI Recommendation" button.
+  // Disabled if:
+  // - Any AI process is loading.
+  // - Manual controls are globally disabled.
+  // - The current instrument is not supported for manual AI recommendations on this page (e.g., Volatility Index).
+  // - The market is closed for Forex/Commodity instruments that are subject to market hours.
   const isManualAiRecommendationDisabled = 
     isAnyAiLoading || 
     disableManualControls || 
