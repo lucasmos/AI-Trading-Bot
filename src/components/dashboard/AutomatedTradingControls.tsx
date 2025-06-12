@@ -36,6 +36,15 @@ type MarketDataState = Record<ForexCryptoCommodityInstrumentType, {
   error?: string;
 }>;
 
+/**
+ * Renders the AI-powered automated trading controls interface, enabling users to configure, analyze, and execute automated trades on Deriv using live market data and AI-generated strategies.
+ *
+ * The component manages user input for API token, stake, instruments, trading mode, and optional AI strategy parameters. It orchestrates the flow from market data retrieval, AI strategy generation, user confirmation, and trade execution, providing real-time feedback and error handling throughout the process.
+ *
+ * @returns The automated trading controls UI, including configuration inputs, AI strategy confirmation dialog, and trade execution results.
+ *
+ * @remark Trades are only executed after explicit user confirmation of the AI-generated strategy. All operations require a valid Deriv API token and authenticated session.
+ */
 export function AutomatedTradingControls() {
   const { toast } = useToast();
   const { data: session, status: sessionStatus } = useSession();
