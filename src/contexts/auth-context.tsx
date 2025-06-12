@@ -142,7 +142,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const redirectTo = typeof options.redirect === 'string' ? options.redirect : '/';
         router.push(redirectTo);
     }
-  }, [router, paperBalance, liveBalance, selectedDerivAccountType, derivDemoBalance, derivRealBalance]);
+  }, [router]);
 
   useEffect(() => {
     // console.log('[AuthContext/useEffect] Running. nextAuthStatus:', nextAuthStatus, 'authStatus:', authStatus);
