@@ -214,7 +214,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     lastProcessedNextAuthUserId.current = null;
 
-  }, [nextAuthStatus, nextSession, login, clearAuthDatalogout, userInfo, authStatus]); // Added userInfo and authStatus to dep array for more robust sync checks
+  }, [nextAuthStatus, nextSession, login, clearAuthData, userInfo, authStatus]); // Added userInfo and authStatus to dep array for more robust sync checks
 
 
   const logout = useCallback(async () => {
