@@ -188,8 +188,6 @@ export const authOptions: NextAuthOptions = {
               console.log('[NextAuth Callbacks] JWT - Successfully fetched Deriv account list.');
               const accounts = accountListResponse.account_list as any[];
 
-              const accounts = accountListResponse.account_list as any[];
-
               const apiDemoAccount = accounts.find(acc => acc.is_virtual === 1);
               const apiRealAccount = accounts.find(acc => acc.is_virtual === 0); // Simplified: taking the first real, default logic can be more complex
 
