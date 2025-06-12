@@ -138,33 +138,43 @@ model Notification {
 }
 
 model Trade {
-  id           String    @id @default(uuid())
-  userId       String
-  symbol       String
-  type         String
-  amount       Float
-  price        Float
-  totalValue   Float
-  status       String
-  openTime     DateTime  @default(now())
-  closeTime    DateTime?
-  profit       Float?
-  metadata     Json?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  exchange     String?
-  fees         Float?
-  leverage     Float?
-  orderType    String?
-  stopLoss     Float?
-  takeProfit   Float?
-  aiStrategyId String?
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(uuid())
+  userId            String
+  symbol            String
+  type              String    // e.g., 'CALL', 'PUT', 'BUY', 'SELL'
+  amount            Float     // Stake or investment amount
+  price             Float     // Entry price
+  totalValue        Float     // For binary options, this is typically the stake amount. For CFD/Forex, it could be stake * leverage or contract value.
+  status            String    // e.g., 'OPEN', 'WON', 'LOST', 'CLOSED'
+  openTime          DateTime  @default(now())
+  closeTime         DateTime?
+  profit            Float?
+  metadata          Json?     // For AI reasoning, selected strategy, other trade parameters
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  exchange          String?   // Exchange if applicable (e.g., for crypto, stocks)
+  fees              Float?    // Trading fees
+  leverage          Float?    // Leverage used, if any
+  orderType         String?   // e.g., 'MARKET', 'LIMIT', 'STOP'
+  stopLoss          Float?    // Stop-loss price level
+  takeProfit        Float?    // Take-profit price level
+
+  aiStrategyId      String?   // Identifier for the AI strategy used, if any
+
+  // Deriv specific fields
+  derivContractId   String?   // Deriv's contract ID for the trade
+  derivAccountId    String?   // The specific Deriv account ID (CR... or VRTC...) used for the trade
+  accountType       String?   // 'demo' or 'real', indicating which account type was used
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([symbol])
   @@index([status])
   @@index([openTime])
+  @@index([derivContractId])
+  @@index([derivAccountId])
 }
 
 model ProfitSummary {

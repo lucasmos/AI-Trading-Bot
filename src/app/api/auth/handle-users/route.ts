@@ -2,8 +2,39 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 
-type UserWithSettings = Prisma.UserGetPayload<{ include: { settings: true } }>;
+// Define the selective include for UserSettings
+const userSettingsBaseSelect = {
+  id: true,
+  userId: true,
+  theme: true,
+  language: true,
+  notifications: true,
+  settings: true, // This is the generic JSON field
+  createdAt: true,
+  updatedAt: true,
+  // Explicitly EXCLUDE new Deriv-specific fields like derivDemoAccountId, etc.
+};
 
+// New type based on selective include
+type UserWithBaseSettings = Prisma.UserGetPayload<{
+  include: {
+    settings: {
+      select: typeof userSettingsBaseSelect
+    }
+  }
+}>;
+
+/**
+ * Handles POST requests to create, update, or reconcile user records in the database based on provided user data.
+ *
+ * Accepts a JSON payload containing user identification and authentication details. Attempts to find an existing user by ID or email, updates user fields as needed, or creates a new user if none exists. Handles user ID conflicts, unique constraint violations, and conditional updates based on authentication method. Returns a JSON response with the processed user data or an error message.
+ *
+ * @returns A JSON response indicating success or failure, including user information if successful.
+ *
+ * @remark
+ * - Returns HTTP 400 if the request body is empty, missing required fields, or contains invalid JSON.
+ * - Returns HTTP 500 for unexpected errors or if user processing fails.
+ */
 export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
@@ -40,17 +71,17 @@ export async function POST(request: Request) {
 
     console.log('[Handle Users API] Processing user:', { userId, email, authMethod, name });
 
-    let user: UserWithSettings | null = await prisma.user.findUnique({
+    let user: UserWithBaseSettings | null = await prisma.user.findUnique({
       where: { id: userId }, 
-      include: { settings: true }
+      include: { settings: { select: userSettingsBaseSelect } }
     });
 
     if (!user && email) {
       console.log('[Handle Users API] User not found by primary ID, checking by email:', email);
       const userByEmail = await prisma.user.findUnique({
         where: { email },
-        include: { settings: true }
-      }) as UserWithSettings | null;
+        include: { settings: { select: userSettingsBaseSelect } }
+      }) as UserWithBaseSettings | null;
 
       if (userByEmail) {
         console.log(`[Handle Users API] User found by email with ID ${userByEmail.id}. Incoming userId is ${userId} (authMethod: ${authMethod}).`);
@@ -76,8 +107,8 @@ export async function POST(request: Request) {
                     user = await prisma.user.update({
                         where: { id: userByEmail.id }, 
                         data: updateDataForIdChange as Prisma.UserUpdateInput,
-                        include: { settings: true }
-                    }) as UserWithSettings;
+                        include: { settings: { select: userSettingsBaseSelect } }
+                    }) as UserWithBaseSettings;
                     console.log(`[Handle Users API] User ID for email ${email} updated from ${userByEmail.id} to ${user.id}. Auth method: ${(user as any).authMethod}`);
                 }
             } catch (updateError: any) {
@@ -105,8 +136,8 @@ export async function POST(request: Request) {
                     user = await prisma.user.update({
                         where: { id: user.id },
                         data: updateData as Prisma.UserUpdateInput,
-                        include: { settings: true }
-                    }) as UserWithSettings;
+                        include: { settings: { select: userSettingsBaseSelect } }
+                    }) as UserWithBaseSettings;
                     console.log(`[Handle Users API] User details updated for user ${user.id}. Auth method: ${(user as any).authMethod}`);
                 }
             }
@@ -136,15 +167,15 @@ export async function POST(request: Request) {
 
         user = await prisma.user.create({
           data: createData as Prisma.UserCreateInput,
-          include: { settings: true }
-        }) as UserWithSettings;
+          include: { settings: { select: userSettingsBaseSelect } }
+        }) as UserWithBaseSettings;
         console.log(`[Handle Users API] New user created. ID: ${user.id}, AuthMethod: ${(user as any).authMethod}`);
       } catch (createError: any) {
         if (createError instanceof Prisma.PrismaClientKnownRequestError && createError.code === 'P2002') { 
             const target = createError.meta?.target as string[] | undefined;
             console.error(`[Handle Users API] Create user P2002 error on fields: ${target?.join(', ')}.`, createError);
-            if (email) user = await prisma.user.findUnique({ where: { email }, include: { settings: true }}) as UserWithSettings | null;
-            if (!user) user = await prisma.user.findUnique({ where: { id: userId }, include: { settings: true }}) as UserWithSettings | null;
+            if (email) user = await prisma.user.findUnique({ where: { email }, include: { settings: { select: userSettingsBaseSelect } }}) as UserWithBaseSettings | null;
+            if (!user) user = await prisma.user.findUnique({ where: { id: userId }, include: { settings: { select: userSettingsBaseSelect } }}) as UserWithBaseSettings | null;
             if (!user) throw createError; 
             console.log('[Handle Users API] Found user after P2002, likely race condition.', user.id);
         } else {
@@ -171,8 +202,8 @@ export async function POST(request: Request) {
           user = await prisma.user.update({
             where: { id: user.id },
             data: updateData as Prisma.UserUpdateInput,
-            include: { settings: true }
-          }) as UserWithSettings;
+            include: { settings: { select: userSettingsBaseSelect } }
+          }) as UserWithBaseSettings;
           console.log(`[Handle Users API] User ${user.id} info updated. New authMethod: ${(user as any).authMethod}`);
         } catch (error) {
           console.error(`[Handle Users API] Error updating user ${user.id}:`, error); 

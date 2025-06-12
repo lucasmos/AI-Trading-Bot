@@ -59,6 +59,13 @@ function validateTradeParameters(stake: number, balance: number, accountType: 'd
   return null;
 }
 
+/**
+ * Renders the main trading dashboard page with manual and AI-assisted trading features for Forex, Crypto, and Commodity instruments.
+ *
+ * Provides real-time balance display, instrument selection, trading controls, AI recommendations, and automated trading session management. Integrates with Deriv API for trade execution and AI services for market sentiment analysis and strategy generation. Manages state for active trades, profits, and user notifications.
+ *
+ * @returns The trading dashboard React component.
+ */
 export default function DashboardPage() {
   const { 
     authStatus, 
@@ -268,7 +275,8 @@ export default function DashboardPage() {
       if (selectedDerivAccountType) {
         console.log(`[Dashboard] Attempting post-trade balance refresh for ${selectedDerivAccountType} account.`);
         await updateSelectedDerivAccountType(selectedDerivAccountType);
-        // Toast for balance refresh success/failure is handled within AuthContext or not shown to avoid too many toasts
+        // Optional: toast for balance update success/failure can be handled in AuthContext or here
+        // For now, relying on AuthContext's internal handling.
       }
 
     } catch (error) {
@@ -397,9 +405,9 @@ export default function DashboardPage() {
 
     const strategyInput: AutomatedTradingStrategyInput = {
       totalStake: autoTradeTotalStake,
-      instruments: instrumentsToTrade.filter(inst => instrumentTicksData[inst] && instrumentTicksData[inst].length > 0), // Only trade instruments with data
+      instruments: instrumentsToTrade.filter(inst => instrumentTicksData[inst] && instrumentTicksData[inst].length > 0),
       tradingMode,
-      aiStrategyId: selectedAiStrategyId,
+      aiStrategyId: selectedAiStrategyId, // Use state variable here
       stopLossPercentage: selectedStopLossPercentage,
       instrumentTicks: instrumentTicksData,
       instrumentIndicators: instrumentIndicatorsData,
@@ -418,13 +426,8 @@ export default function DashboardPage() {
         setIsAutoTradingActive(false);
         return;
       }
-      // UI update for proposed trades
       toast({ title: "AI Strategy Generated", description: `AI proposes ${strategyResult.tradesToExecute.length} trades for ${selectedDerivAccountType || 'paper'} account.`, duration: 5000});
 
-      // For now, this automated session does not execute real trades with placeTrade
-      // It simulates the execution flow and logs.
-      // If real execution is needed, each trade in tradesToExecute would need to be passed to placeTrade
-      // along with the correct targetAccountId.
       const simulatedTrades: ActiveAutomatedTrade[] = strategyResult.tradesToExecute.map(p => ({
         id: uuidv4(),
         instrument: p.instrument as ForexCryptoCommodityInstrumentType,
@@ -433,9 +436,9 @@ export default function DashboardPage() {
         durationSeconds: p.durationSeconds,
         reasoning: p.reasoning,
         entryPrice: instrumentTicksData[p.instrument as ForexCryptoCommodityInstrumentType]?.slice(-1)[0]?.price || 0,
-        stopLossPrice: 0, // Placeholder
+        stopLossPrice: 0,
         startTime: Date.now(),
-        status: 'active', // Will be managed by useEffect
+        status: 'active',
         currentPrice: instrumentTicksData[p.instrument as ForexCryptoCommodityInstrumentType]?.slice(-1)[0]?.price || 0,
         pnl: 0,
       }));
@@ -456,8 +459,9 @@ export default function DashboardPage() {
     const accountTypeForLogging = selectedDerivAccountType || 'paper';
     setActiveAutomatedTrades(prevTrades =>
       prevTrades.map(trade => {
-        if (trade.status === 'active') {
-          // Log to DB if necessary, using accountTypeForLogging in metadata
+        if (trade.status === 'active' && userInfo?.id) {
+            // This part is for local simulation; actual DB logging would be after real trade closure.
+            // If these simulated trades were to be logged, this is where it would happen.
         }
         return trade.status === 'active' ? ({ ...trade, status: 'closed_manual', pnl: -trade.stake, reasoning: (trade.reasoning || "") + " Manually stopped." }) : trade;
       })
@@ -480,24 +484,17 @@ export default function DashboardPage() {
               if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
                 return currentTrade;
               }
-              // Simplified PNL logic for simulation - actual PNL would come from API for real trades
-              let newStatus = currentTrade.status;
+              let newStatus = currentTrade.status as ActiveAutomatedTrade['status'];
               let pnl = currentTrade.pnl ?? 0;
-              // Simulate price movement and check conditions (simplified)
-              // ...
+              // Simplified PNL logic for simulation
               if (Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration'; // Simplified outcome
-                pnl = newStatus === 'won' ? currentTrade.stake * 0.85 : -currentTrade.stake; // Simplified PNL
+                newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration';
+                pnl = newStatus === 'won' ? currentTrade.stake * 0.85 : -currentTrade.stake;
 
                 clearInterval(tradeIntervals.current.get(trade.id)!);
                 tradeIntervals.current.delete(trade.id);
 
-                // Log to DB for simulated trades
-                if (userInfo?.id && (newStatus === 'won' || newStatus === 'lost_duration')) {
-                  // ... fetch call to log trade ...
-                }
-
-                setTimeout(() => {
+                setTimeout(() => { // Ensure state updates batch correctly
                   setProfitsClaimable(prevProfits => ({
                     totalNetProfit: prevProfits.totalNetProfit + pnl,
                     tradeCount: prevProfits.tradeCount + 1,
@@ -511,10 +508,11 @@ export default function DashboardPage() {
                   });
                 }, 0);
               }
+              // For this simulation, currentPrice isn't updated dynamically.
               return { ...currentTrade, status: newStatus, pnl };
             });
           });
-        }, 2000 + Math.random() * 1000); // Stagger updates
+        }, 2000 + Math.random() * 1000);
         tradeIntervals.current.set(trade.id, intervalId);
       }
     });
@@ -523,7 +521,7 @@ export default function DashboardPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, userInfo, profitsClaimable]);
+  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, profitsClaimable]); // profitsClaimable added to dep array
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
     const newApiType = (newTypeFromControl === 'paper' || newTypeFromControl === 'demo') ? 'demo' : 'real';

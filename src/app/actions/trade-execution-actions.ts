@@ -2,36 +2,70 @@
 
 import {
   AutomatedTradingStrategyOutput,
-  AutomatedTradeProposal,
   ForexCryptoCommodityInstrumentType
 } from '@/types';
 import {
   placeTrade,
   TradeDetails,
   PlaceTradeResponse,
-  instrumentToDerivSymbol // Ensure this is exported from deriv.ts
+  instrumentToDerivSymbol
 } from '@/services/deriv';
+import { prisma } from '@/lib/db'; // Import Prisma client
 
 export interface TradeExecutionResult {
   success: boolean;
   instrument: ForexCryptoCommodityInstrumentType;
   tradeResponse?: PlaceTradeResponse;
   error?: string;
+  dbTradeId?: string; // To return the ID of the trade record in our DB
 }
 
+/**
+ * Executes a series of trades based on an AI-generated trading strategy, places them on the specified Deriv account, and records each trade in the database.
+ *
+ * For each trade proposal in the strategy, attempts to execute the trade via the Deriv API and persist the trade details. Returns an array of results indicating the success or failure of each trade, including error messages and database record IDs where applicable.
+ *
+ * @param strategy - The AI-generated trading strategy containing trade proposals to execute.
+ * @param userDerivApiToken - The API token used to authenticate with the Deriv platform.
+ * @param targetAccountId - The Deriv account ID where trades will be executed.
+ * @param selectedAccountType - Specifies whether the trades are executed on a 'demo' or 'real' account.
+ * @param userId - The unique identifier of the user executing the trades.
+ * @returns An array of trade execution results, each detailing the outcome of an attempted trade.
+ */
 export async function executeAiTradingStrategy(
   strategy: AutomatedTradingStrategyOutput,
-  userDerivApiToken: string
+  userDerivApiToken: string,
+  targetAccountId: string, // The specific Deriv account ID (CR... or VRTC...)
+  selectedAccountType: 'demo' | 'real', // The type of account being traded on
+  userId: string // The user's unique ID from your application's User model
+  // aiStrategyId is now expected to be part of the strategy object if needed for saving
 ): Promise<TradeExecutionResult[]> {
   const results: TradeExecutionResult[] = [];
 
   if (!userDerivApiToken) {
     console.error('[executeAiTradingStrategy] Deriv API token is missing.');
-    // Return a result indicating token absence for all proposed trades
     return strategy.tradesToExecute.map(tradeProposal => ({
       success: false,
       instrument: tradeProposal.instrument,
       error: 'Deriv API token is missing. Cannot execute trades.',
+    }));
+  }
+
+  if (!userId) {
+    console.error('[executeAiTradingStrategy] User ID is missing.');
+    return strategy.tradesToExecute.map(tradeProposal => ({
+      success: false,
+      instrument: tradeProposal.instrument,
+      error: 'User ID is missing. Cannot save trades.',
+    }));
+  }
+
+  if (!targetAccountId) {
+    console.error('[executeAiTradingStrategy] Target Deriv Account ID is missing.');
+    return strategy.tradesToExecute.map(tradeProposal => ({
+      success: false,
+      instrument: tradeProposal.instrument,
+      error: 'Target Deriv Account ID is missing. Cannot execute trades.',
     }));
   }
 
@@ -41,34 +75,61 @@ export async function executeAiTradingStrategy(
 
       const tradeDetails: TradeDetails = {
         symbol: derivSymbol,
-        contract_type: tradeProposal.action, // 'CALL' or 'PUT'
+        contract_type: tradeProposal.action,
         duration: tradeProposal.durationSeconds,
         duration_unit: 's',
         amount: tradeProposal.stake,
-        currency: 'USD', // Defaulting to USD
-        basis: 'stake', // Defaulting to stake
+        currency: 'USD',
+        basis: 'stake',
         token: userDerivApiToken,
-        // stop_loss and take_profit are not part of the AI proposal by default
       };
 
-      console.log(`[executeAiTradingStrategy] Attempting to place trade for ${tradeProposal.instrument} (${derivSymbol}) with details:`, {
+      console.log(`[executeAiTradingStrategy] Attempting to place trade for ${tradeProposal.instrument} on account ${targetAccountId}:`, {
         ...tradeDetails,
-        token: '***REDACTED***' // Avoid logging the token
+        token: '***REDACTED***'
       });
 
-      const response = await placeTrade(tradeDetails);
+      // Call placeTrade with targetAccountId
+      const derivTradeResponse = await placeTrade(tradeDetails, targetAccountId);
+
+      console.log(`[executeAiTradingStrategy] Trade placed successfully via Deriv API for ${tradeProposal.instrument}:`, derivTradeResponse);
+
+      // Save the executed trade to the database
+      const savedDbTrade = await prisma.trade.create({
+        data: {
+          userId: userId,
+          symbol: tradeProposal.instrument, // Storing the user-friendly symbol
+          type: tradeProposal.action,       // 'CALL' or 'PUT'
+          amount: tradeProposal.stake,
+          price: derivTradeResponse.entry_spot, // Entry price from Deriv
+          totalValue: tradeProposal.stake,      // For binary, totalValue is the stake
+          status: 'OPEN',                       // Initial status
+          openTime: new Date(),                 // Current time as open time
+          derivContractId: derivTradeResponse.contract_id.toString(),
+          derivAccountId: targetAccountId,
+          accountType: selectedAccountType,
+          aiStrategyId: strategy.aiStrategyId || null, // Assuming aiStrategyId is on strategy object
+          metadata: { // Store additional info if needed
+            reasoning: tradeProposal.reasoning,
+            derivLongcode: derivTradeResponse.longcode,
+          }
+        },
+      });
+      console.log(`[executeAiTradingStrategy] Trade for ${tradeProposal.instrument} saved to DB. DB Trade ID: ${savedDbTrade.id}, Deriv Contract ID: ${derivTradeResponse.contract_id}`);
+
       results.push({
         success: true,
         instrument: tradeProposal.instrument,
-        tradeResponse: response,
+        tradeResponse: derivTradeResponse,
+        dbTradeId: savedDbTrade.id,
       });
-      console.log(`[executeAiTradingStrategy] Trade placed successfully for ${tradeProposal.instrument}:`, response);
+
     } catch (error: any) {
-      console.error(`[executeAiTradingStrategy] Failed to place trade for ${tradeProposal.instrument}:`, error);
+      console.error(`[executeAiTradingStrategy] Failed to place or save trade for ${tradeProposal.instrument}:`, error);
       results.push({
         success: false,
         instrument: tradeProposal.instrument,
-        error: error.message || 'Unknown error during trade placement.',
+        error: error.message || 'Unknown error during trade placement or DB save.',
       });
     }
   }
