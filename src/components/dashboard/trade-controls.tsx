@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import type { TradingMode, TradeDuration, InstrumentType, ForexCryptoCommodityInstrumentType } from '@/types'; // Removed PaperTradingMode
+import type { TradingMode, TradeDuration, InstrumentType, ForexCryptoCommodityInstrumentType } from '@/types';
 import { TrendingUp, TrendingDown, Bot, DollarSign, Play, Square, Briefcase, UserCheck } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 
@@ -18,8 +18,8 @@ interface TradeControlsProps {
   onAiStrategyChange: (strategyId: string) => void;
   tradeDuration: TradeDuration;
   onTradeDurationChange: (duration: TradeDuration) => void;
-  accountType: 'demo' | 'real' | null; // Changed from paperTradingMode
-  onAccountTypeChange: (mode: 'demo' | 'real') => void; // Changed from onPaperTradingModeChange
+  accountType: 'demo' | 'real' | null;
+  onAccountTypeChange: (mode: 'demo' | 'real') => void;
   stakeAmount: number;
   onStakeAmountChange: (amount: number) => void;
   onExecuteTrade: (action: 'CALL' | 'PUT') => void;
@@ -105,7 +105,11 @@ export function TradeControls({
   };
 
   const handleAccountSwitchChange = (isRealAccountChecked: boolean) => {
-    onAccountTypeChange(isRealAccountChecked ? 'real' : 'demo');
+    console.log('[TradeControls] Switch checked:', isRealAccountChecked);
+    const modeToSet = isRealAccountChecked ? 'real' : 'demo';
+    console.log('[TradeControls] Mode determined by switch:', modeToSet);
+    console.log('[TradeControls] Calling onAccountTypeChange with mode:', modeToSet);
+    onAccountTypeChange(modeToSet);
   };
 
   const isAnyAiLoading = isFetchingManualRecommendation || isPreparingAutoTrades;

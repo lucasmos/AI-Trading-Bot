@@ -36,13 +36,6 @@ type MarketDataState = Record<ForexCryptoCommodityInstrumentType, {
   error?: string;
 }>;
 
-/**
- * Provides an interactive AI-powered automated trading interface using live market data and Deriv API integration.
- *
- * Users can configure trading parameters, fetch real-time market data, generate AI trading strategies, review proposed trades, and execute them upon confirmation. The component manages authentication, market data retrieval, AI strategy generation, trade execution, and displays detailed feedback and results throughout the process.
- *
- * @remark The trading flow is explicitly separated into two phases: AI strategy generation and user confirmation before execution. No trades are executed without explicit user approval.
- */
 export function AutomatedTradingControls() {
   const { toast } = useToast();
   const { data: session, status: sessionStatus } = useSession();
