@@ -205,6 +205,7 @@ export const authOptions: NextAuthOptions = {
                     derivDemoAccountId: demoAccountIdFromApi,
                     derivRealAccountId: realAccountIdFromApi,
                     selectedDerivAccountType: "demo", // Default, user can change later
+                    settings: {}, // Added default empty JSON object
                     // derivDemoBalance: demoBalanceFromApi, // Store initial balance
                     // derivRealBalance: realBalanceFromApi, // Store initial balance
                     // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
