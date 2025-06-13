@@ -679,8 +679,15 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
 
         if (response.msg_type === 'authorize') {
           if (response.authorize?.loginid) {
-            console.log(`[DerivService/getDerivAccountBalance] Authorization successful for initial token. User: ${response.authorize.loginid}. Current account in session: ${response.authorize.loginid}. Attempting to switch to target accountId: ${accountId}.`);
-            ws!.send(JSON.stringify({ account_switch: accountId }));
+            const currentActiveAccountId = response.authorize.loginid;
+            console.log(`[DerivService/getDerivAccountBalance] Authorization successful for initial token. User: ${currentActiveAccountId}. Target accountId for balance: ${accountId}.`);
+            if (currentActiveAccountId === accountId) {
+              console.log(`[DerivService/getDerivAccountBalance] Account ${accountId} is already active. Skipping account_switch. Sending balance request.`);
+              ws!.send(JSON.stringify({ balance: 1, subscribe: 0 }));
+            } else {
+              console.log(`[DerivService/getDerivAccountBalance] Current active account ${currentActiveAccountId} is different from target ${accountId}. Attempting to switch.`);
+              ws!.send(JSON.stringify({ account_switch: accountId }));
+            }
           } else {
             cleanupAndLog('Authorization failed. Response did not contain expected authorize object.', true);
             reject(new Error(`Deriv authorization failed for account ${accountId}.`));
@@ -693,35 +700,28 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
           }
 
           let switchedCorrectly = false;
-          // Check if the echo_req has the switched account_id and no error
-          if (response.echo_req && response.echo_req.account_switch === accountId && !response.error) {
-              switchedCorrectly = true;
-          }
-          // Fallback or alternative check: Deriv API might return current_loginid or loginid in account_switch response directly
           const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid;
-          if (!switchedCorrectly && switchedToLoginId === accountId && !response.error) {
+          if (response.echo_req && response.echo_req.account_switch === accountId) {
+              switchedCorrectly = true;
+          } else if (switchedToLoginId === accountId) {
               switchedCorrectly = true;
           }
 
           if (switchedCorrectly) {
               console.log(`[DerivService/getDerivAccountBalance] Successfully switched to account: ${accountId}. Sending balance request.`);
-              ws!.send(JSON.stringify({ balance: 1, subscribe: 0 })); // subscribe: 0 for one-time response
+              ws!.send(JSON.stringify({ balance: 1, subscribe: 0 }));
           } else {
-              const activeAccount = switchedToLoginId || response.echo_req?.authorize?.loginid || 'unknown'; // Try to get active account from different places
-              cleanupAndLog(`Failed to switch to account ${accountId}. Expected ${accountId} but active account appears to be ${activeAccount}. Full response: ${JSON.stringify(response)}`, true);
-              reject(new Error(`Failed to confirm switch to Deriv account ${accountId}. Active account is ${activeAccount}.`));
+              cleanupAndLog(`Failed to switch to account ${accountId}. Expected ${accountId} but response indicates active account is ${switchedToLoginId || 'unknown'}. Full response: ${JSON.stringify(response)}`, true);
+              reject(new Error(`Failed to confirm switch to Deriv account ${accountId}. Active account is ${switchedToLoginId || 'unknown'}.`));
           }
+
         } else if (response.msg_type === 'balance') {
           console.log(`[DerivService/getDerivAccountBalance] Balance response received for ${accountId}.`);
-
           let targetAccountData;
-          // After account_switch, the main balance object in the response should be for the switched account.
           if (response.balance?.loginid === accountId) {
               targetAccountData = response.balance;
-              console.log(`[DerivService/getDerivAccountBalance] Using main balance object for ${accountId} as it matches the switched account.`);
+              console.log(`[DerivService/getDerivAccountBalance] Using main balance object for ${accountId} as it matches the active/switched account.`);
           }
-          // The `response.balance.accounts` object might not be relevant anymore or might only show the current account.
-          // It's safer to rely on the main `response.balance` object post-account-switch if it matches `accountId`.
 
           if (targetAccountData && targetAccountData.loginid === accountId) {
             const result = {
@@ -732,9 +732,9 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
             cleanupAndLog(`Balance successfully retrieved for ${accountId}.`);
             resolve(result);
           } else {
-            const availableLoginId = response.balance?.loginid || 'N/A';
-            cleanupAndLog(`Account ${accountId} not found or mismatch in balance response after supposedly switching. Login ID in balance response: ${availableLoginId}. Full response: ${JSON.stringify(response)}`, true);
-            reject(new Error(`Account ${accountId} balance not found or mismatch in Deriv balance response after account switch.`));
+            const loginIdInResponse = response.balance?.loginid || 'N/A';
+            cleanupAndLog(`Account ${accountId} not found or mismatch in balance response. Expected ${accountId}, got ${loginIdInResponse}. Full response: ${JSON.stringify(response)}`, true);
+            reject(new Error(`Account ${accountId} balance not found or mismatch in Deriv balance response. Expected ${accountId}, got ${loginIdInResponse}.`));
           }
         } else {
           console.log(`[DerivService/getDerivAccountBalance] Received other message type for ${accountId}: ${response.msg_type}`, response);

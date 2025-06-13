@@ -112,47 +112,50 @@ export class DerivBalanceListener {
 
     switch (response.msg_type) {
       case 'authorize':
-        if (response.authorize) {
-          console.log(`[DerivBalanceListener] (${this.accountId}) Authorized. Current account: ${response.authorize.loginid}. Attempting to switch to target ${this.accountId}...`);
-          this.isAuthorized = true;
-          if (response.authorize.loginid === this.accountId) {
-            console.log(`[DerivBalanceListener] (${this.accountId}) Already on target account. Subscribing to balance...`);
-            this.isSwitchingAccount = false;
-            this.reconnectAttempts = 0;
-            this.flushMessageQueue();
-            if (this.resolveConnectionPromise) this.resolveConnectionPromise();
-            // Status becomes 'connected' after successful subscription
+        if (response.authorize?.loginid) { // Ensure loginid exists
+          const currentActiveAccountId = response.authorize.loginid;
+          this.isAuthorized = true; // Authorization itself was successful
+          console.log(`[DerivBalanceListener] (${this.accountId}) Authorized. Current active account: ${currentActiveAccountId}. Target account for listener: ${this.accountId}.`);
+
+          if (currentActiveAccountId === this.accountId) {
+            console.log(`[DerivBalanceListener] (${this.accountId}) Account ${this.accountId} is already active. Skipping account_switch.`);
+            this.isSwitchingAccount = false; // Not switching
+            this.flushMessageQueue(); // Send any queued messages (like subscribe)
+            if (this.resolveConnectionPromise) this.resolveConnectionPromise(); // If there's a connection promise
+            this.onStatusChange('connected', 'Account already active, proceeding to subscribe.'); // Update status
             this.subscribeToBalance();
           } else {
+            console.log(`[DerivBalanceListener] (${this.accountId}) Current active account ${currentActiveAccountId} is different from target ${this.accountId}. Attempting to switch.`);
             this.isSwitchingAccount = true;
+            this.onStatusChange('connecting', 'Switching account...'); // Or a more specific status like 'switching_account'
             this.sendMessage({ account_switch: this.accountId });
           }
         } else {
-          const authFailedMsg = 'Authorization failed.';
+          this.isAuthorized = false;
+          const authFailedMsg = 'Authorization failed: No loginid in response.';
           this.onError(new Error(authFailedMsg));
-          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(authFailedMsg));
           this.onStatusChange('error', authFailedMsg);
-          this.onStatusChange('disconnected', authFailedMsg);
-          this.close(true);
+          this.onStatusChange('disconnected', 'Authorization error.');
+          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(authFailedMsg));
+          this.close(true); // Stop if auth fails critically
         }
         break;
       case 'account_switch':
-        this.isSwitchingAccount = false;
+        this.isSwitchingAccount = false; // Switch attempt has concluded
         const switchedTo = response.account_switch?.current_loginid || response.echo_req?.account_switch;
-        if (response.echo_req?.account_switch === this.accountId && switchedTo === this.accountId && !response.error) {
+        if (response.echo_req?.account_switch === this.accountId && !response.error) { // check echo_req and ensure no error field
           console.log(`[DerivBalanceListener] (${this.accountId}) Switched to account ${this.accountId}. Subscribing to balance...`);
-          this.reconnectAttempts = 0;
           this.flushMessageQueue();
           if (this.resolveConnectionPromise) this.resolveConnectionPromise();
-          // Status becomes 'connected' after successful subscription
+          this.onStatusChange('connected', 'Account switched, proceeding to subscribe.');
           this.subscribeToBalance();
         } else {
-          const errorMsg = `Failed to switch to Deriv account ${this.accountId}. Actual active account: ${switchedTo || 'unknown'}.`;
+          const errorMsg = `Failed to switch to account ${this.accountId}. Actual: ${switchedTo || 'unknown'}. Response Error: ${response.error?.message || 'None'}`;
           console.error(`[DerivBalanceListener] (${this.accountId}) ${errorMsg}`, response);
-          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(errorMsg));
+          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error('Account switch failed'));
           this.onError(new Error(errorMsg));
           this.onStatusChange('error', 'Account switch failed.');
-          this.onStatusChange('disconnected', 'Account switch failed.');
+          this.onStatusChange('disconnected', 'Account switch error.');
           this.close(true);
         }
         break;
@@ -160,8 +163,7 @@ export class DerivBalanceListener {
         if (!this.isSubscribed && response.subscription?.id) {
             console.log(`[DerivBalanceListener] (${this.accountId}) Successfully subscribed to balance updates. Sub ID: ${response.subscription.id}`);
             this.isSubscribed = true;
-            this.reconnectAttempts = 0;
-            this.onStatusChange('connected'); // Successfully subscribed and receiving balance
+            // this.onStatusChange('connected'); // Status 'connected' is now set earlier, after account is ready.
         }
         if (response.balance?.loginid === this.accountId) {
           this.onBalanceUpdate(response.balance as BalanceData);
