@@ -738,15 +738,34 @@ export default function DashboardPage() {
   }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, profitsClaimable]);
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
+    // Add this block at the beginning:
+    if (authStatus === 'unauthenticated') {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to switch account types.",
+        variant: "default" // Or "destructive"
+      });
+      router.push('/auth/login');
+      return;
+    }
+
+    // Existing logic follows:
     const newApiType = (newTypeFromControl === 'paper' || newTypeFromControl === 'demo') ? 'demo' : 'real';
+
+    // This existing check might be redundant if authStatus === 'unauthenticated' already covers it,
+    // but it's more specific about Deriv linking. Keep it for users who are authenticated but haven't linked Deriv.
     if (!userInfo?.derivAccessToken) {
         toast({ title: "Deriv Account Not Linked", description: "Please connect your Deriv account via Profile page to switch modes.", variant: "destructive" });
         return;
     }
-    if (newApiType === selectedDerivAccountType) return;
+
+    if (newApiType === selectedDerivAccountType) return; // Already the selected type
+
     try {
         await updateSelectedDerivAccountType(newApiType);
-        toast({ title: "Account Switched", description: `Switched to ${newApiType} account. Balances reflected.`, variant: "default" });
+        // The success toast is now potentially handled within updateSelectedDerivAccountType or by observing state,
+        // but keeping a general one here is also fine. The user's feedback mentioned a toast.
+        toast({ title: "Account Switched", description: `Successfully switched to ${newApiType} account.`, variant: "default" });
     } catch (error) {
         toast({ title: "Switch Failed", description: `Failed to switch to ${newApiType} account. Error: ${(error as Error).message}`, variant: "destructive" });
     }
