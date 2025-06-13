@@ -4,7 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from '@/lib/db';
 import bcrypt from 'bcryptjs';
-import { getDerivAccountList } from '@/services/deriv'; // Import for fetching account details
+import { getDerivAccountList, getDerivAccountBalance } from '@/services/deriv'; // Import for fetching account details
 
 // Define an extended User type for NextAuth to include derivAccessToken
 interface ExtendedUser extends NextAuthUser {
@@ -193,9 +193,34 @@ export const authOptions: NextAuthOptions = {
 
               const demoAccountIdFromApi = apiDemoAccount?.loginid;
               const realAccountIdFromApi = apiRealAccount?.loginid;
-              // Balances from API are fresh but we might not store them directly in token yet, rather in DB first
-              // const demoBalanceFromApi = apiDemoAccount ? parseFloat(apiDemoAccount.balance) : undefined;
-              // const realBalanceFromApi = apiRealAccount ? parseFloat(apiRealAccount.balance) : undefined;
+
+              let demoBalanceFromApi: number | undefined = undefined;
+              let realBalanceFromApi: number | undefined = undefined;
+              const currentTimestamp = new Date();
+
+              if (demoAccountIdFromApi && extendedToken.derivAccessToken) {
+                try {
+                  console.log(`[NextAuth Callbacks] JWT - Attempting to fetch Deriv demo account balance for ${demoAccountIdFromApi}.`);
+                  const demoAccountBalanceDetails = await getDerivAccountBalance(extendedToken.derivAccessToken, demoAccountIdFromApi);
+                  demoBalanceFromApi = demoAccountBalanceDetails.balance;
+                  console.log(`[NextAuth Callbacks] JWT - Successfully fetched Deriv demo account balance: ${demoBalanceFromApi}`);
+                } catch (balanceError) {
+                  console.error(`[NextAuth Callbacks] JWT - Error fetching Deriv demo account balance for ${demoAccountIdFromApi}:`, balanceError);
+                  // demoBalanceFromApi remains undefined
+                }
+              }
+
+              if (realAccountIdFromApi && extendedToken.derivAccessToken) {
+                try {
+                  console.log(`[NextAuth Callbacks] JWT - Attempting to fetch Deriv real account balance for ${realAccountIdFromApi}.`);
+                  const realAccountBalanceDetails = await getDerivAccountBalance(extendedToken.derivAccessToken, realAccountIdFromApi);
+                  realBalanceFromApi = realAccountBalanceDetails.balance;
+                  console.log(`[NextAuth Callbacks] JWT - Successfully fetched Deriv real account balance: ${realBalanceFromApi}`);
+                } catch (balanceError) {
+                  console.error(`[NextAuth Callbacks] JWT - Error fetching Deriv real account balance for ${realAccountIdFromApi}:`, balanceError);
+                  // realBalanceFromApi remains undefined
+                }
+              }
 
               try {
                 const userSettings = await prisma.userSettings.upsert({
@@ -205,16 +230,17 @@ export const authOptions: NextAuthOptions = {
                     derivDemoAccountId: demoAccountIdFromApi,
                     derivRealAccountId: realAccountIdFromApi,
                     selectedDerivAccountType: "demo", // Default, user can change later
-                    // derivDemoBalance: demoBalanceFromApi, // Store initial balance
-                    // derivRealBalance: realBalanceFromApi, // Store initial balance
-                    // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
+                    settings: {}, // Ensure this is present from previous fix
+                    derivDemoBalance: demoBalanceFromApi,
+                    derivRealBalance: realBalanceFromApi,
+                    lastBalanceSync: currentTimestamp,
                   },
                   update: {
-                    derivDemoAccountId: demoAccountIdFromApi, // Update if different
-                    derivRealAccountId: realAccountIdFromApi, // Update if different
-                    // derivDemoBalance: demoBalanceFromApi, // Update with fresh balance
-                    // derivRealBalance: realBalanceFromApi, // Update with fresh balance
-                    // lastBalanceSync: new Date(), // TODO: Uncomment when balances are fetched
+                    derivDemoAccountId: demoAccountIdFromApi,
+                    derivRealAccountId: realAccountIdFromApi,
+                    derivDemoBalance: demoBalanceFromApi, // Will be undefined if fetch failed
+                    derivRealBalance: realBalanceFromApi, // Will be undefined if fetch failed
+                    lastBalanceSync: currentTimestamp,
                   },
                 });
                 console.log('[NextAuth Callbacks] JWT - UserSettings updated/created for user:', u.id);
