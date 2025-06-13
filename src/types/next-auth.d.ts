@@ -39,3 +39,19 @@ declare module "next-auth/jwt" {
     accessToken?: string; // For other OAuth provider's access token
   }
 }
+
+// Define and export ExtendedUser based on the Session.user structure
+export interface ExtendedUser extends DefaultUser {
+  id: string; // Explicitly ensure id is part of ExtendedUser
+  provider?: string;
+  derivAccessToken?: string;
+  derivApiToken?: { access_token: string };
+  derivAccountId?: string | null;
+  derivDemoAccountId?: string | null;
+  derivRealAccountId?: string | null;
+  derivDemoBalance?: number | null;
+  derivRealBalance?: number | null;
+  selectedDerivAccountType?: 'demo' | 'real' | null;
+  // Include other fields from DefaultUser if needed, like name, email, image
+  // DefaultUser already includes name?: string | null; email?: string | null; image?: string | null;
+}

@@ -26,6 +26,7 @@ import {
 import { getMarketStatus } from '@/lib/market-hours';
 import { DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
+import { DerivBalanceListener } from '@/services/deriv-balance-listener';
 
 const DEFAULT_PAPER_BALANCE = 10000; // Fallback if context value is null
 const DEFAULT_LIVE_BALANCE = 0;    // Fallback if context value is null
@@ -114,19 +115,164 @@ export default function DashboardPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
 
-  const currentBalance = useMemo(() => {
-    if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
-      if (selectedDerivAccountType === 'demo') {
-        return derivDemoBalance ?? DEFAULT_PAPER_BALANCE;
-      } else if (selectedDerivAccountType === 'real') {
-        return derivLiveBalance ?? DEFAULT_LIVE_BALANCE;
-      }
-    }
-    return DEFAULT_PAPER_BALANCE;
-  }, [authStatus, userInfo, selectedDerivAccountType, derivDemoBalance, derivLiveBalance]);
+  const [freshDemoBalance, setFreshDemoBalance] = useState<number | null>(null);
+  const [freshRealBalance, setFreshRealBalance] = useState<number | null>(null);
+  const [isLoadingDemoBalance, setIsLoadingDemoBalance] = useState<boolean>(false);
+  const [isLoadingRealBalance, setIsLoadingRealBalance] = useState<boolean>(false);
+  const [demoSyncStatus, setDemoSyncStatus] = useState<ListenerStatus>('idle');
+  const [realSyncStatus, setRealSyncStatus] = useState<ListenerStatus>('idle');
 
   const router = useRouter();
   const { toast } = useToast();
+
+  const demoBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
+  const realBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
+
+  // Top-level cleanup for listeners on component unmount
+  useEffect(() => {
+    return () => {
+      if (demoBalanceListenerRef.current) {
+        demoBalanceListenerRef.current.close();
+        demoBalanceListenerRef.current = null;
+      }
+      if (realBalanceListenerRef.current) {
+        realBalanceListenerRef.current.close();
+        realBalanceListenerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (userInfo?.derivAccessToken && derivDemoAccountId) {
+      if (demoBalanceListenerRef.current) {
+        demoBalanceListenerRef.current.close();
+      }
+      // Optimistic set from context or keep existing fresh balance
+      setFreshDemoBalance(prev => prev ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+      setIsLoadingDemoBalance(true); // Indicate loading until first WS message
+
+      demoBalanceListenerRef.current = new DerivBalanceListener(
+        userInfo.derivAccessToken,
+        derivDemoAccountId,
+        (balanceData) => {
+          setFreshDemoBalance(balanceData.balance);
+          // setIsLoadingDemoBalance(false); // Status change will handle this
+        },
+        (error) => {
+          console.error('[DashboardPage] Demo Balance Listener Error:', error);
+          // Toast is now handled by onStatusChange for 'error'
+        },
+        (status, message) => { // onStatusChange callback
+          setDemoSyncStatus(status);
+          if (message) console.log(`[DashboardPage] Demo Listener Status: ${status} - ${message}`);
+          if (status === 'error' && message) {
+            toast({ title: 'Demo Balance Sync Issue', description: message, variant: 'destructive'});
+          }
+          // Manage loading state based on status
+          if (status === 'connected' || status === 'error' || status === 'disconnected' || status === 'idle') {
+            setIsLoadingDemoBalance(false);
+          } else {
+            setIsLoadingDemoBalance(true);
+          }
+        },
+        (closeEvent) => { // onClose callback
+          console.log(`[DashboardPage] Demo Balance Listener Closed. Code: ${closeEvent.code}, Clean: ${closeEvent.wasClean}`);
+          // if (!closeEvent.wasClean) setIsLoadingDemoBalance(false); // Covered by onStatusChange
+        }
+      );
+    } else {
+       if (demoBalanceListenerRef.current) {
+          demoBalanceListenerRef.current.close();
+          demoBalanceListenerRef.current = null;
+       }
+       setFreshDemoBalance(derivDemoBalance ?? DEFAULT_PAPER_BALANCE); // Fallback if no token/ID
+       setIsLoadingDemoBalance(false);
+    }
+    // This effect's cleanup is implicitly handled by the next run creating a new listener and closing the old one,
+    // and the main unmount cleanup.
+  }, [userInfo?.derivAccessToken, derivDemoAccountId, toast, derivDemoBalance]); // Removed setFreshDemoBalance, setIsLoadingDemoBalance from deps as they cause loops
+
+  useEffect(() => {
+    if (userInfo?.derivAccessToken && derivRealAccountId) {
+      if (realBalanceListenerRef.current) {
+        realBalanceListenerRef.current.close();
+      }
+      setFreshRealBalance(prev => prev ?? derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+      setIsLoadingRealBalance(true);
+
+      realBalanceListenerRef.current = new DerivBalanceListener(
+        userInfo.derivAccessToken,
+        derivRealAccountId,
+        (balanceData) => {
+          setFreshRealBalance(balanceData.balance);
+          // setIsLoadingRealBalance(false);
+        },
+        (error) => {
+          console.error('[DashboardPage] Real Balance Listener Error:', error);
+          // Toast handled by onStatusChange
+        },
+        (status, message) => { // onStatusChange callback
+          setRealSyncStatus(status);
+          if (message) console.log(`[DashboardPage] Real Listener Status: ${status} - ${message}`);
+          if (status === 'error' && message) {
+            toast({ title: 'Real Balance Sync Issue', description: message, variant: 'destructive'});
+          }
+          if (status === 'connected' || status === 'error' || status === 'disconnected' || status === 'idle') {
+            setIsLoadingRealBalance(false);
+          } else {
+            setIsLoadingRealBalance(true);
+          }
+        },
+        (closeEvent) => { // onClose callback
+          console.log(`[DashboardPage] Real Balance Listener Closed. Code: ${closeEvent.code}, Clean: ${closeEvent.wasClean}`);
+          // if (!closeEvent.wasClean) setIsLoadingRealBalance(false); // Covered by onStatusChange
+        }
+      );
+    } else {
+      if (realBalanceListenerRef.current) {
+          realBalanceListenerRef.current.close();
+          realBalanceListenerRef.current = null;
+      }
+      setFreshRealBalance(derivLiveBalance ?? DEFAULT_LIVE_BALANCE); // Fallback
+      setIsLoadingRealBalance(false);
+    }
+  }, [userInfo?.derivAccessToken, derivRealAccountId, toast, derivLiveBalance]); // Removed setFreshRealBalance, setIsLoadingRealBalance
+
+  const fetchBalanceForAccount = useCallback(async (accountId: string, type: 'demo' | 'real') => {
+    if (!accountId || !userInfo?.derivAccessToken) {
+      console.warn(`[DashboardPage] fetchBalanceForAccount: Missing accountId ('${accountId}') or derivAccessToken. Cannot fetch.`);
+      return;
+    }
+
+    if (type === 'demo') setIsLoadingDemoBalance(true);
+    if (type === 'real') setIsLoadingRealBalance(true);
+
+    console.log(`[DashboardPage] Fetching ${type} balance for account ${accountId}`);
+    try {
+      const response = await fetch(`/api/deriv/account-balance?accountId=${accountId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch ${type} balance`);
+      }
+      const data = await response.json(); // Expects { balance: number, currency: string, loginid: string }
+
+      if (type === 'demo') {
+        setFreshDemoBalance(data.balance);
+        console.log(`[DashboardPage] Fetched demo balance: ${data.balance}`);
+      } else if (type === 'real') {
+        setFreshRealBalance(data.balance);
+        console.log(`[DashboardPage] Fetched real balance: ${data.balance}`);
+      }
+    } catch (error) {
+      console.error(`[DashboardPage] Error fetching ${type} balance for ${accountId}:`, error);
+      toast({ title: `Balance Error (${type})`, description: (error as Error).message, variant: "destructive" });
+      if (type === 'demo') setFreshDemoBalance(null);
+      if (type === 'real') setFreshRealBalance(null);
+    } finally {
+      if (type === 'demo') setIsLoadingDemoBalance(false);
+      if (type === 'real') setIsLoadingRealBalance(false);
+    }
+  }, [userInfo?.derivAccessToken, toast, setIsLoadingDemoBalance, setIsLoadingRealBalance, setFreshDemoBalance, setFreshRealBalance]); // Keep state setters in useCallback deps
 
   // Effect to load and initialize profitsClaimable from localStorage based on the selected account type.
   // This ensures that profit/loss tracking persists across sessions for each account type (demo/real).
@@ -155,6 +301,26 @@ export default function DashboardPage() {
     const profitsKey = `forexCryptoProfitsClaimable_${accountTypeKey}`;
     localStorage.setItem(profitsKey, JSON.stringify(profitsClaimable));
   }, [profitsClaimable, selectedDerivAccountType]); // Re-run if profitsClaimable or account type changes
+
+  // The useEffect that previously called fetchBalanceForAccount for initial load is now removed.
+  // DerivBalanceListener handles initial and subsequent updates.
+
+  const currentBalance = useMemo(() => {
+    if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
+      if (selectedDerivAccountType === 'demo') {
+        // Prioritize freshly fetched balance if available and not loading, else use context's value or default
+        return isLoadingDemoBalance ? (derivDemoBalance ?? DEFAULT_PAPER_BALANCE) : (freshDemoBalance ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+      } else if (selectedDerivAccountType === 'real') {
+        return isLoadingRealBalance ? (derivLiveBalance ?? DEFAULT_LIVE_BALANCE) : (freshRealBalance ?? derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+      }
+    }
+    return DEFAULT_PAPER_BALANCE; // Default for guests or before anything loads
+  }, [
+    authStatus, userInfo, selectedDerivAccountType,
+    derivDemoBalance, derivLiveBalance,
+    freshDemoBalance, freshRealBalance,
+    isLoadingDemoBalance, isLoadingRealBalance
+  ]);
 
   // Effect to update market status (open/closed) for the currently selected instrument.
   useEffect(() => {
@@ -285,12 +451,14 @@ export default function DashboardPage() {
       });
 
       // Attempt to refresh balance after successful trade
-      if (selectedDerivAccountType) {
-        console.log(`[Dashboard] Attempting post-trade balance refresh for ${selectedDerivAccountType} account.`);
-        await updateSelectedDerivAccountType(selectedDerivAccountType);
-        // Optional: toast for balance update success/failure can be handled in AuthContext or here
-        // For now, relying on AuthContext's internal handling.
+      // RE-FETCH BALANCE AFTER TRADE
+      if (selectedDerivAccountType && targetAccountId) {
+        console.log(`[DashboardPage] Post-trade: Attempting balance refresh for ${selectedDerivAccountType} account ${targetAccountId}.`);
+        fetchBalanceForAccount(targetAccountId, selectedDerivAccountType);
       }
+      // The existing call to updateSelectedDerivAccountType might also trigger a balance refresh if that function was enhanced,
+      // but a direct call here ensures it happens immediately with the new fetchBalanceForAccount.
+      // Consider removing: await updateSelectedDerivAccountType(selectedDerivAccountType); if it's redundant for balance fetching.
 
     } catch (error) {
       console.error(`[Dashboard] Deriv trade placement error on account ${targetAccountId}:`, error);
@@ -589,9 +757,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <BalanceDisplay
-            balance={currentBalance}
+            balance={currentBalance ?? 0} // Pass 0 if null, as BalanceDisplay expects number
             selectedAccountType={selectedDerivAccountType}
             displayAccountId={selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId}
+            syncStatus={selectedDerivAccountType === 'demo' ? demoSyncStatus : realSyncStatus}
           />
           <TradingChart 
                 instrument={currentInstrument}
