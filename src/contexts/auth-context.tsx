@@ -303,32 +303,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }) : null);
 
       // After local context states are updated, also update the NextAuth session
-      await updateNextAuthSession({
-        ...nextSession,
-        user: {
-          ...nextSession?.user,
-          selectedDerivAccountType: updatedSettings.selectedDerivAccountType,
-          derivDemoAccountId: updatedSettings.derivDemoAccountId,
-          derivRealAccountId: updatedSettings.derivRealAccountId,
-          derivDemoBalance: newDemoBalance,
-          derivRealBalance: newRealBalance,
-          id: nextSession?.user?.id,
-          name: nextSession?.user?.name,
-          email: nextSession?.user?.email,
-          image: nextSession?.user?.image,
-          provider: (nextSession?.user as any)?.provider,
-          derivAccessToken: (nextSession?.user as any)?.derivAccessToken,
-          derivAccountId: updatedSettings.selectedDerivAccountType === 'demo' ? updatedSettings.derivDemoAccountId : updatedSettings.derivRealAccountId,
-        }
-      });
-      console.log('[AuthContext] NextAuth session update requested after account type switch.');
+      await updateNextAuthSession(); // Call with no arguments
+      console.log('[AuthContext] NextAuth session refresh triggered after account type switch.');
 
     } catch (error) {
       console.error('[AuthContext] Error updating selected Deriv account type:', error);
       userJustSwitchedAccountTypeRef.current = false; // Reset flag on error too
       // Optionally, show a toast message to the user here
     }
-  }, [userInfo, currentAuthMethod, updateNextAuthSession, nextSession]);
+  }, [userInfo, currentAuthMethod, updateNextAuthSession /* nextSession removed if not directly used */]);
 
   const switchToDerivDemo = useCallback(async () => {
     await updateSelectedDerivAccountType('demo');
