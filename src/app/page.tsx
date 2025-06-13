@@ -634,18 +634,40 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
       const placedTradesPromises = strategyResult.tradesToExecute.map(async (proposedTrade) => {
         try {
-          const tradeDetails = { // Structure matching deriv.ts placeTrade's TradeDetails
+          let tradeDurationValue = proposedTrade.durationSeconds;
+          let tradeDurationUnit: "s" | "m" = 's';
+
+          // Check if instrument is Forex (example check, refine as needed)
+          const isForexInstrument = (proposedTrade.instrument.includes('/') && !proposedTrade.instrument.includes('BTC') && !proposedTrade.instrument.includes('ETH'));
+
+          if (isForexInstrument) {
+            // Deriv often requires longer minimum durations for Forex, e.g., 15 minutes.
+            // If AI proposes a short duration in seconds, convert to minutes and ensure minimum.
+            if (proposedTrade.durationSeconds < 900) { // Less than 15 minutes
+              tradeDurationValue = 15; // Set to a common minimum of 15 minutes
+              tradeDurationUnit = 'm';
+              logAutomatedTradingEvent(`Adjusted ${proposedTrade.instrument} trade duration from ${proposedTrade.durationSeconds}s to 15m due to typical Forex minimums.`);
+            } else if (proposedTrade.durationSeconds % 60 === 0) {
+              // If it's a whole number of minutes, send in minutes
+              tradeDurationValue = proposedTrade.durationSeconds / 60;
+              tradeDurationUnit = 'm';
+            }
+            // else, if it's seconds but >= 900s and not a whole minute, it might still be valid as seconds.
+          }
+
+          const tradeDetails: any = { // Using 'any' for TradeDetails as its definition is implicit
             symbol: instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType),
             contract_type: proposedTrade.action,
-            duration: proposedTrade.durationSeconds,
-            duration_unit: 's' as "s" | "m" | "h" | "d" | "t",
+            duration: tradeDurationValue,
+            duration_unit: tradeDurationUnit,
             amount: proposedTrade.stake,
             currency: "USD",
-            basis: "stake" as "stake" | "payout",
+            basis: "stake",
             token: currentToken,
           };
+          logAutomatedTradingEvent(`Placing ${proposedTrade.action} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Duration: ${tradeDurationValue}${tradeDurationUnit}`);
           const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId);
-          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}`);
+          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}, Adjusted Duration: ${tradeDurationValue}${tradeDurationUnit}`);
 
           // RE-FETCH BALANCE AFTER TRADE
           if (selectedDerivAccountType && currentTargetAccountId) {
