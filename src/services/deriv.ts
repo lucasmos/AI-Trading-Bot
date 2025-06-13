@@ -1089,8 +1089,18 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
 
     ws.onopen = () => {
       const openTime = Date.now();
-      console.log(`[DerivService/placeTrade] WebSocket opened for accountId: ${accountId}. Time to open: ${openTime - startTime}ms. Authorizing...`);
-      console.log('[DerivService/placeTrade] Sending authorize request:', JSON.stringify({ authorize: tradeDetails.token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT' }));
+      console.log(
+        `[DerivService/placeTrade] WebSocket opened for accountId: ${accountId}. Time to open: ${openTime - startTime}ms. Authorizing...`
+      );
+      console.log(
+        '[DerivService/placeTrade] Sending authorize request:',
+        JSON.stringify({ authorize: tradeDetails.token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT' })
+      );
+      if (!tradeDetails.token) {
+        cleanupAndLog('Missing API token – aborting trade placement.', true);
+        reject(new Error('Deriv API token is required for trade placement.'));
+        return;
+      }
       ws!.send(JSON.stringify({ authorize: tradeDetails.token }));
     };
 
