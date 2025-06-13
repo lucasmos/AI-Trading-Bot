@@ -214,7 +214,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (nextAuthStatus === 'loading') {
-      if (authStatus !== 'pending') setAuthStatus('pending');
+      if (!userJustSwitchedAccountTypeRef.current && authStatus !== 'pending') setAuthStatus('pending');
       lastProcessedNextAuthUserId.current = null;
       return;
     }
