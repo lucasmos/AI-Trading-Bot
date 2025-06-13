@@ -37,7 +37,7 @@ const DEFAULT_LIVE_BALANCE = 0;
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: nextSession, status: nextAuthStatus } = useSession();
+  const { data: nextSession, status: nextAuthStatus, update: updateNextAuthSession } = useSession();
 
   const [authStatus, setAuthStatus] = useState<AuthStatus>('pending');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -281,12 +281,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         derivRealBalance: newRealBalance,
       }) : null);
 
+      // After local context states are updated, also update the NextAuth session
+      await updateNextAuthSession({
+        ...nextSession,
+        user: {
+          ...nextSession?.user,
+          selectedDerivAccountType: updatedSettings.selectedDerivAccountType,
+          derivDemoAccountId: updatedSettings.derivDemoAccountId,
+          derivRealAccountId: updatedSettings.derivRealAccountId,
+          derivDemoBalance: newDemoBalance,
+          derivRealBalance: newRealBalance,
+          id: nextSession?.user?.id,
+          name: nextSession?.user?.name,
+          email: nextSession?.user?.email,
+          image: nextSession?.user?.image,
+          provider: (nextSession?.user as any)?.provider,
+          derivAccessToken: (nextSession?.user as any)?.derivAccessToken,
+          derivAccountId: updatedSettings.selectedDerivAccountType === 'demo' ? updatedSettings.derivDemoAccountId : updatedSettings.derivRealAccountId,
+        }
+      });
+      console.log('[AuthContext] NextAuth session update requested after account type switch.');
 
     } catch (error) {
       console.error('[AuthContext] Error updating selected Deriv account type:', error);
       // Optionally, show a toast message to the user here
     }
-  }, [userInfo, currentAuthMethod]);
+  }, [userInfo, currentAuthMethod, updateNextAuthSession, nextSession]);
 
   const switchToDerivDemo = useCallback(async () => {
     await updateSelectedDerivAccountType('demo');
