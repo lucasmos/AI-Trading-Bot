@@ -634,7 +634,7 @@ export async function getDerivAccountList(token: string): Promise<any> {
  * @returns A promise that resolves to an object containing the balance, currency, and loginid.
  */
 export async function getDerivAccountBalance(token: string, accountId: string): Promise<{ balance: number, currency: string, loginid: string }> {
-  const operationTimeout = 12000; // 12 seconds, slightly longer for auth + balance
+  const operationTimeout = 12000; // 12 seconds, slightly longer for auth + account_switch + balance
   let timeoutId: NodeJS.Timeout;
   let ws: WebSocket | null = null; // Initialize ws to null
 
@@ -668,10 +668,8 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
 
     ws.onmessage = (event) => {
       const messageTime = Date.now();
-      // console.log(`[DerivService/getDerivAccountBalance] Message received for accountId: ${accountId} at ${new Date(messageTime).toISOString()}.`);
       try {
         const response = JSON.parse(event.data as string);
-        // console.log(`[DerivService/getDerivAccountBalance] Raw response for ${accountId}:`, JSON.stringify(response, null, 2));
 
         if (response.error) {
           cleanupAndLog(`API Error: ${response.error.message}`, true);
@@ -680,28 +678,50 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
         }
 
         if (response.msg_type === 'authorize') {
-          if (response.authorize) {
-            console.log(`[DerivService/getDerivAccountBalance] Authorization successful for ${accountId}. User: ${response.authorize.loginid}.`);
-            console.log(`[DerivService/getDerivAccountBalance] Sending balance request for ${accountId}.`);
-            ws!.send(JSON.stringify({ balance: 1, subscribe: 0 })); // subscribe: 0 for one-time response
+          if (response.authorize?.loginid) {
+            console.log(`[DerivService/getDerivAccountBalance] Authorization successful for initial token. User: ${response.authorize.loginid}. Current account in session: ${response.authorize.loginid}. Attempting to switch to target accountId: ${accountId}.`);
+            ws!.send(JSON.stringify({ account_switch: accountId }));
           } else {
             cleanupAndLog('Authorization failed. Response did not contain expected authorize object.', true);
             reject(new Error(`Deriv authorization failed for account ${accountId}.`));
+          }
+        } else if (response.msg_type === 'account_switch') {
+          if (response.error) {
+            cleanupAndLog(`Error switching to account ${accountId}: ${response.error.message}`, true);
+            reject(new Error(response.error.message || `Failed to switch to Deriv account ${accountId}.`));
+            return;
+          }
+
+          let switchedCorrectly = false;
+          // Check if the echo_req has the switched account_id and no error
+          if (response.echo_req && response.echo_req.account_switch === accountId && !response.error) {
+              switchedCorrectly = true;
+          }
+          // Fallback or alternative check: Deriv API might return current_loginid or loginid in account_switch response directly
+          const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid;
+          if (!switchedCorrectly && switchedToLoginId === accountId && !response.error) {
+              switchedCorrectly = true;
+          }
+
+          if (switchedCorrectly) {
+              console.log(`[DerivService/getDerivAccountBalance] Successfully switched to account: ${accountId}. Sending balance request.`);
+              ws!.send(JSON.stringify({ balance: 1, subscribe: 0 })); // subscribe: 0 for one-time response
+          } else {
+              const activeAccount = switchedToLoginId || response.echo_req?.authorize?.loginid || 'unknown'; // Try to get active account from different places
+              cleanupAndLog(`Failed to switch to account ${accountId}. Expected ${accountId} but active account appears to be ${activeAccount}. Full response: ${JSON.stringify(response)}`, true);
+              reject(new Error(`Failed to confirm switch to Deriv account ${accountId}. Active account is ${activeAccount}.`));
           }
         } else if (response.msg_type === 'balance') {
           console.log(`[DerivService/getDerivAccountBalance] Balance response received for ${accountId}.`);
 
           let targetAccountData;
-          if (response.balance?.accounts && typeof response.balance.accounts === 'object') {
-             // Check if accountId exists as a key in the accounts object
-            targetAccountData = response.balance.accounts[accountId];
+          // After account_switch, the main balance object in the response should be for the switched account.
+          if (response.balance?.loginid === accountId) {
+              targetAccountData = response.balance;
+              console.log(`[DerivService/getDerivAccountBalance] Using main balance object for ${accountId} as it matches the switched account.`);
           }
-
-          // If not found in accounts object, or accounts object doesn't exist, check main balance object
-          if (!targetAccountData && response.balance?.loginid === accountId) {
-            targetAccountData = response.balance; // Use the main balance object
-            console.log(`[DerivService/getDerivAccountBalance] Using main balance object for ${accountId} as it matches.`);
-          }
+          // The `response.balance.accounts` object might not be relevant anymore or might only show the current account.
+          // It's safer to rely on the main `response.balance` object post-account-switch if it matches `accountId`.
 
           if (targetAccountData && targetAccountData.loginid === accountId) {
             const result = {
@@ -712,13 +732,12 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
             cleanupAndLog(`Balance successfully retrieved for ${accountId}.`);
             resolve(result);
           } else {
-            const availableAccounts = response.balance?.accounts ? Object.keys(response.balance.accounts) : (response.balance?.loginid || 'N/A');
-            cleanupAndLog(`Account ${accountId} not found in balance response. Available/main accounts: ${JSON.stringify(availableAccounts)}`, true);
-            reject(new Error(`Account ${accountId} not found in Deriv balance response.`));
+            const availableLoginId = response.balance?.loginid || 'N/A';
+            cleanupAndLog(`Account ${accountId} not found or mismatch in balance response after supposedly switching. Login ID in balance response: ${availableLoginId}. Full response: ${JSON.stringify(response)}`, true);
+            reject(new Error(`Account ${accountId} balance not found or mismatch in Deriv balance response after account switch.`));
           }
         } else {
           console.log(`[DerivService/getDerivAccountBalance] Received other message type for ${accountId}: ${response.msg_type}`, response);
-          // Potentially ignore or handle other message types.
         }
       } catch (e: any) {
         cleanupAndLog(`Error processing message: ${e?.message || String(e)}`, true);
@@ -727,7 +746,6 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
     };
 
     ws.onerror = (event) => {
-      // Attempt to get more details from the event
       let errorMessage = 'WebSocket error during balance fetch.';
        if (event && typeof event === 'object') {
           if ('message' in event && (event as any).message) {
@@ -741,27 +759,17 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
     };
 
     ws.onclose = (event) => {
-      // This log might be redundant if cleanupAndLog is called before close in resolve/reject paths
-      // but useful for unexpected closures.
       const duration = Date.now() - startTime;
       console.log(`[DerivService/getDerivAccountBalance] WebSocket connection closed for accountId: ${accountId}. Code: ${event.code}, Reason: ${event.reason}, WasClean: ${event.wasClean}. Duration: ${duration}ms.`);
-      // If the promise hasn't been settled, it means an unexpected closure.
-      // The timeout handler will eventually reject. Or, we could reject here if !event.wasClean
-      // and the promise is still pending. For now, relying on timeout.
-      // Ensure timeout is cleared if it wasn't already by an explicit resolve/reject.
       if (timeoutId) clearTimeout(timeoutId);
     };
   });
 
   return Promise.race([
     promiseLogic,
-    new Promise<{ balance: number, currency: string, loginid: string }>((_, reject) => { // Ensure this Promise generic matches
+    new Promise<{ balance: number, currency: string, loginid: string }>((_, reject) => {
       timeoutId = setTimeout(() => {
         const reason = `Operation timed out after ${operationTimeout / 1000} seconds for accountId: ${accountId}.`;
-        // Cleanup is called by the main promise's handlers if ws.close() triggers them.
-        // However, if ws is null or already closed, or if onclose doesn't reject,
-        // we need to ensure rejection here.
-        // The cleanupAndLog in the main promise's handlers should ideally cover logging.
         console.error(`[DerivService/getDerivAccountBalance] Timeout: ${reason}`);
         if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
           console.log(`[DerivService/getDerivAccountBalance] Timeout: Attempting to close WebSocket for accountId: ${accountId}.`);
@@ -769,7 +777,6 @@ export async function getDerivAccountBalance(token: string, accountId: string): 
         } else if (!ws) {
            console.log(`[DerivService/getDerivAccountBalance] Timeout: WebSocket instance was null for accountId: ${accountId}.`);
         }
-        // Ensure rejection if promiseLogic hasn't already settled.
         reject(new Error(reason));
       }, operationTimeout);
     })
