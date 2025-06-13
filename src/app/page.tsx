@@ -750,7 +750,7 @@ export default function DashboardPage() {
     } catch (error) {
         toast({ title: "Switch Failed", description: `Failed to switch to ${newApiType} account. Error: ${(error as Error).message}`, variant: "destructive" });
     }
-  };
+  }
 
   return (
     <div className="container mx-auto py-2">
