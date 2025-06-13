@@ -54,6 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Ref to track the last user ID processed by NextAuth session to prevent infinite loops
   const lastProcessedNextAuthUserId = useRef<string | undefined | null>(undefined);
+  const userJustSwitchedAccountTypeRef = useRef(false);
 
   const clearAuthData = useCallback(() => {
     console.log('[AuthContext] clearAuthData called.');
@@ -161,6 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
+    // console.log('[AuthContext] userJustSwitchedAccountTypeRef.current at start of effect:', userJustSwitchedAccountTypeRef.current);
 
     if (nextAuthStatus === 'authenticated' && nextSession?.user) {
       const nextAuthUser = nextSession.user as any; // Use 'any' for flexibility with session structure
@@ -188,6 +190,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       console.log('[AuthContext] Adapted user from NextAuth session:', JSON.stringify(adaptedUser, null, 2));
 
+      // Check the flag HERE
+      if (userJustSwitchedAccountTypeRef.current) {
+        console.log('[AuthContext] User just switched account type. Skipping login() call for this cycle to allow state to settle.');
+        userJustSwitchedAccountTypeRef.current = false; // Reset the flag
+        // We might still want to update userInfo if other parts of it changed from nextSession
+        // For now, this 'return' means we trust the state set by updateSelectedDerivAccountType fully for this render.
+        return;
+      }
+
+      // Existing condition for calling login:
       if (lastProcessedNextAuthUserId.current !== adaptedUser.id || authStatus !== 'authenticated' ||
           (userInfo && (userInfo.selectedDerivAccountType !== adaptedUser.selectedDerivAccountType ||
                         userInfo.derivDemoBalance !== adaptedUser.derivDemoBalance ||
@@ -231,9 +243,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // LocalStorage for non-Deriv user balances can be handled within the login/logout logic or specific non-Deriv components if needed.
 
   const updateSelectedDerivAccountType = useCallback(async (newType: 'demo' | 'real') => {
-    console.log(`[AuthContext] updateSelectedDerivAccountType called with: ${newType}`);
+    userJustSwitchedAccountTypeRef.current = true; // Set flag immediately
+    console.log(`[AuthContext] updateSelectedDerivAccountType called with: ${newType}. Flag set.`);
+
     if (!userInfo || !['deriv', 'deriv-credentials'].includes(currentAuthMethod as string)) {
       console.warn('[AuthContext] User not logged in with Deriv or no userInfo, cannot update account type.');
+      userJustSwitchedAccountTypeRef.current = false; // Reset flag if returning early
       return;
     }
 
@@ -304,6 +319,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error('[AuthContext] Error updating selected Deriv account type:', error);
+      userJustSwitchedAccountTypeRef.current = false; // Reset flag on error too
       // Optionally, show a toast message to the user here
     }
   }, [userInfo, currentAuthMethod, updateNextAuthSession, nextSession]);
