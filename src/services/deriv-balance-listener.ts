@@ -15,8 +15,9 @@ type StatusChangeCallback = (status: ListenerStatus, message?: string) => void;
 
 export class DerivBalanceListener {
   private ws: WebSocket | null = null;
-  private token: string;
+  // private token: string; // Will be replaced by effectiveToken logic
   private accountId: string;
+  private effectiveToken: string; // Added
   private onBalanceUpdate: BalanceUpdateCallback;
   private onError: ErrorCallback;
   private onClose?: CloseCallback;
@@ -37,35 +38,66 @@ export class DerivBalanceListener {
   private reconnectDelay: number = 5000; // 5 seconds
 
   constructor(
-    token: string,
+    token: string, // Dynamic session token, will be a fallback
     accountId: string,
     onBalanceUpdate: BalanceUpdateCallback,
     onError: ErrorCallback,
-    onStatusChange: StatusChangeCallback, // Added
+    onStatusChange: StatusChangeCallback,
     onClose?: CloseCallback
   ) {
-    this.token = token;
+    // this.token = token; // No longer directly store the passed token like this
     this.accountId = accountId;
     this.onBalanceUpdate = onBalanceUpdate;
     this.onError = onError;
-    this.onStatusChange = onStatusChange; // Store callback
+    this.onStatusChange = onStatusChange;
     this.onClose = onClose;
+
+    const staticDemoToken = process.env.NEXT_PUBLIC_DERIV_API_TOKEN_DEMO;
+    const staticRealToken = process.env.NEXT_PUBLIC_DERIV_API_TOKEN;
+
+    if (this.accountId === 'VRTC13200397' && staticDemoToken) {
+      this.effectiveToken = staticDemoToken;
+      console.log(`[DerivBalanceListener] Using static demo token for account ${this.accountId}.`);
+    } else if (this.accountId === 'CR8821305' && staticRealToken) {
+      this.effectiveToken = staticRealToken;
+      console.log(`[DerivBalanceListener] Using static real token (from NEXT_PUBLIC_DERIV_API_TOKEN) for account ${this.accountId}.`);
+    } else {
+      this.effectiveToken = token; // Fallback to dynamic token
+      console.log(`[DerivBalanceListener] Using dynamic session token for account ${this.accountId}.`);
+      if (this.accountId === 'VRTC13200397' && !staticDemoToken) {
+          console.warn(`[DerivBalanceListener] Static demo token (NEXT_PUBLIC_DERIV_API_TOKEN_DEMO) not found for VRTC13200397, falling back to session token.`);
+      }
+      if (this.accountId === 'CR8821305' && !staticRealToken) {
+          console.warn(`[DerivBalanceListener] Static real token (NEXT_PUBLIC_DERIV_API_TOKEN) not found for CR8821305, falling back to session token.`);
+      }
+    }
+
+    this.currentAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID || '80447';
+    this.derivWsUrl = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3';
 
     if (!this.currentAppId) {
         const errMsg = "NEXT_PUBLIC_DERIV_APP_ID is not set.";
         console.error(`[DerivBalanceListener] ${errMsg}`);
         this.onStatusChange('error', errMsg);
         this.onStatusChange('disconnected', 'Configuration error.');
-        throw new Error(errMsg);
+        throw new Error(errMsg); // Propagate error
     }
     if (!this.derivWsUrl) {
         const errMsg = "NEXT_PUBLIC_DERIV_WS_URL is not set.";
         console.error(`[DerivBalanceListener] ${errMsg}`);
         this.onStatusChange('error', errMsg);
         this.onStatusChange('disconnected', 'Configuration error.');
-        throw new Error(errMsg);
+        throw new Error(errMsg); // Propagate error
     }
-    this.onStatusChange('idle');
+    if (!this.effectiveToken) {
+      const errorMsg = `No effective API token available for DerivBalanceListener on account ${this.accountId}.`;
+      console.error(`[DerivBalanceListener] ${errorMsg}`);
+      this.onStatusChange('error', 'Token configuration error.');
+      this.onStatusChange('disconnected', 'Token error.');
+      throw new Error(errorMsg);
+    }
+
+    this.onStatusChange('idle'); // Initial status before connect attempt
     this.connect();
   }
 
@@ -90,7 +122,7 @@ export class DerivBalanceListener {
 
   private handleOpen() {
     console.log(`[DerivBalanceListener] WebSocket connected for ${this.accountId}. Authorizing...`);
-    this.sendMessage({ authorize: this.token });
+    this.sendMessage({ authorize: this.effectiveToken });
   }
 
   private handleMessage(event: MessageEvent) {
@@ -112,53 +144,35 @@ export class DerivBalanceListener {
 
     switch (response.msg_type) {
       case 'authorize':
-        if (response.authorize?.loginid) { // Ensure loginid exists
-          const currentActiveAccountId = response.authorize.loginid;
-          this.isAuthorized = true; // Authorization itself was successful
-          console.log(`[DerivBalanceListener] (${this.accountId}) Authorized. Current active account: ${currentActiveAccountId}. Target account for listener: ${this.accountId}.`);
-
-          if (currentActiveAccountId === this.accountId) {
-            console.log(`[DerivBalanceListener] (${this.accountId}) Account ${this.accountId} is already active. Skipping account_switch.`);
-            this.isSwitchingAccount = false; // Not switching
-            this.flushMessageQueue(); // Send any queued messages (like subscribe)
-            if (this.resolveConnectionPromise) this.resolveConnectionPromise(); // If there's a connection promise
-            this.onStatusChange('connected', 'Account already active, proceeding to subscribe.'); // Update status
-            this.subscribeToBalance();
-          } else {
-            console.log(`[DerivBalanceListener] (${this.accountId}) Current active account ${currentActiveAccountId} is different from target ${this.accountId}. Attempting to switch.`);
-            this.isSwitchingAccount = true;
-            this.onStatusChange('connecting', 'Switching account...'); // Or a more specific status like 'switching_account'
-            this.sendMessage({ account_switch: this.accountId });
-          }
-        } else {
-          this.isAuthorized = false;
-          const authFailedMsg = 'Authorization failed: No loginid in response.';
-          this.onError(new Error(authFailedMsg));
-          this.onStatusChange('error', authFailedMsg);
-          this.onStatusChange('disconnected', 'Authorization error.');
-          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(authFailedMsg));
-          this.close(true); // Stop if auth fails critically
-        }
-        break;
-      case 'account_switch':
-        this.isSwitchingAccount = false; // Switch attempt has concluded
-        const switchedTo = response.account_switch?.current_loginid || response.echo_req?.account_switch;
-        if (response.echo_req?.account_switch === this.accountId && !response.error) { // check echo_req and ensure no error field
-          console.log(`[DerivBalanceListener] (${this.accountId}) Switched to account ${this.accountId}. Subscribing to balance...`);
+        if (response.authorize?.loginid === this.accountId) {
+          console.log(`[DerivBalanceListener] (${this.accountId}) Authorized successfully with account-specific token. Account: ${response.authorize.loginid}.`);
+          this.isAuthorized = true;
+          this.isSwitchingAccount = false; // No switch needed/performed
           this.flushMessageQueue();
           if (this.resolveConnectionPromise) this.resolveConnectionPromise();
-          this.onStatusChange('connected', 'Account switched, proceeding to subscribe.');
+          this.onStatusChange('connected', 'Authorized with account-specific token.');
           this.subscribeToBalance();
-        } else {
-          const errorMsg = `Failed to switch to account ${this.accountId}. Actual: ${switchedTo || 'unknown'}. Response Error: ${response.error?.message || 'None'}`;
-          console.error(`[DerivBalanceListener] (${this.accountId}) ${errorMsg}`, response);
-          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error('Account switch failed'));
+        } else if (response.authorize?.loginid) {
+          const errorMsg = `Token authorized for ${response.authorize.loginid}, but listener expected ${this.accountId}.`;
+          console.error(`[DerivBalanceListener] (${this.accountId}) ${errorMsg}`);
+          this.isAuthorized = false;
           this.onError(new Error(errorMsg));
-          this.onStatusChange('error', 'Account switch failed.');
-          this.onStatusChange('disconnected', 'Account switch error.');
-          this.close(true);
+          this.onStatusChange('error', 'Token-account mismatch.');
+          this.onStatusChange('disconnected', 'Token mismatch.');
+          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(errorMsg));
+          this.close(true); // Use true to indicate permanent error
+        } else {
+          const errorMsg = `Authorization failed for account ${this.accountId}. Response: ${JSON.stringify(response)}`;
+          console.error(`[DerivBalanceListener] (${this.accountId}) ${errorMsg}`);
+          this.isAuthorized = false;
+          this.onError(new Error(errorMsg));
+          this.onStatusChange('error', 'Authorization failed.');
+          this.onStatusChange('disconnected', 'Authorization error.');
+          if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(errorMsg));
+          this.close(true); // Use true to indicate permanent error
         }
         break;
+      // Removed: case 'account_switch': ...
       case 'balance':
         if (!this.isSubscribed && response.subscription?.id) {
             console.log(`[DerivBalanceListener] (${this.accountId}) Successfully subscribed to balance updates. Sub ID: ${response.subscription.id}`);
