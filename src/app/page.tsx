@@ -672,70 +672,106 @@ export default function DashboardPage() {
   // IMPORTANT: This is a client-side simulation for demonstration. Real automated trading would involve
   // server-side monitoring of actual trades placed via an API.
   useEffect(() => {
-    // If auto-trading is not active or no trades are listed, clear all intervals and do nothing.
-    if (!isAutoTradingActive || activeAutomatedTrades.length === 0) {
+    if (!isAutoTradingActive) { // Only manage intervals if auto-trading is supposed to be active
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
       return;
     }
 
+    if (isAutoTradingActive && activeAutomatedTrades.length === 0 && !isPreparingAutoTrades) {
+      // This case means strategy proposed no trades, or trades were cleared somehow.
+      // Stop auto-trading if it was active but there are no trades to manage and not currently preparing.
+      console.log('[DashboardPage] Auto-trading active but no trades and not preparing. Stopping session.');
+      setIsAutoTradingActive(false);
+      return;
+    }
+
+    let allTradesConcludedThisRender = true; // Assume all concluded until proven otherwise
+
     activeAutomatedTrades.forEach(trade => {
-      // For each trade that is 'active' and doesn't already have a running interval:
-      if (trade.status === 'active' && !tradeIntervals.current.has(trade.id)) {
-        // Create a new interval to simulate this trade's lifecycle.
-        const intervalId = setInterval(() => {
-          setActiveAutomatedTrades(prevTrades => {
-            return prevTrades.map(currentTrade => {
-              if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
-                return currentTrade; // Only process the specific, active trade for this interval.
+      if (trade.status === 'active') {
+        allTradesConcludedThisRender = false; // Found an active trade
+
+        if (!tradeIntervals.current.has(trade.id)) {
+          const intervalId = setInterval(() => {
+            // Capture trade.id for use inside timeout/async operations
+            const currentTradeId = trade.id;
+
+            setActiveAutomatedTrades(prevTrades => {
+              let allNowConcluded = true;
+              const updatedTrades = prevTrades.map(currentProcessingTrade => {
+                if (currentProcessingTrade.id !== currentTradeId || currentProcessingTrade.status !== 'active') {
+                  if (currentProcessingTrade.status === 'active') allNowConcluded = false;
+                  return currentProcessingTrade;
+                }
+
+                let newStatus = currentProcessingTrade.status as ActiveAutomatedTrade['status'];
+                let pnl = currentProcessingTrade.pnl ?? 0;
+
+                if (Date.now() >= currentProcessingTrade.startTime + currentProcessingTrade.durationSeconds * 1000) {
+                  newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration';
+                  pnl = newStatus === 'won' ? currentProcessingTrade.stake * 0.85 : -currentProcessingTrade.stake;
+
+                  clearInterval(tradeIntervals.current.get(currentTradeId)!);
+                  tradeIntervals.current.delete(currentTradeId);
+
+                  setTimeout(() => {
+                    setProfitsClaimable(prevProfits => ({
+                      totalNetProfit: prevProfits.totalNetProfit + pnl,
+                      tradeCount: prevProfits.tradeCount + 1,
+                      winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                      losingTrades: newStatus !== 'won' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+                    }));
+                    toast({
+                      title: `Auto-Trade Ended (${selectedDerivAccountType || 'paper'}): ${currentProcessingTrade.instrument}`,
+                      description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)} (Simulated)`,
+                      variant: pnl > 0 ? "default" : "destructive"
+                    });
+                  }, 0);
+                } else {
+                  allNowConcluded = false; // This trade is still active
+                }
+                return { ...currentProcessingTrade, status: newStatus, pnl };
+              });
+
+              // After processing all trades in this interval, check if all are now concluded
+              if (allNowConcluded && tradeIntervals.current.size === 0) {
+                // Check tradeIntervals.current.size to ensure no other intervals are pending
+                console.log('[DashboardPage] All simulated auto-trades concluded. Stopping AI session.');
+                setIsAutoTradingActive(false); // Deactivate auto-trading
               }
-
-              let newStatus = currentTrade.status as ActiveAutomatedTrade['status'];
-              let pnl = currentTrade.pnl ?? 0;
-
-              // Simulate trade expiry based on its duration.
-              if (Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                // Simulate a win/loss outcome. In a real scenario, this would be determined by comparing exit price to entry price.
-                newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration'; // 50/50 chance for simulation
-                pnl = newStatus === 'won' ? currentTrade.stake * 0.85 : -currentTrade.stake; // Simulated P&L (85% profit for win)
-
-                // Clean up the interval for this trade as it has concluded.
-                clearInterval(tradeIntervals.current.get(trade.id)!);
-                tradeIntervals.current.delete(trade.id);
-
-                // Update overall profits and notify user.
-                // setTimeout ensures this state update doesn't conflict with the ongoing map iteration.
-                setTimeout(() => {
-                  setProfitsClaimable(prevProfits => ({
-                    totalNetProfit: prevProfits.totalNetProfit + pnl,
-                    tradeCount: prevProfits.tradeCount + 1,
-                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-                    losingTrades: newStatus !== 'won' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
-                  }));
-                  toast({
-                    title: `Auto-Trade Ended (${selectedDerivAccountType || 'paper'}): ${currentTrade.instrument}`,
-                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)} (Simulated)`,
-                    variant: pnl > 0 ? "default" : "destructive"
-                  });
-                }, 0);
-              }
-              // Note: In this simulation, `currentPrice` is not updated dynamically within the interval.
-              // A real implementation would fetch current prices to show live P&L and handle stop-loss/take-profit.
-              return { ...currentTrade, status: newStatus, pnl };
+              return updatedTrades;
             });
-          });
-        }, 2000 + Math.random() * 1000); // Simulate trade updates at random intervals (2-3 seconds).
-        tradeIntervals.current.set(trade.id, intervalId); // Store interval ID for cleanup.
+          }, 2000 + Math.random() * 1000);
+          tradeIntervals.current.set(trade.id, intervalId);
+        }
       }
     });
 
-    // Cleanup function for this effect: Clear all intervals when the component unmounts
-    // or when dependencies (like `activeAutomatedTrades` or `isAutoTradingActive`) change.
+    // If, upon initial setup of this effect (or when activeAutomatedTrades changes),
+    // all trades are already concluded (e.g. loaded from a previous stopped session, though not current behavior)
+    // or if there were trades but all are now processed and none are 'active'.
+    if (isAutoTradingActive && allTradesConcludedThisRender && activeAutomatedTrades.length > 0) {
+       // And no intervals are running (meaning they all finished and cleaned up)
+       if (tradeIntervals.current.size === 0) {
+          console.log('[DashboardPage] All trades found concluded in useEffect. Stopping AI session.');
+          setIsAutoTradingActive(false);
+       }
+    }
+
     return () => {
+      // This cleanup runs when isAutoTradingActive becomes false, or component unmounts
+      // Or when dependencies change leading to re-run of effect.
+      // If !isAutoTradingActive is the trigger, this cleanup is fine.
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
+      console.log('[DashboardPage] Cleaned up auto-trade intervals.');
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, profitsClaimable]);
+  // Ensure dependencies are correct, especially for profitsClaimable and toast if used in setTimeout
+  }, [activeAutomatedTrades, isAutoTradingActive, isPreparingAutoTrades, toast, selectedDerivAccountType, setProfitsClaimable]);
+  // Removed setProfitsClaimable from deps as it's usually stable or handled by functional updates.
+  // Added isPreparingAutoTrades as a dependency.
+  // Added selectedDerivAccountType and setProfitsClaimable to dependencies
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
     // Add this block at the beginning:
