@@ -198,23 +198,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       console.log('[AuthContext] Adapted user from NextAuth session:', JSON.stringify(adaptedUser, null, 2));
 
-      const adaptedUser: UserInfo = {
-        id: nextAuthUser.id || '',
-        name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
-        email: nextAuthUser.email || '',
-        photoURL: nextAuthUser.image,
-        authMethod: (nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth')) as AuthMethod,
-        provider: nextAuthUser.provider,
-        derivAccessToken: nextAuthUser.derivAccessToken,
-        derivAccountId: nextAuthUser.derivAccountId,
-        derivDemoAccountId: nextAuthUser.derivDemoAccountId,
-        derivRealAccountId: nextAuthUser.derivRealAccountId,
-        derivDemoBalance: nextAuthUser.derivDemoBalance,
-        derivRealBalance: nextAuthUser.derivRealBalance,
-        selectedDerivAccountType: nextAuthUser.selectedDerivAccountType as ('demo' | 'real' | null),
-        derivApiToken: nextAuthUser.derivApiToken || (nextAuthUser.derivAccessToken ? { access_token: nextAuthUser.derivAccessToken } : undefined),
-      };
-
       // Condition for calling login (if not just switched, handled by the block above)
       if (lastProcessedNextAuthUserId.current !== adaptedUser.id || authStatus !== 'authenticated' ||
           (userInfo && (userInfo.selectedDerivAccountType !== adaptedUser.selectedDerivAccountType ||
