@@ -97,9 +97,10 @@ export default function DashboardPage() {
 
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(100);
   const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
-  const [activeAutomatedTrades, setActiveAutomatedTrades] = useState<ActiveAutomatedTrade[]>([]);
+  // const [activeAutomatedTrades, setActiveAutomatedTrades] = useState<ActiveAutomatedTrade[]>([]); // Removed
   const [automatedTradingLog, setAutomatedTradingLog] = useState<string[]>([]);
-  const tradeIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  // const tradeIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map()); // Removed as simulation is gone
+  const autoTradingSessionActiveRef = useRef(false); // Added for interruptible loop
 
   const [profitsClaimable, setProfitsClaimable] = useState<ProfitsClaimable>({
     totalNetProfit: 0,
@@ -542,28 +543,27 @@ export default function DashboardPage() {
       setConsecutiveAiCallCount(0);
     }
 
-    setIsPreparingAutoTrades(true);
-    setIsAutoTradingActive(true); // Mark that auto-trading process has started
-    setActiveAutomatedTrades([]); // Clear any previous automated trades
-    setAutomatedTradingLog([]); // Clear previous logs
+    autoTradingSessionActiveRef.current = true;
+    setAutomatedTradingLog([]);
     logAutomatedTradingEvent(`Initializing AI Auto-Trading with $${autoTradeTotalStake} in ${selectedDerivAccountType || 'paper'} mode using strategy ${selectedAiStrategyId}.`);
 
-    const token = userInfo?.derivApiToken?.access_token;
-    // Filter instruments that are currently open for trading or are 24/7 (like BTC/USD, ETH/USD)
+    const sessionApiToken = userInfo?.derivApiToken?.access_token;
     const instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+
     if (instrumentsToTrade.length === 0) {
         logAutomatedTradingEvent("No markets open for auto-trading at this time.");
         toast({ title: "Markets Closed", description: "No suitable markets currently open for auto-trading.", variant: "default" });
-        setIsAutoTradingActive(false); setIsPreparingAutoTrades(false); return;
+        setIsAutoTradingActive(false); setIsPreparingAutoTrades(false); autoTradingSessionActiveRef.current = false; return;
     }
 
-    // Fetch market data (candles and indicators) for all tradeable instruments.
     const instrumentTicksData: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {} as any;
     const instrumentIndicatorsData: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {} as any;
 
     for (const inst of instrumentsToTrade) {
+      if (!autoTradingSessionActiveRef.current) { logAutomatedTradingEvent("Session stopped during data fetch."); setIsPreparingAutoTrades(false); return; }
       try {
-        const candles = await getCandles(inst as InstrumentType, 60, 60, token); // Fetch last 60 candles (1-minute interval assumed for calculation)
+        // Use sessionApiToken for fetching candles, as getCandles might not use static tokens
+        const candles = await getCandles(inst as InstrumentType, 60, 60, sessionApiToken);
          if (candles && candles.length > 0) {
           instrumentTicksData[inst] = candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
           const closePrices = candles.map(c => c.close);
@@ -671,82 +671,47 @@ export default function DashboardPage() {
   // It sets up intervals for each 'active' trade to simulate its duration and outcome.
   // IMPORTANT: This is a client-side simulation for demonstration. Real automated trading would involve
   // server-side monitoring of actual trades placed via an API.
-  useEffect(() => {
-    // If auto-trading is not active or no trades are listed, clear all intervals and do nothing.
-    if (!isAutoTradingActive || activeAutomatedTrades.length === 0) {
-      tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
-      tradeIntervals.current.clear();
+  // useEffect hook that managed activeAutomatedTrades simulation is REMOVED.
+
+  const handleStopAiAutoTrade = () => {
+    console.log('[DashboardPage] handleStopAiAutoTrade called.');
+    autoTradingSessionActiveRef.current = false; // Signal the loop in startAutomatedTradingSession to stop
+    setIsAutoTradingActive(false); // Update UI and prevent new sessions from starting if logic allows
+    setIsPreparingAutoTrades(false); // Reset preparation state as well
+    toast({ title: "AI Auto-Trading Stoppage Requested", description: "Attempting to stop AI trading session. Any trades already placed will continue."});
+  };
+
+  // Old useEffect hook that managed activeAutomatedTrades simulation has been REMOVED.
+
+  const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
+    // Add this block at the beginning:
+    if (authStatus === 'unauthenticated') {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to switch account types.",
+        variant: "default" // Or "destructive"
+      });
+      router.push('/auth/login');
       return;
     }
 
-    activeAutomatedTrades.forEach(trade => {
-      // For each trade that is 'active' and doesn't already have a running interval:
-      if (trade.status === 'active' && !tradeIntervals.current.has(trade.id)) {
-        // Create a new interval to simulate this trade's lifecycle.
-        const intervalId = setInterval(() => {
-          setActiveAutomatedTrades(prevTrades => {
-            return prevTrades.map(currentTrade => {
-              if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
-                return currentTrade; // Only process the specific, active trade for this interval.
-              }
-
-              let newStatus = currentTrade.status as ActiveAutomatedTrade['status'];
-              let pnl = currentTrade.pnl ?? 0;
-
-              // Simulate trade expiry based on its duration.
-              if (Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                // Simulate a win/loss outcome. In a real scenario, this would be determined by comparing exit price to entry price.
-                newStatus = Math.random() > 0.5 ? 'won' : 'lost_duration'; // 50/50 chance for simulation
-                pnl = newStatus === 'won' ? currentTrade.stake * 0.85 : -currentTrade.stake; // Simulated P&L (85% profit for win)
-
-                // Clean up the interval for this trade as it has concluded.
-                clearInterval(tradeIntervals.current.get(trade.id)!);
-                tradeIntervals.current.delete(trade.id);
-
-                // Update overall profits and notify user.
-                // setTimeout ensures this state update doesn't conflict with the ongoing map iteration.
-                setTimeout(() => {
-                  setProfitsClaimable(prevProfits => ({
-                    totalNetProfit: prevProfits.totalNetProfit + pnl,
-                    tradeCount: prevProfits.tradeCount + 1,
-                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-                    losingTrades: newStatus !== 'won' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
-                  }));
-                  toast({
-                    title: `Auto-Trade Ended (${selectedDerivAccountType || 'paper'}): ${currentTrade.instrument}`,
-                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)} (Simulated)`,
-                    variant: pnl > 0 ? "default" : "destructive"
-                  });
-                }, 0);
-              }
-              // Note: In this simulation, `currentPrice` is not updated dynamically within the interval.
-              // A real implementation would fetch current prices to show live P&L and handle stop-loss/take-profit.
-              return { ...currentTrade, status: newStatus, pnl };
-            });
-          });
-        }, 2000 + Math.random() * 1000); // Simulate trade updates at random intervals (2-3 seconds).
-        tradeIntervals.current.set(trade.id, intervalId); // Store interval ID for cleanup.
-      }
-    });
-
-    // Cleanup function for this effect: Clear all intervals when the component unmounts
-    // or when dependencies (like `activeAutomatedTrades` or `isAutoTradingActive`) change.
-    return () => {
-      tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
-      tradeIntervals.current.clear();
-    };
-  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, profitsClaimable]);
-
-  const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
+    // Existing logic follows:
     const newApiType = (newTypeFromControl === 'paper' || newTypeFromControl === 'demo') ? 'demo' : 'real';
+
+    // This existing check might be redundant if authStatus === 'unauthenticated' already covers it,
+    // but it's more specific about Deriv linking. Keep it for users who are authenticated but haven't linked Deriv.
     if (!userInfo?.derivAccessToken) {
         toast({ title: "Deriv Account Not Linked", description: "Please connect your Deriv account via Profile page to switch modes.", variant: "destructive" });
         return;
     }
-    if (newApiType === selectedDerivAccountType) return;
+
+    if (newApiType === selectedDerivAccountType) return; // Already the selected type
+
     try {
         await updateSelectedDerivAccountType(newApiType);
-        toast({ title: "Account Switched", description: `Switched to ${newApiType} account. Balances reflected.`, variant: "default" });
+        // The success toast is now potentially handled within updateSelectedDerivAccountType or by observing state,
+        // but keeping a general one here is also fine. The user's feedback mentioned a toast.
+        toast({ title: "Account Switched", description: `Successfully switched to ${newApiType} account.`, variant: "default" });
     } catch (error) {
         toast({ title: "Switch Failed", description: `Failed to switch to ${newApiType} account. Error: ${(error as Error).message}`, variant: "destructive" });
     }
@@ -769,57 +734,32 @@ export default function DashboardPage() {
                 isMarketOpen={isMarketOpenForSelected}
                 marketStatusMessage={marketStatusMessage}
             />
-          {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
+          {/* Display for Automated Trading Log */}
+          {(isAutoTradingActive || automatedTradingLog.length > 0 && !isPreparingAutoTrades) && (
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Active AI Trades ({selectedDerivAccountType === 'real' ? 'Real' : 'Demo'})</CardTitle>
-                <CardDescription>Monitoring automated trades by the AI for Forex/Crypto/Commodities. Stop-Loss is {selectedStopLossPercentage}% of entry.</CardDescription>
+                <CardTitle>AI Auto-Trading Session ({selectedDerivAccountType === 'real' ? 'Real' : 'Demo'})</CardTitle>
+                <CardDescription>
+                  {isAutoTradingActive ? "Processing trades..." : "Session ended. Review logs below."}
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Instrument</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Stake</TableHead>
-                      <TableHead>Entry</TableHead>
-                      <TableHead>Current</TableHead>
-                      <TableHead>Stop-Loss ({selectedStopLossPercentage}%)</TableHead>
-                      <TableHead>Status</TableHead>
-                       <TableHead>P/L</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {activeAutomatedTrades.map(trade => (
-                      <TableRow key={trade.id}>
-                        <TableCell>{trade.instrument}</TableCell>
-                        <TableCell>
-                          <Badge variant={trade.action === 'CALL' ? 'default' : 'destructive'}
-                                 className={trade.action === 'CALL' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-                            {trade.action}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>${trade.stake.toFixed(2)}</TableCell>
-                        <TableCell>{trade.entryPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
-                        <TableCell>{trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
-                        <TableCell>{trade.stopLossPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
-                        <TableCell>
-                           <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
-                                  className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
-                            {trade.status}
-                           </Badge>
-                        </TableCell>
-                        <TableCell className={trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                          {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <CardContent className="max-h-60 overflow-y-auto"> {/* Scrollable log */}
+                <ul className="space-y-1 text-xs">
+                  {automatedTradingLog.map((log, index) => (
+                    <li key={index} className="text-muted-foreground">
+                      <span className="font-mono text-gray-500 mr-2">[{index + 1}]</span>
+                      {log}
+                    </li>
+                  ))}
+                </ul>
+                {isAutoTradingActive && automatedTradingLog.length === 0 && !isPreparingAutoTrades && (
+                   <p className="text-muted-foreground text-center py-4">AI analysis complete. No suitable Forex/Crypto/Commodity trades found by the strategy.</p>
+                )}
               </CardContent>
             </Card>
           )}
-           {isAutoTradingActive && activeAutomatedTrades.length === 0 && !isPreparingAutoTrades && (
+           {/* This specific condition might be redundant if the above card handles it, or adjust as needed */}
+           {/* {isAutoTradingActive && automatedTradingLog.length === 0 && !isPreparingAutoTrades && (
              <Card className="shadow-lg">
                 <CardHeader>
                     <CardTitle>AI Auto-Trading ({selectedDerivAccountType === 'real' ? 'Real' : 'Demo'})</CardTitle>

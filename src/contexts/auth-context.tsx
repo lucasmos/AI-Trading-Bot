@@ -161,11 +161,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [router, paperBalance, liveBalance]); // Added paperBalance, liveBalance as they are set inside
 
   useEffect(() => {
-    console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
-    // console.log('[AuthContext] userJustSwitchedAccountTypeRef.current at start of effect:', userJustSwitchedAccountTypeRef.current);
+    console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus, 'Current authStatus:', authStatus);
+
+    if (userJustSwitchedAccountTypeRef.current) {
+      console.log('[AuthContext] User just switched account type (flag is true). Resetting flag and skipping further sync logic for this cycle.');
+      userJustSwitchedAccountTypeRef.current = false;
+      // By returning here, we prevent both login() and clearAuthData() based on potentially
+      // intermediate nextSession state caused by updateNextAuthSession().
+      // The state set by updateSelectedDerivAccountType is trusted for this render.
+      return;
+    }
 
     if (nextAuthStatus === 'authenticated' && nextSession?.user) {
-      const nextAuthUser = nextSession.user as any; // Use 'any' for flexibility with session structure
+      const nextAuthUser = nextSession.user as any;
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
 
@@ -190,16 +198,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       console.log('[AuthContext] Adapted user from NextAuth session:', JSON.stringify(adaptedUser, null, 2));
 
-      // Check the flag HERE
-      if (userJustSwitchedAccountTypeRef.current) {
-        console.log('[AuthContext] User just switched account type. Skipping login() call for this cycle to allow state to settle.');
-        userJustSwitchedAccountTypeRef.current = false; // Reset the flag
-        // We might still want to update userInfo if other parts of it changed from nextSession
-        // For now, this 'return' means we trust the state set by updateSelectedDerivAccountType fully for this render.
-        return;
-      }
-
-      // Existing condition for calling login:
+      // Condition for calling login (if not just switched, handled by the block above)
       if (lastProcessedNextAuthUserId.current !== adaptedUser.id || authStatus !== 'authenticated' ||
           (userInfo && (userInfo.selectedDerivAccountType !== adaptedUser.selectedDerivAccountType ||
                         userInfo.derivDemoBalance !== adaptedUser.derivDemoBalance ||
@@ -210,23 +209,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         console.log('[AuthContext] NextAuth session is authenticated and AuthContext is already in sync.');
       }
-      return;
-    }
+      // Ensure authStatus is 'authenticated' if not already set by login()
+      if (authStatus !== 'authenticated') {
+          setAuthStatus('authenticated');
+      }
 
-    if (nextAuthStatus === 'loading') {
-      if (authStatus !== 'pending') setAuthStatus('pending');
+    } else if (nextAuthStatus === 'loading') {
+      if (authStatus !== 'pending') {
+        console.log('[AuthContext] NextAuth session is loading. Setting authStatus to pending.');
+        setAuthStatus('pending');
+      }
       lastProcessedNextAuthUserId.current = null;
-      return;
-    }
 
-    // Default to unauthenticated if not loading and not authenticated
-    if (authStatus !== 'unauthenticated') {
-      console.log('[AuthContext] No active NextAuth session or loading. Clearing auth data.');
-      clearAuthData();
+    } else { // nextAuthStatus is 'unauthenticated' or any other non-'authenticated', non-'loading' state
+      // Only clear data if context thought user was authenticated or pending, but session is now definitively unauthenticated.
+      if (authStatus === 'authenticated' || authStatus === 'pending') {
+        console.log(`[AuthContext] Session no longer authenticated or has resolved to unauthenticated (current nextAuthStatus: ${nextAuthStatus}). Clearing auth data.`);
+        clearAuthData(); // This will set authStatus to 'unauthenticated'
+      } else {
+        // If authStatus is already 'unauthenticated', do nothing to avoid redundant calls or loops.
+        console.log(`[AuthContext] Session is ${nextAuthStatus} and authStatus is already 'unauthenticated'. No action needed.`);
+      }
+      lastProcessedNextAuthUserId.current = null;
     }
-    lastProcessedNextAuthUserId.current = null;
-
-  }, [nextAuthStatus, nextSession, login, clearAuthData, userInfo, authStatus]); // Added userInfo and authStatus to dep array for more robust sync checks
+  }, [nextAuthStatus, nextSession, login, clearAuthData, userInfo, authStatus, /* userJustSwitchedAccountTypeRef is not needed as a dep */]);
 
 
   const logout = useCallback(async () => {
@@ -297,32 +303,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }) : null);
 
       // After local context states are updated, also update the NextAuth session
-      await updateNextAuthSession({
-        ...nextSession,
-        user: {
-          ...nextSession?.user,
-          selectedDerivAccountType: updatedSettings.selectedDerivAccountType,
-          derivDemoAccountId: updatedSettings.derivDemoAccountId,
-          derivRealAccountId: updatedSettings.derivRealAccountId,
-          derivDemoBalance: newDemoBalance,
-          derivRealBalance: newRealBalance,
-          id: nextSession?.user?.id,
-          name: nextSession?.user?.name,
-          email: nextSession?.user?.email,
-          image: nextSession?.user?.image,
-          provider: (nextSession?.user as any)?.provider,
-          derivAccessToken: (nextSession?.user as any)?.derivAccessToken,
-          derivAccountId: updatedSettings.selectedDerivAccountType === 'demo' ? updatedSettings.derivDemoAccountId : updatedSettings.derivRealAccountId,
-        }
-      });
-      console.log('[AuthContext] NextAuth session update requested after account type switch.');
+      await updateNextAuthSession(); // Call with no arguments
+      console.log('[AuthContext] NextAuth session refresh triggered after account type switch.');
 
     } catch (error) {
       console.error('[AuthContext] Error updating selected Deriv account type:', error);
       userJustSwitchedAccountTypeRef.current = false; // Reset flag on error too
       // Optionally, show a toast message to the user here
     }
-  }, [userInfo, currentAuthMethod, updateNextAuthSession, nextSession]);
+  }, [userInfo, currentAuthMethod, updateNextAuthSession /* nextSession removed if not directly used */]);
 
   const switchToDerivDemo = useCallback(async () => {
     await updateSelectedDerivAccountType('demo');
