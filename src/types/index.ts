@@ -66,14 +66,36 @@ export interface AutomatedTradeProposal { // For binary options auto-trading (Fo
   avatarUrl?: string;
 }
 
-export interface ActiveAutomatedTrade extends AutomatedTradeProposal { // For binary options auto-trading
-  id: string;
-  entryPrice: number;
-  stopLossPrice: number; 
-  startTime: number; 
-  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual';
-  pnl?: number; 
-  currentPrice?: number; 
+export interface ActiveAutomatedTrade { // For binary options auto-trading
+  id: string; // Deriv's contract_id (ensure it's a string if Deriv ID is number)
+  instrument: ForexCryptoCommodityInstrumentType;
+  derivSymbol: string;
+  action: 'CALL' | 'PUT';
+  stake: number;
+  durationSeconds: number;
+  reasoning?: string;
+
+  // From placeTrade response
+  entrySpot: number;
+  buyPrice: number;
+  startTime: number; // Timestamp
+  longcode?: string;
+
+  // Status & Monitoring Fields
+  status: 'open' | 'won' | 'lost' | 'sold' | 'cancelled' | 'error_monitoring' | 'error_placement';
+  currentPrice?: number;
+  currentProfitLoss?: number;
+  currentProfitLossPercentage?: number;
+  isValidToSell?: boolean;
+  sellPrice?: number;
+
+  // Settlement Fields
+  exitTime?: number;
+  finalProfitLoss?: number;
+  isSettled?: boolean;
+
+  validationError?: string;
+  monitoringRetryCount?: number; // For retry logic
 }
 
 export interface ProfitsClaimable {

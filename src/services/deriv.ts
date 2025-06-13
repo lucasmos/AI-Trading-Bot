@@ -491,7 +491,7 @@ export async function getDerivAccountList(token: string): Promise<any> {
   console.log(`[DerivService/getDerivAccountList] Starting at ${new Date(functionStartTime).toISOString()}. Token: ${token ? token.substring(0, 5) + '...' : 'N/A'}`);
 
   const operationTimeout = 10000; // 10 seconds
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: ReturnType<typeof setTimeout>;
   let ws: WebSocket | null = null; // Declare ws here to make it accessible in timeout and cleanup
   let connectedTime: number | null = null;
   let requestSentTime: number | null = null;
@@ -627,6 +627,195 @@ export async function getDerivAccountList(token: string): Promise<any> {
   ]);
 }
 
+export interface DerivSellResponse {
+  sell: {
+    balance_after: number;
+    contract_id: number;
+    reference_id: number;
+    sell_price: number;
+    transaction_id: number;
+  };
+  echo_req: any;
+  msg_type: 'sell';
+}
+
+export async function sellContract(
+  contractId: number,
+  price: number,
+  token: string,
+  accountId: string
+): Promise<DerivSellResponse> {
+  let ws: WebSocket | null = null;
+  const operationTimeout = 15000;
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  const startTime = Date.now();
+
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    const duration = Date.now() - startTime;
+    const fullLogMessage = `[DerivService/sellContract] ContractID: ${contractId}, AccountID: ${accountId}. ${logMessage}. Duration: ${duration}ms.`;
+    if (isError) console.error(fullLogMessage);
+    else console.log(fullLogMessage);
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+      wsToClose.close(1000, logMessage.substring(0, 100));
+    }
+  };
+
+  const promiseLogic = new Promise<DerivSellResponse>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
+    ws.onopen = () => {
+      ws!.send(JSON.stringify({ authorize: token }));
+    };
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        if (response.error) {
+          cleanupAndLog(`API Error: ${response.error.message}`, true);
+          reject(new Error(response.error.message || `Deriv API error selling contract ${contractId}`));
+          return;
+        }
+        if (response.msg_type === 'authorize') {
+          if (response.authorize?.loginid) {
+            if (response.authorize.loginid !== accountId) {
+              ws!.send(JSON.stringify({ account_switch: accountId }));
+            } else {
+              ws!.send(JSON.stringify({ sell: contractId, price: price }));
+            }
+          } else {
+            cleanupAndLog('Authorization failed.', true);
+            reject(new Error(`Authorization failed for sellContract on account ${accountId}.`));
+          }
+        } else if (response.msg_type === 'account_switch') {
+          if (response.error) {
+            cleanupAndLog(`Error switching account to ${accountId}: ${response.error.message}`, true);
+            reject(new Error(response.error.message || `Failed to switch to Deriv account ${accountId} for selling.`));
+            return;
+          }
+          const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid;
+          if (switchedToLoginId === accountId) {
+            ws!.send(JSON.stringify({ sell: contractId, price: price }));
+          } else {
+            cleanupAndLog(`Failed to switch to account ${accountId}. Active: ${switchedToLoginId}`, true);
+            reject(new Error(`Failed to switch to Deriv account ${accountId} for selling contract.`));
+          }
+        } else if (response.msg_type === 'sell') {
+          cleanupAndLog(`Sell request for contract ${contractId} processed. Sell price: ${response.sell?.sell_price}`);
+          resolve(response as DerivSellResponse);
+        }
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message: ${e?.message || String(e)}`, true);
+        reject(e);
+      }
+    };
+    ws.onerror = (event) => { reject(new Error('WS error')); cleanupAndLog('WS error', true); };
+    ws.onclose = (event) => { cleanupAndLog('WS closed'); }; // Consider if rejection is needed on unexpected close
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<DerivSellResponse>((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        const reason = `sellContract operation timed out for ${contractId}`;
+        cleanupAndLog(reason, true);
+        reject(new Error(reason));
+      }, operationTimeout);
+    })
+  ]);
+}
+
+export async function getContractStatus(
+  contractId: number,
+  token: string,
+  accountId: string
+): Promise<DerivContractStatusData> {
+  let ws: WebSocket | null = null;
+  const operationTimeout = 15000;
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  const startTime = Date.now();
+
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    const duration = Date.now() - startTime;
+    const fullLogMessage = `[DerivService/getContractStatus] ContractID: ${contractId}, AccountID: ${accountId}. ${logMessage}. Duration: ${duration}ms.`;
+    if (isError) console.error(fullLogMessage);
+    else console.log(fullLogMessage);
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+      wsToClose.close(1000, logMessage.substring(0, 100));
+    }
+  };
+
+  const promiseLogic = new Promise<DerivContractStatusData>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
+
+    ws.onopen = () => {
+      ws!.send(JSON.stringify({ authorize: token }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        if (response.error) {
+          cleanupAndLog(`API Error: ${response.error.message}`, true);
+          reject(new Error(response.error.message || `Deriv API error for contract ${contractId}`));
+          return;
+        }
+        if (response.msg_type === 'authorize') {
+          if (response.authorize?.loginid) {
+            if (response.authorize.loginid !== accountId) {
+              ws!.send(JSON.stringify({ account_switch: accountId }));
+            } else {
+              ws!.send(JSON.stringify({ proposal_open_contract: 1, contract_id: contractId }));
+            }
+          } else {
+            cleanupAndLog('Authorization failed.', true);
+            reject(new Error(`Authorization failed for getContractStatus on account ${accountId}.`));
+          }
+        } else if (response.msg_type === 'account_switch') {
+          if (response.error) {
+            cleanupAndLog(`Error switching to account ${accountId}: ${response.error.message}`, true);
+            reject(new Error(response.error.message || `Failed to switch to Deriv account ${accountId}.`));
+            return;
+          }
+          const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid;
+          if (switchedToLoginId === accountId) {
+            ws!.send(JSON.stringify({ proposal_open_contract: 1, contract_id: contractId }));
+          } else {
+            cleanupAndLog(`Failed to switch to account ${accountId}. Active: ${switchedToLoginId}`, true);
+            reject(new Error(`Failed to switch to Deriv account ${accountId} for contract status.`));
+          }
+        } else if (response.msg_type === 'proposal_open_contract') {
+          if (response.proposal_open_contract && response.proposal_open_contract.contract_id === contractId) {
+            cleanupAndLog(`Status received for contract ${contractId}.`);
+            resolve(response.proposal_open_contract as DerivContractStatusData);
+          } else if (response.proposal_open_contract) {
+            cleanupAndLog(`Received status for wrong contract: ${response.proposal_open_contract.contract_id}`, true);
+            reject(new Error(`Received status for wrong contract ID (expected ${contractId}).`));
+          } else {
+            cleanupAndLog(`Contract ${contractId} not found or error. ${response.error?.message || 'No proposal_open_contract data.'}`, true);
+            reject(new Error(response.error?.message || `Contract ${contractId} not found or no data.`));
+          }
+        }
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message: ${e?.message || String(e)}`, true);
+        reject(e);
+      }
+    };
+    ws.onerror = (event) => { reject(new Error('WS error')); cleanupAndLog('WS error', true); };
+    ws.onclose = (event) => { cleanupAndLog('WS closed'); }; // Consider if rejection is needed on unexpected close
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<DerivContractStatusData>((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        const reason = `getContractStatus timed out for contract ${contractId}`;
+        cleanupAndLog(reason, true);
+        reject(new Error(reason));
+      }, operationTimeout);
+    })
+  ]);
+}
+
 /**
  * Fetches the balance for a specific Deriv account.
  * @param token The Deriv API token.
@@ -635,7 +824,7 @@ export async function getDerivAccountList(token: string): Promise<any> {
  */
 export async function getDerivAccountBalance(token: string, accountId: string): Promise<{ balance: number, currency: string, loginid: string }> {
   const operationTimeout = 12000; // 12 seconds, slightly longer for auth + account_switch + balance
-  let timeoutId: NodeJS.Timeout;
+  let timeoutId: ReturnType<typeof setTimeout>;
   let ws: WebSocket | null = null;
 
   const startTime = Date.now();
@@ -836,6 +1025,26 @@ export interface TradeDetails {
   token: string; // Deriv API token for authorization
 }
 
+export interface DerivContractStatusData {
+  contract_id: number;
+  status: 'open' | 'won' | 'lost' | 'sold' | 'cancelled';
+  profit: number;
+  profit_percentage: number;
+  buy_price: number;
+  sell_price?: number;
+  current_spot?: number;
+  current_spot_time?: number;
+  entry_spot?: number;
+  exit_tick?: number;
+  exit_tick_time?: number;
+  is_valid_to_sell?: 0 | 1;
+  is_settleable_now?: 0 | 1;
+  is_expired?: 0 | 1;
+  is_sold?: 0 | 1;
+  longcode?: string;
+  // Add any other fields from proposal_open_contract you need
+}
+
 export interface PlaceTradeResponse {
   contract_id: number;
   buy_price: number;
@@ -852,7 +1061,7 @@ export interface PlaceTradeResponse {
  */
 export async function placeTrade(tradeDetails: TradeDetails, accountId: string): Promise<PlaceTradeResponse> {
   let ws: WebSocket | null = null; // Initialize ws to null
-  let operationTimeout: NodeJS.Timeout | null = null;
+  let operationTimeout: ReturnType<typeof setTimeout> | null = null;
   let proposalId: string | null = null;
   let entrySpot: number | null = null;
   const startTime = Date.now();
@@ -915,22 +1124,18 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             console.log(`[DerivService/placeTrade] Successfully switched to account: ${accountId}. Requesting proposal...`);
 
             // Construct and send proposal request
-            let apiContractType: "CALL" | "PUT";
-            if (tradeDetails.contract_type === 'CALL') {
-              apiContractType = 'PUT';
-            } else {
-              apiContractType = 'CALL';
-            }
+            const apiContractType = tradeDetails.contract_type; // CORRECTED LOGIC
             const proposalRequest: any = {
               proposal: 1,
-              subscribe: 1,
+              subscribe: 1, // Subscribe to keep the proposal ID valid for a short time
               amount: tradeDetails.amount,
               basis: tradeDetails.basis,
-              contract_type: apiContractType,
+              contract_type: apiContractType, // Use the corrected type
               currency: tradeDetails.currency,
               duration: tradeDetails.duration,
               duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
+              // Include stop_loss / take_profit here if your API supports it at proposal or if you adapt this
             };
             console.log(`[DerivService/placeTrade] Sending proposal request for account ${accountId}:`, proposalRequest);
             ws!.send(JSON.stringify(proposalRequest));
