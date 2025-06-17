@@ -78,8 +78,27 @@ export async function GET(request: NextRequest) {
   }
 
   // For simplicity, using the first token. Consider allowing user to select if multiple accounts are returned.
-  const firstToken = accounts[0].token;
-  console.log('[Deriv Callback] Attempting to authorize with token:', firstToken);
+  // const firstToken = accounts[0].token; // Will be replaced by specific real/demo logic
+
+  // Identify Real and Demo account details from the callback params
+  let realAccountDetails: DerivAccount | undefined;
+  let demoAccountDetails: DerivAccount | undefined;
+
+  for (const acc of accounts) {
+    if (acc.account?.startsWith('CR')) {
+      realAccountDetails = acc;
+    } else if (acc.account?.startsWith('VRTC')) {
+      demoAccountDetails = acc;
+    }
+  }
+
+  if (!realAccountDetails || !realAccountDetails.token || !demoAccountDetails || !demoAccountDetails.token) {
+    console.error('[Deriv Callback] Real or Demo account details/tokens missing from callback params:', accounts);
+    return NextResponse.redirect(new URL('/auth/login?error=deriv_incomplete_tokens', request.url));
+  }
+
+  const tokenForAuthorizeCall = realAccountDetails.token; // Use real account token for initial authorize
+  console.log('[Deriv Callback] Attempting to authorize with real account token:', tokenForAuthorizeCall);
 
   try {
     const ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${derivAppId}`);
@@ -88,7 +107,7 @@ export async function GET(request: NextRequest) {
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => {
         console.log('[Deriv Callback] WebSocket connection opened.');
-        ws.send(JSON.stringify({ authorize: firstToken, req_id: 1 }));
+        ws.send(JSON.stringify({ authorize: tokenForAuthorizeCall, req_id: 1 }));
       };
 
       ws.onmessage = async (event) => {
@@ -147,15 +166,21 @@ export async function GET(request: NextRequest) {
             // Step 1: Call /api/auth/handle-users to create/update user in DB
             // This ensures the user exists in your system with Deriv ID as primary ID.
             console.log(`[Deriv Callback] Calling /api/auth/handle-users for Deriv user ${userId}`);
+            const handleUserPayload = {
+              userId: userId,      // Deriv User ID
+              email: email,
+              name: name || 'Deriv User',
+              authMethod: 'deriv',
+              realAccountId: realAccountDetails!.account, // Assert non-null as checked above
+              realApiToken: realAccountDetails!.token,    // Assert non-null
+              demoAccountId: demoAccountDetails!.account, // Assert non-null
+              demoApiToken: demoAccountDetails!.token     // Assert non-null
+            };
+            console.log('[Deriv Callback] Payload for handle-users:', handleUserPayload); // Log payload for debugging
             const handleUserResponse = await fetch(`${request.nextUrl.origin}/api/auth/handle-users`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: userId,      // Deriv User ID as the primary ID
-                email: email,        // Deriv Email
-                name: name || 'Deriv User', // Deriv Full Name or LoginID
-                authMethod: 'deriv', // Explicitly set authMethod to deriv
-              }),
+              body: JSON.stringify(handleUserPayload),
             });
 
             if (!handleUserResponse.ok) {
@@ -184,8 +209,16 @@ export async function GET(request: NextRequest) {
             const finalizeUrl = new URL('/auth/deriv/finalize', request.nextUrl.origin);
             finalizeUrl.searchParams.append('derivUserId', userId);
             finalizeUrl.searchParams.append('email', email);
-            finalizeUrl.searchParams.append('name', name || ''); // Ensure name is at least an empty string
-            finalizeUrl.searchParams.append('accessToken', firstToken); // firstToken from earlier in the function
+            finalizeUrl.searchParams.append('name', name || '');
+            finalizeUrl.searchParams.append('accessToken', realAccountDetails!.token!); // Use real token for primary session
+
+            // Add all details for finalize page
+            finalizeUrl.searchParams.append('realAccountId', realAccountDetails!.account!);
+            finalizeUrl.searchParams.append('realApiToken', realAccountDetails!.token!);
+            finalizeUrl.searchParams.append('demoAccountId', demoAccountDetails!.account!);
+            finalizeUrl.searchParams.append('demoApiToken', demoAccountDetails!.token!);
+
+            console.log('[Deriv Callback] Redirecting to finalize URL:', finalizeUrl.toString());
             _tempRedirectUrl = finalizeUrl;
 
             ws.close();

@@ -58,7 +58,12 @@ export async function POST(request: Request) {
       name, 
       googleId, 
       picture,
-      authMethod
+      authMethod,
+      // New Deriv fields:
+      realAccountId,
+      realApiToken,
+      demoAccountId,
+      demoApiToken
     } = requestData;
 
     if (!userId) {
@@ -218,6 +223,51 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
+
+    // === BEGIN NEW UserSettings UPSERT LOGIC for Deriv ===
+    if (user && authMethod === 'deriv' && (realApiToken || demoApiToken)) { // Ensure tokens are present to process Deriv settings
+      const updatePayload: Prisma.UserSettingsUpdateInput = {};
+      if (realAccountId) updatePayload.derivRealAccountId = realAccountId;
+      if (realApiToken) updatePayload.derivRealApiToken = realApiToken;
+      if (demoAccountId) updatePayload.derivDemoAccountId = demoAccountId;
+      if (demoApiToken) updatePayload.derivDemoApiToken = demoApiToken;
+
+      // Logic to set selectedDerivAccountType:
+      // Prefer existing, then demo, then real, then null.
+      const existingUserSettings = await prisma.userSettings.findUnique({ where: { userId: user.id } });
+      if (existingUserSettings?.selectedDerivAccountType) {
+        updatePayload.selectedDerivAccountType = existingUserSettings.selectedDerivAccountType;
+      } else if (demoAccountId) { // Default to demo if demo account is provided and no existing preference
+        updatePayload.selectedDerivAccountType = "demo";
+      } else if (realAccountId) { // Fallback to real if only real is provided and no existing preference
+        updatePayload.selectedDerivAccountType = "real";
+      }
+      // If no accountId is provided and no existing setting, selectedDerivAccountType will remain unset in updatePayload,
+      // and rely on default in createPayload or DB default.
+
+      const createPayload: Prisma.UserSettingsCreateWithoutUserInput = {
+        userId: user.id,
+        theme: existingUserSettings?.theme || 'light',
+        language: existingUserSettings?.language || 'en',
+        notifications: existingUserSettings?.notifications === undefined ? true : existingUserSettings.notifications,
+        settings: existingUserSettings?.settings || Prisma.JsonNull, // Preserve existing generic settings or use Prisma.JsonNull
+        derivRealAccountId: realAccountId,
+        derivRealApiToken: realApiToken,
+        derivDemoAccountId: demoAccountId,
+        derivDemoApiToken: demoApiToken,
+        selectedDerivAccountType: updatePayload.selectedDerivAccountType || (demoAccountId ? "demo" : (realAccountId ? "real" : null)), // Ensure create also gets a default
+        // Balances are typically fetched live, not stored from here.
+      };
+
+      console.log('[Handle Users API] Upserting UserSettings for user:', user.id, 'Update data:', updatePayload, 'Create data:', createPayload);
+      await prisma.userSettings.upsert({
+        where: { userId: user.id },
+        create: createPayload,
+        update: updatePayload,
+      });
+      console.log('[Handle Users API] UserSettings updated/created with Deriv details for user:', user.id);
+    }
+    // === END NEW UserSettings UPSERT LOGIC for Deriv ===
 
     const responseUser = {
         id: user.id,
