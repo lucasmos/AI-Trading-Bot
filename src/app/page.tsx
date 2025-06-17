@@ -675,6 +675,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         instrumentTicksData[inst] = []; instrumentIndicatorsData[inst] = {};
         logAutomatedTradingEvent(`Error fetching data for ${inst}: ${(err as Error).message}. Excluded.`);
       }
+      await new Promise(r => setTimeout(r, 250)); // Added delay
     }
     logAutomatedTradingEvent("Market data fetch complete. Generating AI strategy...");
 
@@ -709,7 +710,8 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         try {
           logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
 
-          const offerings = await getContractOfferings(derivSymbol, currentToken!); // currentToken is checked non-null at start of function
+          const offerings = await getContractOfferings(derivSymbol, currentToken!);
+          await new Promise(r => setTimeout(r, 250)); // Added delay
 
           if (!offerings || offerings.length === 0) {
             const validationErrorMsg = `No contract offerings found for ${derivSymbol}. Cannot validate trade.`;

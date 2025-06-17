@@ -251,10 +251,9 @@ export async function getCandles(
       }
       console.error('[DerivService/getCandles] WebSocket Error Event:', event);
       cleanup(true, errorMessage);
-      if (ws?.readyState !== WebSocket.CLOSING && ws?.readyState !== WebSocket.CLOSED) {
-        reject(new Error(errorMessage));
-      }
+      reject(new Error(errorMessage));
     };
+
     ws.onclose = (event) => {
       console.log(`[DerivService/getCandles] WebSocket connection closed for ${symbolForTimeoutLog}. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
       cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
@@ -1266,14 +1265,20 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
 
         if (response.error) {
           console.error(`[DerivService/placeTrade] Full error response from Deriv:`, JSON.stringify(response, null, 2));
-          cleanupAndLog(`API Error: ${response.error.message}`, true);
 
-          // If this error is related to a 'buy' attempt OR a 'proposal' attempt, and we have a subscription ID, forget it.
-          if ((response.echo_req?.buy || response.echo_req?.proposal === 1) && proposalSubscriptionId) {
-            console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} due to error: ${response.error.message}`);
-            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId })); // Check ws state
-            proposalSubscriptionId = null;
+          // Check if this error is for a proposal that had a subscription
+          if (response.echo_req?.proposal === 1 && response.subscription?.id) {
+            console.log(`[DerivService/placeTrade] Forgetting subscription ${response.subscription.id} due to error in proposal response.`);
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
           }
+          // Check if this error is for a buy attempt AND we had a prior successful proposal subscription
+          else if (response.echo_req?.buy && proposalSubscriptionId) {
+            console.log(`[DerivService/placeTrade] Forgetting stored subscription ${proposalSubscriptionId} due to error in buy response.`);
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
+            proposalSubscriptionId = null; // Clear it as we've actioned it
+          }
+
+          cleanupAndLog(`API Error: ${response.error.message}`, true); // cleanupAndLog also closes the WebSocket
           reject(new Error(response.error.message || `Deriv API error for account ${accountId}.`));
           return;
         }
@@ -1319,57 +1324,70 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             return;
           }
         } else if (response.msg_type === 'proposal') {
-          if (response.error) {
-              console.error(`[DerivService/placeTrade] Full error response on proposal (msg_type: proposal):`, JSON.stringify(response, null, 2));
-              cleanupAndLog(`API Error on proposal: ${response.error.message}`, true);
+            // This path is for successful proposal or malformed successful proposal.
+            // Errors in proposal response (e.g. "Trading not offered for this duration") should be caught by the top-level if(response.error)
+            // However, adding a redundant check here for safety as per prompt.
+            if (response.error) {
+                console.error(`[DerivService/placeTrade] Full error response on proposal (msg_type: proposal):`, JSON.stringify(response, null, 2));
+                cleanupAndLog(`API Error on proposal: ${response.error.message}`, true);
+                if (response.subscription && response.subscription.id) {
+                    console.log('[DerivService/placeTrade] Attempting to forget subscription from erroring proposal:', response.subscription.id);
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
+                }
+                reject(new Error(response.error.message || `Proposal API error for account ${accountId}.`));
+                return;
+            }
+
+            if (response.proposal && response.proposal.id && response.proposal.spot) {
+              proposalId = response.proposal.id;
+              entrySpot = response.proposal.spot;
+              console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
+
               if (response.subscription && response.subscription.id) {
-                  console.log('[DerivService/placeTrade] Attempting to forget subscription from erroring proposal:', response.subscription.id);
+                proposalSubscriptionId = response.subscription.id; // Store it
+                console.log(`[DerivService/placeTrade] Stored proposal subscription ID: ${proposalSubscriptionId}`);
+                // DO NOT send forget here.
+              }
+
+              const buyRequest = { buy: proposalId, price: tradeDetails.amount };
+              console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, JSON.stringify(buyRequest));
+              ws!.send(JSON.stringify(buyRequest));
+            } else {
+              // Invalid proposal response structure (e.g. missing proposal.id or proposal.spot on a success message)
+              const errorMsg = `Invalid proposal response structure for account ${accountId}.`;
+              cleanupAndLog(errorMsg + `: ${JSON.stringify(response)}`, true);
+              // If there was a subscription ID in a malformed proposal, try to forget it.
+              if (response.subscription && response.subscription.id) {
+                  console.log('[DerivService/placeTrade] Attempting to forget subscription from malformed proposal:', response.subscription.id);
                   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
               }
-              reject(new Error(response.error.message || `Proposal API error for account ${accountId}.`));
-              return;
-          }
-
-          if (response.proposal && response.proposal.id && response.proposal.spot) {
-            proposalId = response.proposal.id;
-            entrySpot = response.proposal.spot;
-            console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
-
-            if (response.subscription && response.subscription.id) {
-              proposalSubscriptionId = response.subscription.id; // Store it
-              console.log(`[DerivService/placeTrade] Stored proposal subscription ID: ${proposalSubscriptionId}`);
+              reject(new Error(errorMsg));
             }
-
-            const buyRequest = { buy: proposalId, price: tradeDetails.amount };
-            console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, JSON.stringify(buyRequest));
-            ws!.send(JSON.stringify(buyRequest));
-          } else {
-            // Invalid proposal response structure
-            cleanupAndLog(`Invalid proposal response structure for account ${accountId}: ${JSON.stringify(response)}`, true);
-            if (response.subscription && response.subscription.id) {
-                console.log('[DerivService/placeTrade] Attempting to forget subscription from malformed proposal:', response.subscription.id);
-                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
-            }
-            reject(new Error(`Invalid proposal response structure received for account ${accountId}.`));
-          }
         } else if (response.msg_type === 'buy') {
-          if (response.buy && response.buy.contract_id) {
-            cleanupAndLog(`Contract purchased successfully on account ${accountId}: ${JSON.stringify(response.buy)}`);
-            resolve({
-              contract_id: response.buy.contract_id,
-              buy_price: response.buy.buy_price,
-              longcode: response.buy.longcode,
-              entry_spot: entrySpot!,
-            });
-          } else {
-            cleanupAndLog(`Malformed buy success response on account ${accountId}: ${JSON.stringify(response)}`, true);
-            reject(new Error(`Failed to buy contract due to malformed success response on account ${accountId}.`));
-          }
-          if (proposalSubscriptionId) {
-            console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} after buy attempt.`);
-            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
-            proposalSubscriptionId = null;
-          }
+            let buyError = false;
+            if (response.buy && response.buy.contract_id) {
+              // Successful buy
+              cleanupAndLog(`Contract purchased successfully on account ${accountId}: ${JSON.stringify(response.buy)}`);
+              resolve({
+                contract_id: response.buy.contract_id,
+                buy_price: response.buy.buy_price,
+                longcode: response.buy.longcode,
+                entry_spot: entrySpot!,
+              });
+            } else {
+              // Malformed buy success response (should ideally be an error caught by top handler)
+              buyError = true;
+              const errorMsg = `Malformed buy success response on account ${accountId}.`;
+              cleanupAndLog(errorMsg + `: ${JSON.stringify(response)}`, true);
+              reject(new Error(errorMsg));
+            }
+
+            // After resolve or reject for the buy message
+            if (proposalSubscriptionId) {
+              console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} after buy message processed (Error: ${buyError}).`);
+              if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
+              proposalSubscriptionId = null;
+            }
         } else {
           console.log(`[DerivService/placeTrade] Received other message type for ${accountId}: ${response.msg_type}`, response);
         }
