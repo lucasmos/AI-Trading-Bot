@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { getCandles, placeTrade, instrumentToDerivSymbol, getTradingDurations, type PlaceTradeResponse, type DerivContractStatusData, getContractStatus, sellContract } from '@/services/deriv';
+import { getCandles, placeTrade, instrumentToDerivSymbol, getTradingDurations, type PlaceTradeResponse, type DerivContractStatusData, getContractStatus, sellContract, getContractOfferings, type DerivContractOffering } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -60,6 +60,24 @@ function validateTradeParameters(stake: number, balance: number, accountType: 'd
     return "Invalid Stake: Stake amount must be greater than zero.";
   }
   return null;
+}
+
+function parseDurationToSeconds(durationString?: string): number {
+  if (!durationString) return 0;
+  const value = parseInt(durationString);
+  if (isNaN(value)) return 0; // Handle cases where parseInt fails, e.g., "unknown"
+
+  if (durationString.endsWith('s')) return value;
+  if (durationString.endsWith('m')) return value * 60;
+  if (durationString.endsWith('h')) return value * 60 * 60;
+  if (durationString.endsWith('d')) return value * 24 * 60 * 60;
+
+  // Fallback for if unit is missing but it's a number (treat as seconds)
+  // This might be too lenient, adjust if strict format adherence is required
+  if (!isNaN(parseInt(durationString))) return parseInt(durationString);
+
+  console.warn(`[parseDurationToSeconds] Unknown duration format: ${durationString}`);
+  return 0;
 }
 
 /**
@@ -682,52 +700,87 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         toast({ title: "AI Auto-Trade", description: strategyResult?.overallReasoning || "No optimal trades found.", duration: 7000 });
         setIsAutoTradingActive(false); return;
       }
-      toast({ title: "AI Strategy Generated", description: `AI proposes ${strategyResult.tradesToExecute.length} trades. Executing...`, duration: 5000 });
+      toast({ title: "AI Strategy Generated", description: `AI proposes ${strategyResult.tradesToExecute.length} trades. Validating and Executing...`, duration: 5000 });
 
-      const placedTradesPromises = strategyResult.tradesToExecute.map(async (proposedTrade) => {
+      const newActiveTradesBatch: ActiveAutomatedTrade[] = [];
+
+      for (const proposedTrade of strategyResult.tradesToExecute) {
+        const derivSymbol = instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType);
         try {
-          let tradeDurationValue = proposedTrade.durationSeconds;
-          let tradeDurationUnit: "s" | "m" = 's';
+          logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
 
-          // Check if instrument is Forex (example check, refine as needed)
-          const isForexInstrument = (proposedTrade.instrument.includes('/') && !proposedTrade.instrument.includes('BTC') && !proposedTrade.instrument.includes('ETH'));
+          const offerings = await getContractOfferings(derivSymbol, currentToken!); // currentToken is checked non-null at start of function
 
-          if (isForexInstrument) {
-            // Deriv often requires longer minimum durations for Forex, e.g., 15 minutes.
-            // If AI proposes a short duration in seconds, convert to minutes and ensure minimum.
-            if (proposedTrade.durationSeconds < 900) { // Less than 15 minutes
-              tradeDurationValue = 15; // Set to a common minimum of 15 minutes
-              tradeDurationUnit = 'm';
-              logAutomatedTradingEvent(`Adjusted ${proposedTrade.instrument} trade duration from ${proposedTrade.durationSeconds}s to 15m due to typical Forex minimums.`);
-            } else if (proposedTrade.durationSeconds % 60 === 0) {
-              // If it's a whole number of minutes, send in minutes
-              tradeDurationValue = proposedTrade.durationSeconds / 60;
-              tradeDurationUnit = 'm';
-            }
-            // else, if it's seconds but >= 900s and not a whole minute, it might still be valid as seconds.
+          if (!offerings || offerings.length === 0) {
+            const validationErrorMsg = `No contract offerings found for ${derivSymbol}. Cannot validate trade.`;
+            logAutomatedTradingEvent(validationErrorMsg);
+            newActiveTradesBatch.push({
+              id: `error_validation_${uuidv4()}`,
+              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
+              durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
+              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
+              validationError: validationErrorMsg,
+            } as ActiveAutomatedTrade);
+            continue;
           }
 
-          const tradeDetails: any = { // Using 'any' for TradeDetails as its definition is implicit
-            symbol: instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType),
+          const intradayOffering = offerings.find(o => o.expiry_type === 'intraday' && o.contract_category === 'callput' && o.start_type === 'spot');
+
+          if (!intradayOffering) {
+            const validationErrorMsg = `No suitable 'intraday/callput/spot' offering found for ${derivSymbol}. Cannot validate trade.`;
+            logAutomatedTradingEvent(validationErrorMsg);
+            newActiveTradesBatch.push({
+              id: `error_validation_${uuidv4()}`,
+              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
+              durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
+              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
+              validationError: validationErrorMsg,
+            } as ActiveAutomatedTrade);
+            continue;
+          }
+
+          const minDurationSeconds = parseDurationToSeconds(intradayOffering.min_contract_duration);
+          const maxDurationSeconds = parseDurationToSeconds(intradayOffering.max_contract_duration);
+
+          if (proposedTrade.durationSeconds < minDurationSeconds || (maxDurationSeconds > 0 && proposedTrade.durationSeconds > maxDurationSeconds)) {
+            const validationErrorMsg = `Skipping trade for ${proposedTrade.instrument}: Proposed duration ${proposedTrade.durationSeconds}s is outside valid range [${minDurationSeconds}s - ${maxDurationSeconds}s] for intraday offering.`;
+            logAutomatedTradingEvent(validationErrorMsg);
+            newActiveTradesBatch.push({
+              id: `error_validation_${uuidv4()}`,
+              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
+              durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
+              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
+              validationError: validationErrorMsg,
+            } as ActiveAutomatedTrade);
+            continue;
+          }
+
+          logAutomatedTradingEvent(`Validation passed for ${proposedTrade.instrument}. Proceeding to place trade.`);
+
+          const tradeDetails: any = { // Using 'any' for TradeDetails as its definition is implicit in deriv.ts
+            symbol: derivSymbol,
             contract_type: proposedTrade.action,
-            duration: tradeDurationValue,
-            duration_unit: tradeDurationUnit,
+            duration: proposedTrade.durationSeconds, // Use AI's proposed duration in seconds
+            duration_unit: 's',                     // Unit is seconds
             amount: proposedTrade.stake,
             currency: "USD",
             basis: "stake",
-            token: currentToken,
+            token: currentToken!, // Checked non-null at function start
           };
-          logAutomatedTradingEvent(`Placing ${proposedTrade.action} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Duration: ${tradeDurationValue}${tradeDurationUnit}`);
-          const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId);
-          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}, Adjusted Duration: ${tradeDurationValue}${tradeDurationUnit}`);
 
-          // RE-FETCH BALANCE AFTER TRADE
+          logAutomatedTradingEvent(`Placing ${proposedTrade.action} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
+          const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId!); // Checked non-null at function start
+          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}, Duration: ${proposedTrade.durationSeconds}s`);
+
           if (selectedDerivAccountType && currentTargetAccountId) {
             fetchBalanceForAccount(currentTargetAccountId, selectedDerivAccountType);
           }
 
-          return {
-            id: String(tradeResult.contract_id), // Ensure ID is string
+          newActiveTradesBatch.push({
+            id: String(tradeResult.contract_id),
             instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
             derivSymbol: tradeDetails.symbol,
             action: proposedTrade.action,
@@ -736,30 +789,31 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             reasoning: proposedTrade.reasoning,
             entrySpot: tradeResult.entry_spot,
             buyPrice: tradeResult.buy_price,
-            startTime: Date.now(), // Or use Deriv's start_time if available and preferred
+            startTime: Date.now(),
             longcode: tradeResult.longcode,
-            status: 'open' as ActiveAutomatedTrade['status'],
+            status: 'open',
             monitoringRetryCount: 0,
-          } as ActiveAutomatedTrade;
-        } catch (error: any) {
-          logAutomatedTradingEvent(`Error placing trade for ${proposedTrade.instrument} ${proposedTrade.action}: ${error.message}`);
-          toast({ title: `Trade Placement Error (${proposedTrade.instrument})`, description: error.message, variant: "destructive" });
-          return {
-            id: `error_${uuidv4()}`,
+          } as ActiveAutomatedTrade);
+
+        } catch (error: any) { // This catch now handles errors from getContractOfferings and placeTrade
+          logAutomatedTradingEvent(`Error processing or placing trade for ${proposedTrade.instrument} ${proposedTrade.action}: ${error.message}`);
+          toast({ title: `Trade Processing Error (${proposedTrade.instrument})`, description: error.message, variant: "destructive" });
+          newActiveTradesBatch.push({
+            id: `error_processing_${uuidv4()}`, // Changed prefix to distinguish from pure placement error
             instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
-            derivSymbol: instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType),
+            derivSymbol,
             action: proposedTrade.action,
             stake: proposedTrade.stake,
             durationSeconds: proposedTrade.durationSeconds,
-            reasoning: proposedTrade.reasoning + " (Placement Error)",
+            reasoning: proposedTrade.reasoning + ` (Processing/Placement Error: ${error.message})`,
             entrySpot: 0, buyPrice: 0, startTime: Date.now(),
-            status: 'error_placement' as ActiveAutomatedTrade['status'],
+            status: 'error_placement', // Keep status as error_placement for UI consistency
             validationError: error.message,
-          } as ActiveAutomatedTrade;
+          } as ActiveAutomatedTrade);
         }
-      });
+      }
 
-      const executedTradesResults = await Promise.all(placedTradesPromises);
+      setActiveAutomatedTrades(newActiveTradesBatch);
       setActiveAutomatedTrades(executedTradesResults);
       if (executedTradesResults.every(t => t.status === 'error_placement')) {
         logAutomatedTradingEvent("All proposed trades failed placement. Stopping session.");
