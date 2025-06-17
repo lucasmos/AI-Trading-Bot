@@ -451,13 +451,23 @@ export async function getGlobalTradingOfferings(token?: string): Promise<Trading
   const req_id = Date.now(); // Unique req_id for this call
 
   // Local cleanup function
-  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+  const cleanupAndLog = (
+    logMessage: string,
+    isError: boolean = false,
+    wsToClose: WebSocket | null = ws,
+    shouldClose: boolean = true,
+  ) => {
     if (timeoutTimer) clearTimeout(timeoutTimer);
     timeoutTimer = null; // Important to nullify to prevent reuse by other logic if ws persists
     const fullLogMessage = `[DerivService/getGlobalTradingOfferings] ${logMessage}`;
     if (isError) console.error(fullLogMessage);
     else console.log(fullLogMessage);
-    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+    if (
+      shouldClose &&
+      wsToClose &&
+      wsToClose.readyState !== WebSocket.CLOSED &&
+      wsToClose.readyState !== WebSocket.CLOSING
+    ) {
       wsToClose.close(1000, logMessage.substring(0, 100));
     }
   };
