@@ -68,6 +68,19 @@ export interface Tick {
   time: string;
 }
 
+export interface DerivContractOffering {
+  contract_type?: string;
+  contract_category?: string;
+  market?: string;
+  submarket?: string;
+  underlying_symbol?: string;
+  min_contract_duration?: string;
+  max_contract_duration?: string;
+  expiry_type?: string;
+  start_type?: string;
+  // Add any other fields you might need for validation
+}
+
 /**
  * Maps user-friendly instrument names to Deriv API symbols.
  */
@@ -236,6 +249,123 @@ export async function getCandles(
 
     ws.onclose = (event) => {
       console.log('[DerivService/getCandles] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+    };
+  });
+}
+
+export async function getContractOfferings(instrumentSymbol: string, token?: string): Promise<DerivContractOffering[]> {
+  const ws = new WebSocket(DERIV_API_URL);
+  const timeoutDuration = 10000; // 10 seconds for the operation
+  let operationTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  return new Promise((resolve, reject) => {
+    operationTimeout = setTimeout(() => {
+      console.error('[DerivService/getContractOfferings] Operation timed out for symbol:', instrumentSymbol);
+      if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+        ws.close(1000, "Operation timed out");
+      }
+      reject(new Error(`Fetching contract offerings for ${instrumentSymbol} timed out.`));
+    }, timeoutDuration);
+
+    ws.onopen = () => {
+      console.log('[DerivService/getContractOfferings] WebSocket connection opened for symbol:', instrumentSymbol);
+      if (token) {
+        console.log('[DerivService/getContractOfferings] Authorizing for symbol:', instrumentSymbol);
+        console.log('[DerivService/getContractOfferings] Sending authorize request:', JSON.stringify({ authorize: token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT' }));
+        ws.send(JSON.stringify({ authorize: token }));
+      } else {
+        console.log('[DerivService/getContractOfferings] Sending contracts_for request without prior authorization for symbol:', instrumentSymbol);
+        const contractsForPayload = {
+          contracts_for: instrumentSymbol,
+          currency: "USD",
+          product_type: "basic" // Adjust as needed, "basic" is common for general offerings
+        };
+        console.log('[DerivService/getContractOfferings] Sending contracts_for request:', JSON.stringify(contractsForPayload));
+        ws.send(JSON.stringify(contractsForPayload));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+        // console.log(`[DerivService/getContractOfferings] Raw response for ${instrumentSymbol}:`, JSON.stringify(response, null, 2)); // Optional: for detailed debugging
+
+        if (response.error) {
+          console.error(`[DerivService/getContractOfferings] API Error for ${instrumentSymbol}:`, response.error);
+          if (operationTimeout) clearTimeout(operationTimeout);
+          ws.close();
+          reject(new Error(response.error.message || `Unknown API error fetching contract offerings for ${instrumentSymbol}.`));
+          return;
+        }
+
+        if (response.msg_type === 'authorize') {
+          if (response.authorize?.loginid) {
+            console.log(`[DerivService/getContractOfferings] Authorization successful for ${instrumentSymbol}. Sending contracts_for request...`);
+            const contractsForPayload = {
+              contracts_for: instrumentSymbol,
+              currency: "USD",
+              product_type: "basic"
+            };
+            console.log('[DerivService/getContractOfferings] Sending contracts_for request after auth:', JSON.stringify(contractsForPayload));
+            ws.send(JSON.stringify(contractsForPayload));
+          } else {
+            console.error(`[DerivService/getContractOfferings] Authorization failed for ${instrumentSymbol}:`, response);
+            if (operationTimeout) clearTimeout(operationTimeout);
+            ws.close();
+            reject(new Error(`Authorization failed for fetching contract offerings for ${instrumentSymbol}.`));
+          }
+        } else if (response.msg_type === 'contracts_for') {
+          if (operationTimeout) clearTimeout(operationTimeout);
+          const offerings: DerivContractOffering[] = [];
+          if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
+            response.contracts_for.available.forEach((contract: any) => {
+              if (contract.contract_category === 'callput' && contract.start_type === 'spot') {
+                offerings.push({
+                  contract_category: contract.contract_category,
+                  market: contract.market,
+                  submarket: contract.submarket,
+                  underlying_symbol: contract.underlying_symbol,
+                  min_contract_duration: contract.min_contract_duration,
+                  max_contract_duration: contract.max_contract_duration,
+                  expiry_type: contract.expiry_type,
+                  start_type: contract.start_type,
+                  // contract_type is often not at this level for general offerings,
+                  // but specific to a trade type within the category.
+                  // If Deriv includes it here, it can be mapped: contract_type: contract.contract_type
+                });
+              }
+            });
+          }
+          if (offerings.length === 0) {
+            console.warn(`[DerivService/getContractOfferings] No suitable 'callput/spot' offerings found for ${instrumentSymbol}.`);
+          } else {
+            console.log(`[DerivService/getContractOfferings] Found ${offerings.length} offerings for ${instrumentSymbol}.`);
+          }
+          resolve(offerings);
+          ws.close();
+        }
+      } catch (e: any) {
+        console.error(`[DerivService/getContractOfferings] Error processing message for ${instrumentSymbol}:`, e);
+        if (operationTimeout) clearTimeout(operationTimeout);
+        ws.close();
+        reject(e instanceof Error ? e : new Error(`Failed to process message for contract offerings for ${instrumentSymbol}.`));
+      }
+    };
+
+    ws.onerror = (event) => {
+      let errorMessage = `WebSocket error fetching contract offerings for ${instrumentSymbol}.`;
+      // Basic error event logging, could be expanded if specific Event types are expected
+      console.error(`[DerivService/getContractOfferings] WebSocket Error Event for ${instrumentSymbol}:`, event);
+      if (operationTimeout) clearTimeout(operationTimeout);
+      ws.close();
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      console.log(`[DerivService/getContractOfferings] WebSocket connection closed for ${instrumentSymbol}. Code: ${event.code}, Reason: ${event.reason}`);
+      if (operationTimeout) clearTimeout(operationTimeout); // Ensure timeout is cleared on close
+      // If promise hasn't settled, it might mean an unexpected close.
+      // Consider rejecting if not already resolved/rejected, though timeout should handle most cases.
     };
   });
 }
@@ -1072,6 +1202,7 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
   let operationTimeout: ReturnType<typeof setTimeout> | null = null;
   let proposalId: string | null = null;
   let entrySpot: number | null = null;
+  let proposalSubscriptionId: string | null = null; // Added this line
   const startTime = Date.now();
   const timeoutDuration = 18000; // 18 seconds, slightly increased for account switching
 
@@ -1108,9 +1239,16 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
         // console.log(`[DerivService/placeTrade] Raw response for ${accountId}:`, JSON.stringify(response, null, 2));
 
         if (response.error) {
-          console.error(`[DerivService/placeTrade] Full error response from Deriv:`, JSON.stringify(response, null, 2)); // Added this line
+          console.error(`[DerivService/placeTrade] Full error response from Deriv:`, JSON.stringify(response, null, 2));
           cleanupAndLog(`API Error: ${response.error.message}`, true);
-          reject(new Error(response.error.message || `Unknown API error during trade placement for account ${accountId}.`));
+
+          // If this error is related to a 'buy' attempt OR a 'proposal' attempt, and we have a subscription ID, forget it.
+          if ((response.echo_req?.buy || response.echo_req?.proposal === 1) && proposalSubscriptionId) {
+            console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} due to error: ${response.error.message}`);
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId })); // Check ws state
+            proposalSubscriptionId = null;
+          }
+          reject(new Error(response.error.message || `Deriv API error for account ${accountId}.`));
           return;
         }
 
@@ -1155,23 +1293,38 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             return;
           }
         } else if (response.msg_type === 'proposal') {
+          if (response.error) {
+              console.error(`[DerivService/placeTrade] Full error response on proposal (msg_type: proposal):`, JSON.stringify(response, null, 2));
+              cleanupAndLog(`API Error on proposal: ${response.error.message}`, true);
+              if (response.subscription && response.subscription.id) {
+                  console.log('[DerivService/placeTrade] Attempting to forget subscription from erroring proposal:', response.subscription.id);
+                  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
+              }
+              reject(new Error(response.error.message || `Proposal API error for account ${accountId}.`));
+              return;
+          }
+
           if (response.proposal && response.proposal.id && response.proposal.spot) {
-            proposalId = response.proposal.id; // proposalId is a variable in placeTrade scope
+            proposalId = response.proposal.id;
             entrySpot = response.proposal.spot;
             console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
 
             if (response.subscription && response.subscription.id) {
-              console.log('[DerivService/placeTrade] Sending forget request for subscription:', JSON.stringify({ forget: response.subscription.id }));
-              ws!.send(JSON.stringify({ forget: response.subscription.id }));
+              proposalSubscriptionId = response.subscription.id; // Store it
+              console.log(`[DerivService/placeTrade] Stored proposal subscription ID: ${proposalSubscriptionId}`);
             }
 
             const buyRequest = { buy: proposalId, price: tradeDetails.amount };
-            // This console.log was already present, but I'm ensuring it's exactly as requested by the prompt, which it is.
-            console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, buyRequest);
+            console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, JSON.stringify(buyRequest));
             ws!.send(JSON.stringify(buyRequest));
           } else {
-            cleanupAndLog(`Invalid proposal response for account ${accountId}: ${JSON.stringify(response)}`, true);
-            reject(new Error(`Invalid proposal response received from Deriv API for account ${accountId}.`));
+            // Invalid proposal response structure
+            cleanupAndLog(`Invalid proposal response structure for account ${accountId}: ${JSON.stringify(response)}`, true);
+            if (response.subscription && response.subscription.id) {
+                console.log('[DerivService/placeTrade] Attempting to forget subscription from malformed proposal:', response.subscription.id);
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
+            }
+            reject(new Error(`Invalid proposal response structure received for account ${accountId}.`));
           }
         } else if (response.msg_type === 'buy') {
           if (response.buy && response.buy.contract_id) {
@@ -1183,8 +1336,13 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
               entry_spot: entrySpot!,
             });
           } else {
-            cleanupAndLog(`Buy contract error on account ${accountId}: ${JSON.stringify(response)}`, true);
-            reject(new Error(response.error?.message || `Failed to buy contract on account ${accountId}.`));
+            cleanupAndLog(`Malformed buy success response on account ${accountId}: ${JSON.stringify(response)}`, true);
+            reject(new Error(`Failed to buy contract due to malformed success response on account ${accountId}.`));
+          }
+          if (proposalSubscriptionId) {
+            console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} after buy attempt.`);
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
+            proposalSubscriptionId = null;
           }
         } else {
           console.log(`[DerivService/placeTrade] Received other message type for ${accountId}: ${response.msg_type}`, response);
