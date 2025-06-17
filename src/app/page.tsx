@@ -813,14 +813,40 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         }
       }
 
-      setActiveAutomatedTrades(newActiveTradesBatch);
-      setActiveAutomatedTrades(executedTradesResults);
-      if (executedTradesResults.every(t => t.status === 'error_placement')) {
-        logAutomatedTradingEvent("All proposed trades failed placement. Stopping session.");
+      setActiveAutomatedTrades(newActiveTradesBatch); // Correctly use newActiveTradesBatch
+
+      // Updated post-loop logic
+      const allTradesFailedOrInvalid = newActiveTradesBatch.length > 0 && newActiveTradesBatch.every(
+        t => t.status === 'error_placement' || t.status === 'error_validation'
+      );
+
+      if (allTradesFailedOrInvalid) {
+        logAutomatedTradingEvent("All proposed trades failed validation or placement. Stopping session.");
+        toast({
+          title: "AI Auto-Trade Update",
+          description: "AI proposed trades, but none could be successfully validated or placed. Please review AI strategy or market conditions.",
+          variant: "warning",
+          duration: 7000
+        });
         setIsAutoTradingActive(false);
-      } else {
+      } else if (newActiveTradesBatch.some(t => t.status === 'open')) {
         logAutomatedTradingEvent("Trade placement phase complete. Monitoring active trades.");
+      } else if (newActiveTradesBatch.length > 0) {
+        logAutomatedTradingEvent("No trades were successfully placed (all failed validation or other errors). Stopping session.");
+        // This case is now effectively covered by `allTradesFailedOrInvalid` if those are the only non-open states.
+        // If other non-open, non-error states could exist and lead here, a generic toast might be needed.
+        // For now, the specific toast for allTradesFailedOrInvalid is primary.
+        // If this condition is met, it implies all trades in the batch are errors, which allTradesFailedOrInvalid already covers.
+        // However, to be safe, if this specific log indicates a distinct scenario, we could add a different toast,
+        // but it's likely redundant if 'error_placement' and 'error_validation' are the only non-'open' outcomes.
+        // Let's assume the first toast is sufficient if allTradesFailedOrInvalid is true.
+        // If this path is reached and allTradesFailedOrInvalid was false, it's an unexpected state or a trade has a status other than open/error.
+        setIsAutoTradingActive(false);
       }
+      // Note: If newActiveTradesBatch is empty AND strategyResult.tradesToExecute was also empty,
+      // an earlier check `if (!strategyResult || strategyResult.tradesToExecute.length === 0)` already handles this
+      // by logging "AI found no optimal trades" and setting setIsAutoTradingActive(false).
+      // This new logic correctly handles cases where trades were proposed but all failed validation/placement.
 
     } catch (error: any) {
       logAutomatedTradingEvent(`Error during AI strategy or trade placement: ${error.message}`);
