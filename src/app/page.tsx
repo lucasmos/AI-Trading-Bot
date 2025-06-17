@@ -155,6 +155,10 @@ export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
 
+  const logAutomatedTradingEvent = useCallback((message: string) => {
+    setAutomatedTradingLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  }, [setAutomatedTradingLog]); // Added setAutomatedTradingLog to dependency array
+
   const demoBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
   const realBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
 
@@ -549,17 +553,17 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     processDurationsFromGlobalOfferings();
   }, [
     currentInstrument,
-    globalOfferingsData,  // Primary new dependency
+    globalOfferingsData,
     isLoadingGlobalOfferings,
     globalOfferingsError,
-    userInfo, // Still needed for early exit
+    userInfo,
     toast,
-    tradeDuration, // To check if current selection is still valid
+    tradeDuration,
     setTradeDuration,
     setAvailableDurations,
     setIsLoadingDurations,
     setIsTradeable,
-    logAutomatedTradingEvent // For logging issues
+    logAutomatedTradingEvent
   ]);
 
   // Handles the execution of a manual trade (CALL or PUT).
@@ -719,11 +723,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     } finally {
       setIsFetchingManualRecommendation(false);
     }
-  }, [currentInstrument, tradingMode, selectedAiStrategyId, authStatus, selectedDerivAccountType, userInfo, toast, router, setIsFetchingManualRecommendation, setAiRecommendation]); // Added userInfo
-
-  const logAutomatedTradingEvent = (message: string) => {
-    setAutomatedTradingLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-  };
+  }, [currentInstrument, tradingMode, selectedAiStrategyId, authStatus, selectedDerivAccountType, userInfo, toast, router, setIsFetchingManualRecommendation, setAiRecommendation, logAutomatedTradingEvent]); // Added logAutomatedTradingEvent to dep array
 
   const startAutomatedTradingSession = useCallback(async () => {
     if (authStatus === 'unauthenticated') {
@@ -765,19 +765,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       return;
     }
 
-    if (isLoadingGlobalOfferings) {
-      toast({ title: "System Busy", description: "Trading offerings are currently being loaded. Please try again shortly.", variant: "default" });
-      setIsPreparingAutoTrades(false);
-      setIsAutoTradingActive(false);
-      return;
-    }
-    if (!globalOfferingsData || globalOfferingsError) {
-      toast({ title: "Offerings Unavailable", description: `Trading offerings data is not available or failed to load: ${globalOfferingsError || 'No data'}. Cannot start session.`, variant: "destructive" });
-      logAutomatedTradingEvent(`Aborted: Global offerings data not available. Error: ${globalOfferingsError || 'No data'}`);
-      setIsPreparingAutoTrades(false);
-      setIsAutoTradingActive(false);
-      return;
-    }
+    // Removed duplicateisLoadingGlobalOfferings and !globalOfferingsData || globalOfferingsError checks here
 
     if (autoTradeTotalStake <= 0 || autoTradeTotalStake > currentBalance) {
       toast({ title: "Invalid Stake", description: `Total stake $${autoTradeTotalStake} must be positive and within balance $${currentBalance.toFixed(2)}.`, variant: "destructive" });
@@ -877,7 +865,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
           for (const market of globalOfferingsData!) {
             for (const symGroup of market.data) {
-              if (symGroup.symbol.find(s => s.name === derivSymbol)) {
+              if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s.name === derivSymbol)) {
+                foundSymbolOfferings = symGroup;
+                break;
+              } else if (!Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) { // Handle non-array case, assuming 'name' exists
                 foundSymbolOfferings = symGroup;
                 break;
               }
@@ -1022,8 +1013,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   }, [
     authStatus, selectedDerivAccountType, autoTradeTotalStake, currentBalance, tradingMode, selectedAiStrategyId,
     userInfo, derivDemoAccountId, derivRealAccountId, consecutiveAiCallCount, lastAiCallTimestamp, toast, router,
-    selectedStopLossPercentage, logAutomatedTradingEvent, setActiveAutomatedTrades, setIsAutoTradingActive,
-    setIsPreparingAutoTrades, setConsecutiveAiCallCount, setLastAiCallTimestamp, fetchBalanceForAccount
+    selectedStopLossPercentage, setActiveAutomatedTrades, setIsAutoTradingActive,
+    setIsPreparingAutoTrades, setConsecutiveAiCallCount, setLastAiCallTimestamp, fetchBalanceForAccount,
+    logAutomatedTradingEvent, // Added logAutomatedTradingEvent
+    globalOfferingsData, isLoadingGlobalOfferings, globalOfferingsError // Added global offerings states
   ]);
 
   const handleStopAiAutoTrade = useCallback(async () => {
@@ -1188,8 +1181,9 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     return () => clearInterval(monitoringInterval); // Cleanup interval on unmount or when dependencies change
   }, [
     activeAutomatedTrades, isAutoTradingActive, userInfo, selectedDerivAccountType, derivDemoAccountId,
-    derivRealAccountId, setActiveAutomatedTrades, setProfitsClaimable, logAutomatedTradingEvent, toast,
-    setIsAutoTradingActive, fetchBalanceForAccount, mapDerivStatusToLocal // Added setIsAutoTradingActive and mapDerivStatusToLocal
+    derivRealAccountId, setActiveAutomatedTrades, setProfitsClaimable, toast,
+    setIsAutoTradingActive, fetchBalanceForAccount, mapDerivStatusToLocal,
+    logAutomatedTradingEvent // Added logAutomatedTradingEvent
   ]);
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'paper' | 'live' | 'demo' | 'real' | null) => {
