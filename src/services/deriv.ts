@@ -134,12 +134,15 @@ export async function getCandles(
   return new Promise((resolve, reject) => {
     ws.onopen = () => {
       let authorized = false;
+      const authPayloadForLog = { authorize: token ? 'TOKEN_PRESENT' : (DERIV_API_TOKEN ? 'GLOBAL_DEMO_TOKEN_USED' : 'NO_TOKEN_SPECIFIED_FOR_AUTH') };
       if (token) {
         console.log('[DerivService/getCandles] Authorizing with provided token.');
+        console.log('[DerivService/getCandles] Sending authorize request:', JSON.stringify(authPayloadForLog));
         ws.send(JSON.stringify({ authorize: token }));
         authorized = true;
       } else if (DERIV_API_TOKEN) { // Fallback to global demo token if no specific token provided
         console.log('[DerivService/getCandles] Authorizing with global DERIV_API_TOKEN.');
+        console.log('[DerivService/getCandles] Sending authorize request:', JSON.stringify(authPayloadForLog));
         ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
         authorized = true;
       } else {
@@ -159,7 +162,7 @@ export async function getCandles(
           granularity: granularity,
         };
         
-        console.log('[DerivService/getCandles] Sending request:', request);
+        console.log('[DerivService/getCandles] Sending ticks_history request:', JSON.stringify(request));
         ws.send(JSON.stringify(request));
       }, authorized ? 500 : 0); // Reduced delay if authorized, 0 if not.
     };
@@ -332,14 +335,17 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
       console.log('[DerivService/getTradingDurations] WebSocket connection opened.');
       if (token) {
         console.log('[DerivService/getTradingDurations] Authorizing...');
+        console.log('[DerivService/getTradingDurations] Sending authorize request:', JSON.stringify({ authorize: token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT_SHOULD_NOT_HAPPEN_HERE' }));
         ws.send(JSON.stringify({ authorize: token }));
       } else {
         console.log('[DerivService/getTradingDurations] Sending contracts_for request without prior authorization.');
-        ws.send(JSON.stringify({
+        const contractsForPayload = {
           contracts_for: instrumentSymbol,
           currency: "USD",
           product_type: "basic"
-        }));
+        };
+        console.log('[DerivService/getTradingDurations] Sending contracts_for request:', JSON.stringify(contractsForPayload));
+        ws.send(JSON.stringify(contractsForPayload));
       }
     };
 
@@ -364,11 +370,13 @@ export async function getTradingDurations(instrumentSymbol: string, token?: stri
         if (response.msg_type === 'authorize') {
           if (response.authorize?.loginid) {
             console.log('[DerivService/getTradingDurations] Authorization successful. Sending contracts_for request...');
-            ws.send(JSON.stringify({
+            const contractsForPayload = {
               contracts_for: instrumentSymbol,
               currency: "USD",
               product_type: "basic"
-            }));
+            };
+            console.log('[DerivService/getTradingDurations] Sending contracts_for request:', JSON.stringify(contractsForPayload));
+            ws.send(JSON.stringify(contractsForPayload));
           } else {
             console.error('[DerivService/getTradingDurations] Authorization failed:', response);
             clearTimeout(operationTimeout);
@@ -1089,18 +1097,8 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
 
     ws.onopen = () => {
       const openTime = Date.now();
-      console.log(
-        `[DerivService/placeTrade] WebSocket opened for accountId: ${accountId}. Time to open: ${openTime - startTime}ms. Authorizing...`
-      );
-      console.log(
-        '[DerivService/placeTrade] Sending authorize request:',
-        JSON.stringify({ authorize: tradeDetails.token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT' })
-      );
-      if (!tradeDetails.token) {
-        cleanupAndLog('Missing API token – aborting trade placement.', true);
-        reject(new Error('Deriv API token is required for trade placement.'));
-        return;
-      }
+      console.log(`[DerivService/placeTrade] WebSocket opened for accountId: ${accountId}. Time to open: ${openTime - startTime}ms. Authorizing...`);
+      console.log('[DerivService/placeTrade] Sending authorize request:', JSON.stringify({ authorize: tradeDetails.token ? 'TOKEN_PRESENT' : 'TOKEN_ABSENT' }));
       ws!.send(JSON.stringify({ authorize: tradeDetails.token }));
     };
 
@@ -1110,6 +1108,7 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
         // console.log(`[DerivService/placeTrade] Raw response for ${accountId}:`, JSON.stringify(response, null, 2));
 
         if (response.error) {
+          console.error(`[DerivService/placeTrade] Full error response from Deriv:`, JSON.stringify(response, null, 2)); // Added this line
           cleanupAndLog(`API Error: ${response.error.message}`, true);
           reject(new Error(response.error.message || `Unknown API error during trade placement for account ${accountId}.`));
           return;
