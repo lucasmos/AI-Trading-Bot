@@ -12,7 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { getCandles, placeTrade, instrumentToDerivSymbol, getTradingDurations, type PlaceTradeResponse, type DerivContractStatusData, getContractStatus, sellContract, getContractOfferings, type DerivContractOffering } from '@/services/deriv';
+import {
+  getCandles, placeTrade, instrumentToDerivSymbol, getTradingDurations,
+  type PlaceTradeResponse, type DerivContractStatusData, getContractStatus,
+  sellContract, getContractOfferings, type DerivContractOffering,
+  getGlobalTradingOfferings, // Added for global offerings
+  type TradingDurationsData // Added for global offerings type
+} from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -141,6 +147,10 @@ export default function DashboardPage() {
   const [isLoadingRealBalance, setIsLoadingRealBalance] = useState<boolean>(false);
   const [demoSyncStatus, setDemoSyncStatus] = useState<ListenerStatus>('idle');
   const [realSyncStatus, setRealSyncStatus] = useState<ListenerStatus>('idle');
+
+  const [globalOfferingsData, setGlobalOfferingsData] = useState<TradingDurationsData | null>(null);
+  const [isLoadingGlobalOfferings, setIsLoadingGlobalOfferings] = useState<boolean>(false);
+  const [globalOfferingsError, setGlobalOfferingsError] = useState<string | null>(null);
 
   const router = useRouter();
   const { toast } = useToast();
@@ -343,6 +353,47 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   // The useEffect that previously called fetchBalanceForAccount for initial load is now removed.
   // DerivBalanceListener handles initial and subsequent updates.
 
+  useEffect(() => {
+    const fetchOfferings = async () => {
+      if (!userInfo) {
+        return;
+      }
+
+      let currentToken: string | undefined | null = null;
+      if (selectedDerivAccountType === 'demo' && userInfo.derivDemoApiToken) {
+        currentToken = userInfo.derivDemoApiToken;
+      } else if (selectedDerivAccountType === 'real' && userInfo.derivRealApiToken) {
+        currentToken = userInfo.derivRealApiToken;
+      } else {
+        currentToken = userInfo.derivDemoApiToken || userInfo.derivRealApiToken || userInfo.derivAccessToken;
+      }
+
+      if (!globalOfferingsData && !isLoadingGlobalOfferings) {
+          console.log(`[DashboardPage] Fetching global trading offerings... (Using token for ${selectedDerivAccountType || 'default an account'})`);
+          setIsLoadingGlobalOfferings(true);
+          setGlobalOfferingsError(null);
+          try {
+            const offeringsData = await getGlobalTradingOfferings(currentToken);
+            if (offeringsData) {
+              setGlobalOfferingsData(offeringsData);
+              console.log("[DashboardPage] Global trading offerings fetched and cached successfully.");
+            } else {
+              throw new Error("Received null or empty offerings data.");
+            }
+          } catch (error: any) {
+            console.error("[DashboardPage] Error fetching global trading offerings:", error);
+            setGlobalOfferingsError(error.message || "Failed to load global trading offerings.");
+            toast({ title: "Offerings Load Error", description: `Failed to load global trading offerings: ${error.message}`, variant: "destructive" });
+            setGlobalOfferingsData(null);
+          } finally {
+            setIsLoadingGlobalOfferings(false);
+          }
+      }
+    };
+
+    fetchOfferings();
+  }, [userInfo, selectedDerivAccountType, globalOfferingsData, isLoadingGlobalOfferings, toast]);
+
   const currentBalance = useMemo(() => {
     if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
       if (selectedDerivAccountType === 'demo') {
@@ -386,54 +437,130 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   };
 
   useEffect(() => {
-    const fetchDurations = async () => {
-      if (!currentInstrument || !userInfo) return; // Added userInfo check
-      setIsLoadingDurations(true);
-      const derivSymbol = instrumentToDerivSymbol(currentInstrument);
-
-      let currentToken: string | undefined | null = null;
-      if (selectedDerivAccountType === 'demo') {
-        currentToken = userInfo.derivDemoApiToken;
-      } else if (selectedDerivAccountType === 'real') {
-        currentToken = userInfo.derivRealApiToken;
-      } else {
-        // Fallback or use a general token if applicable, for now, assume one must be selected for this operation
-        currentToken = userInfo.derivAccessToken; // Or the primary one if no specific type is selected
-      }
-
-      if (!currentToken) {
-        toast({ title: "Token Missing", description: `API token for ${selectedDerivAccountType || 'selected'} account not found. Cannot fetch durations.`, variant: "destructive" });
-        setIsLoadingDurations(false);
-        setIsTradeable(false);
+    const processDurationsFromGlobalOfferings = () => {
+      if (!currentInstrument || !userInfo) {
         setAvailableDurations([]);
+        setIsTradeable(false);
+        setIsLoadingDurations(false);
         return;
       }
 
-      try {
-        const durations = await getTradingDurations(derivSymbol, currentToken);
-        if (durations && durations.length > 0) {
-          setAvailableDurations(durations);
-          setIsTradeable(true);
-          if (!durations.includes(tradeDuration) || tradeDuration === '') {
-            setTradeDuration(durations[0] as TradeDuration);
+      // Handle loading state or errors from global offerings
+      if (isLoadingGlobalOfferings) {
+        setIsLoadingDurations(true); // Reflect that we are waiting for global data
+        // setAvailableDurations([]); // Optionally clear while global is loading
+        // setIsTradeable(false);
+        return; // Wait for global offerings to load
+      }
+
+      if (globalOfferingsError || !globalOfferingsData) {
+        logAutomatedTradingEvent(`Error or no global offerings data available for ${currentInstrument}. Error: ${globalOfferingsError}`);
+        toast({ title: "Offerings Error", description: `Could not load duration data: ${globalOfferingsError || 'No offerings data'}.`, variant: "destructive" });
+        setAvailableDurations([]);
+        setIsTradeable(false);
+        setIsLoadingDurations(false);
+        setTradeDuration('');
+        return;
+      }
+
+      setIsLoadingDurations(true); // Start loading durations for the specific instrument
+
+      const derivSymbol = instrumentToDerivSymbol(currentInstrument);
+      let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
+
+      for (const market of globalOfferingsData) {
+        for (const symGroup of market.data) {
+          // Check if symGroup.symbol is an array and then find
+          if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s.name === derivSymbol)) {
+            symbolMarketOfferings = symGroup;
+            break;
+          } else if (!Array.isArray(symGroup.symbol) && symGroup.symbol.name === derivSymbol) {
+            // Handle cases where symGroup.symbol might not be an array (based on type observation)
+            symbolMarketOfferings = symGroup;
+            break;
+          }
+        }
+        if (symbolMarketOfferings) break;
+      }
+
+      if (symbolMarketOfferings) {
+        const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
+
+        if (riseFallTradeType && riseFallTradeType.durations) {
+          const newDurationsSet = new Set<string>();
+          riseFallTradeType.durations.forEach(detail => {
+            if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
+              if (detail.min > 0) newDurationsSet.add(`${detail.min}${detail.name}`);
+
+              // Add some steps for s, m, h, d if range allows
+              if (detail.name === 's' || detail.name === 'm' || detail.name === 'h' || detail.name === 'd') {
+                const minSec = parseDurationToSeconds(`${detail.min}${detail.name}`);
+                const maxSec = parseDurationToSeconds(`${detail.max}${detail.name}`);
+                if (maxSec > minSec && detail.max !== 0) { // max 0 can mean no_expiry or very large
+                    // Simple step: add mid-point if significantly different from min and max
+                    const midSec = Math.floor((minSec + maxSec) / 2);
+                    const midVal = Math.floor(midSec / (detail.name === 's' ? 1 : detail.name === 'm' ? 60 : detail.name === 'h' ? 3600 : 24 * 3600));
+                    if (midVal > detail.min && midVal < detail.max) {
+                         newDurationsSet.add(`${midVal}${detail.name}`);
+                    }
+                   newDurationsSet.add(`${detail.max}${detail.name}`);
+                }
+              } else if (detail.name === 't') { // For ticks, list min to max if reasonable
+                  if (detail.max > detail.min && detail.max !==0 && (detail.max - detail.min <= 10)) { // Only list all if range is small
+                     for(let i = detail.min + 1; i <= detail.max; i++) {
+                        newDurationsSet.add(`${i}${detail.name}`);
+                     }
+                  } else if (detail.max > detail.min && detail.max !== 0) { // if range is large, just add max
+                     newDurationsSet.add(`${detail.max}${detail.name}`);
+                  }
+              }
+            }
+          });
+
+          const sortedDurations = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
+
+          setAvailableDurations(sortedDurations);
+          setIsTradeable(sortedDurations.length > 0);
+
+          if (sortedDurations.length > 0) {
+            if (!sortedDurations.includes(tradeDuration) || tradeDuration === '') {
+              setTradeDuration(sortedDurations[0] as TradeDuration);
+            }
+          } else {
+            setTradeDuration('');
+            setIsTradeable(false); // Ensure tradeable is false if no durations
+            logAutomatedTradingEvent(`No valid 'rise_fall' durations generated for ${currentInstrument} from global offerings.`);
           }
         } else {
+          logAutomatedTradingEvent(`No 'rise_fall' trade type or its durations found for ${currentInstrument} in global offerings.`);
           setAvailableDurations([]);
-          setTradeDuration('');
           setIsTradeable(false);
+          setTradeDuration('');
         }
-      } catch (error) {
-        console.error(`[DashboardPage] Error fetching trading durations for ${currentInstrument}:`, error);
+      } else {
+        logAutomatedTradingEvent(`Symbol ${derivSymbol} for ${currentInstrument} not found in global offerings market data.`);
         setAvailableDurations([]);
-        setTradeDuration('');
         setIsTradeable(false);
-        toast({ title: "Duration Load Error", description: "Could not load durations.", variant: "destructive" });
-      } finally {
-        setIsLoadingDurations(false);
+        setTradeDuration('');
       }
+      setIsLoadingDurations(false);
     };
-    fetchDurations();
-  }, [currentInstrument, userInfo, selectedDerivAccountType, toast, tradeDuration]); // Updated deps
+
+    processDurationsFromGlobalOfferings();
+  }, [
+    currentInstrument,
+    globalOfferingsData,  // Primary new dependency
+    isLoadingGlobalOfferings,
+    globalOfferingsError,
+    userInfo, // Still needed for early exit
+    toast,
+    tradeDuration, // To check if current selection is still valid
+    setTradeDuration,
+    setAvailableDurations,
+    setIsLoadingDurations,
+    setIsTradeable,
+    logAutomatedTradingEvent // For logging issues
+  ]);
 
   // Handles the execution of a manual trade (CALL or PUT).
   // Performs several checks: authentication, market status, trade parameters validation, API token, and account ID.
@@ -618,8 +745,37 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
     if (!currentToken || !currentTargetAccountId) {
       toast({ title: "Account Not Ready", description: `The ${selectedDerivAccountType} account token or ID is missing. Please check your profile.`, variant: "destructive" });
-      setIsPreparingAutoTrades(false); // Reset preparation state
-      setIsAutoTradingActive(false); // Ensure session doesn't stay active
+      setIsPreparingAutoTrades(false);
+      setIsAutoTradingActive(false);
+      return;
+    }
+
+    // Add initial checks for globalOfferingsData
+    if (isLoadingGlobalOfferings) {
+      toast({ title: "System Busy", description: "Trading offerings are currently being loaded. Please try again shortly.", variant: "default" });
+      setIsPreparingAutoTrades(false);
+      setIsAutoTradingActive(false);
+      return;
+    }
+    if (!globalOfferingsData || globalOfferingsError) {
+      toast({ title: "Offerings Unavailable", description: `Trading offerings data is not available or failed to load: ${globalOfferingsError || 'No data'}. Cannot start session.`, variant: "destructive" });
+      logAutomatedTradingEvent(`Aborted: Global offerings data not available. Error: ${globalOfferingsError || 'No data'}`);
+      setIsPreparingAutoTrades(false);
+      setIsAutoTradingActive(false);
+      return;
+    }
+
+    if (isLoadingGlobalOfferings) {
+      toast({ title: "System Busy", description: "Trading offerings are currently being loaded. Please try again shortly.", variant: "default" });
+      setIsPreparingAutoTrades(false);
+      setIsAutoTradingActive(false);
+      return;
+    }
+    if (!globalOfferingsData || globalOfferingsError) {
+      toast({ title: "Offerings Unavailable", description: `Trading offerings data is not available or failed to load: ${globalOfferingsError || 'No data'}. Cannot start session.`, variant: "destructive" });
+      logAutomatedTradingEvent(`Aborted: Global offerings data not available. Error: ${globalOfferingsError || 'No data'}`);
+      setIsPreparingAutoTrades(false);
+      setIsAutoTradingActive(false);
       return;
     }
 
@@ -707,74 +863,81 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
       for (const proposedTrade of strategyResult.tradesToExecute) {
         const derivSymbol = instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType);
+        let validationMessage = `Validation for ${derivSymbol} not yet performed.`;
+        let isValidProposal = false;
+        let minDurSec = 0;
+        let maxDurSec = Infinity;
+
         try {
-          logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
+          logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s using global offerings.`);
 
-          const offerings = await getContractOfferings(derivSymbol, currentToken!);
-          await new Promise(r => setTimeout(r, 250)); // Added delay
+          let symbolOfferings: FlowAutomatedTradingStrategyInput | undefined; // This type is incorrect, should be SymbolTradeDurations
+          // Correcting type for symbolOfferings based on expected structure of globalOfferingsData
+          let foundSymbolOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
 
-          if (!offerings || offerings.length === 0) {
-            const validationErrorMsg = `No contract offerings found for ${derivSymbol}. Cannot validate trade.`;
-            logAutomatedTradingEvent(validationErrorMsg);
+          for (const market of globalOfferingsData!) {
+            for (const symGroup of market.data) {
+              if (symGroup.symbol.find(s => s.name === derivSymbol)) {
+                foundSymbolOfferings = symGroup;
+                break;
+              }
+            }
+            if (foundSymbolOfferings) break;
+          }
+
+          if (!foundSymbolOfferings) {
+            validationMessage = `Instrument ${derivSymbol} not found in global offerings.`;
+          } else {
+            const riseFallTradeType = foundSymbolOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
+            if (!riseFallTradeType) {
+              validationMessage = `Trade type 'rise_fall' (for CALL/PUT) not offered for ${derivSymbol}.`;
+            } else {
+              let foundValidDurationRange = false;
+              for (const durDetail of riseFallTradeType.durations) {
+                minDurSec = parseDurationToSeconds(durDetail.min + durDetail.name);
+                maxDurSec = parseDurationToSeconds(durDetail.max + durDetail.name);
+                if (durDetail.name === 'no_expiry' || durDetail.max === 0) maxDurSec = Infinity;
+
+                if (proposedTrade.durationSeconds >= minDurSec && proposedTrade.durationSeconds <= maxDurSec) {
+                  isValidProposal = true;
+                  foundValidDurationRange = true;
+                  validationMessage = `Proposal for ${derivSymbol} with duration ${proposedTrade.durationSeconds}s is valid within range [${minDurSec}s - ${maxDurSec}s] for unit ${durDetail.name}.`;
+                  break;
+                }
+              }
+              if (!foundValidDurationRange) {
+                validationMessage = `Proposed duration ${proposedTrade.durationSeconds}s for ${derivSymbol} is not valid for any available 'rise_fall' duration units/ranges. Last checked range: [${minDurSec}s - ${maxDurSec}s].`;
+              }
+            }
+          }
+          logAutomatedTradingEvent(validationMessage);
+
+          if (!isValidProposal) {
             newActiveTradesBatch.push({
               id: `error_validation_${uuidv4()}`,
               instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
               derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
               durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
               entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
-              validationError: validationErrorMsg,
+              validationError: validationMessage,
             } as ActiveAutomatedTrade);
             continue;
           }
 
-          const intradayOffering = offerings.find(o => o.expiry_type === 'intraday' && o.contract_category === 'callput' && o.start_type === 'spot');
-
-          if (!intradayOffering) {
-            const validationErrorMsg = `No suitable 'intraday/callput/spot' offering found for ${derivSymbol}. Cannot validate trade.`;
-            logAutomatedTradingEvent(validationErrorMsg);
-            newActiveTradesBatch.push({
-              id: `error_validation_${uuidv4()}`,
-              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
-              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
-              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
-              validationError: validationErrorMsg,
-            } as ActiveAutomatedTrade);
-            continue;
-          }
-
-          const minDurationSeconds = parseDurationToSeconds(intradayOffering.min_contract_duration);
-          const maxDurationSeconds = parseDurationToSeconds(intradayOffering.max_contract_duration);
-
-          if (proposedTrade.durationSeconds < minDurationSeconds || (maxDurationSeconds > 0 && proposedTrade.durationSeconds > maxDurationSeconds)) {
-            const validationErrorMsg = `Skipping trade for ${proposedTrade.instrument}: Proposed duration ${proposedTrade.durationSeconds}s is outside valid range [${minDurationSeconds}s - ${maxDurationSeconds}s] for intraday offering.`;
-            logAutomatedTradingEvent(validationErrorMsg);
-            newActiveTradesBatch.push({
-              id: `error_validation_${uuidv4()}`,
-              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
-              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: proposedTrade.durationSeconds, reasoning: proposedTrade.reasoning,
-              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
-              validationError: validationErrorMsg,
-            } as ActiveAutomatedTrade);
-            continue;
-          }
-
-          logAutomatedTradingEvent(`Validation passed for ${proposedTrade.instrument}. Proceeding to place trade.`);
-
-          const tradeDetails: any = { // Using 'any' for TradeDetails as its definition is implicit in deriv.ts
+          // If validation passes:
+          const tradeDetails: any = {
             symbol: derivSymbol,
             contract_type: proposedTrade.action,
-            duration: proposedTrade.durationSeconds, // Use AI's proposed duration in seconds
-            duration_unit: 's',                     // Unit is seconds
+            duration: proposedTrade.durationSeconds,
+            duration_unit: 's',
             amount: proposedTrade.stake,
             currency: "USD",
             basis: "stake",
-            token: currentToken!, // Checked non-null at function start
+            token: currentToken!,
           };
 
           logAutomatedTradingEvent(`Placing ${proposedTrade.action} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
-          const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId!); // Checked non-null at function start
+          const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId!);
           logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}, Duration: ${proposedTrade.durationSeconds}s`);
 
           if (selectedDerivAccountType && currentTargetAccountId) {

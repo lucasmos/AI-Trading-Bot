@@ -81,6 +81,55 @@ export interface DerivContractOffering {
   // Add any other fields you might need for validation
 }
 
+// --- Start of Corrected Global Trading Durations Interfaces ---
+export interface TradingDurationDetail {
+  display_name: string;
+  max: number;
+  min: number;
+  name: string;
+}
+
+export interface TradeTypeDurations {
+  durations: TradingDurationDetail[];
+  trade_type: {
+    display_name: string;
+    name: string;
+  };
+}
+
+export interface SymbolInfo { // Represents one entry in the "symbol" array
+    display_name: string;
+    name: string;
+}
+
+export interface SymbolTradeDurations {
+  symbol: SymbolInfo[]; // Array of symbols that share these trade_durations
+  trade_durations: TradeTypeDurations[];
+}
+
+export interface MarketOfferings { // Represents one market entry in the main array
+  data: SymbolTradeDurations[];
+  market: {
+    display_name: string;
+    name: string;
+  };
+  submarket: {
+    display_name: string;
+    name: string;
+  };
+}
+
+// This is the actual structure of the `trading_durations` field in the response
+export type TradingDurationsData = MarketOfferings[];
+
+export interface GetGlobalTradingDurationsApiResponse { // Top-level API response
+  trading_durations: TradingDurationsData;
+  echo_req: any;
+  msg_type: 'trading_durations';
+  req_id?: number;
+}
+// --- End of Corrected Global Trading Durations Interfaces ---
+
 /**
  * Maps user-friendly instrument names to Deriv API symbols.
  */
@@ -393,6 +442,111 @@ export async function getContractOfferings(instrumentSymbol: string, token?: str
       // Consider rejecting if not already resolved/rejected, though timeout should handle most cases.
     };
   });
+}
+
+export async function getGlobalTradingOfferings(token?: string): Promise<TradingDurationsData> {
+  let ws: WebSocket | null = null;
+  const operationTimeoutDuration = 20000; // Increased timeout for potentially large response
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  const req_id = Date.now(); // Unique req_id for this call
+
+  // Local cleanup function
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    timeoutTimer = null; // Important to nullify to prevent reuse by other logic if ws persists
+    const fullLogMessage = `[DerivService/getGlobalTradingOfferings] ${logMessage}`;
+    if (isError) console.error(fullLogMessage);
+    else console.log(fullLogMessage);
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+      wsToClose.close(1000, logMessage.substring(0, 100));
+    }
+  };
+
+  const promiseLogic = new Promise<TradingDurationsData>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
+    console.log('[DerivService/getGlobalTradingOfferings] Attempting to connect...');
+
+    ws.onopen = () => {
+      cleanupAndLog("WebSocket connection opened."); // Log with context
+      const authReqId = req_id + 1; // Separate req_id for auth
+
+      if (token) {
+        console.log('[DerivService/getGlobalTradingOfferings] Sending authorize request:', JSON.stringify({ authorize: 'TOKEN_PRESENT', req_id: authReqId }));
+        ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
+        // Wait for auth response before sending trading_durations, handled in onmessage
+      } else {
+        // If no token, send trading_durations request directly
+        console.log('[DerivService/getGlobalTradingOfferings] Sending trading_durations request (no auth):', JSON.stringify({ trading_durations: 1, req_id: req_id }));
+        ws!.send(JSON.stringify({ trading_durations: 1, req_id: req_id }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string) as GetGlobalTradingDurationsApiResponse | { msg_type: string, error?: {code: string, message: string}, req_id?: number, authorize?: any };
+
+        if (response.error) {
+          cleanupAndLog(`API Error: ${response.error.message}`, true);
+          reject(new Error(response.error.message || 'Deriv API error in getGlobalTradingOfferings'));
+          return;
+        }
+
+        if (response.msg_type === 'authorize') {
+          if (response.authorize) {
+            console.log('[DerivService/getGlobalTradingOfferings] Authorization successful. Now sending trading_durations request.');
+            console.log('[DerivService/getGlobalTradingOfferings] Sending trading_durations request (post-auth):', JSON.stringify({ trading_durations: 1, req_id: req_id }));
+            ws!.send(JSON.stringify({ trading_durations: 1, req_id: req_id }));
+          } else {
+            cleanupAndLog('Authorization failed.', true);
+            reject(new Error('Authorization failed in getGlobalTradingOfferings.'));
+          }
+        } else if (response.msg_type === 'trading_durations') {
+          if (response.req_id === req_id) {
+            cleanupAndLog('Received trading_durations response.');
+            resolve((response as GetGlobalTradingDurationsApiResponse).trading_durations);
+          } else {
+             if (response.req_id === req_id + 1 && response.msg_type === 'authorize') {
+                // This is the echo of the auth request, ignore it here as we only care about the trading_durations response for resolving this promise.
+                console.log('[DerivService/getGlobalTradingOfferings] Received authorize echo, awaiting trading_durations response.');
+                return;
+             }
+             cleanupAndLog(`Received trading_durations response with mismatched req_id. Expected ${req_id}, got ${response.req_id}. Ignoring.`, true);
+             // Not rejecting here as the correct response might still arrive. Timeout will handle hangs.
+          }
+        } else {
+          console.log(`[DerivService/getGlobalTradingOfferings] Received other message type: ${response.msg_type}. Waiting for trading_durations or error.`);
+        }
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message: ${e?.message || String(e)}`, true);
+        reject(e);
+      }
+    };
+
+    ws.onerror = (event) => {
+      // The event itself in onerror is often not very descriptive.
+      cleanupAndLog('WebSocket error.', true);
+      reject(new Error('WebSocket error in getGlobalTradingOfferings.'));
+    };
+
+    ws.onclose = (event) => {
+      cleanupAndLog(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`, !event.wasClean);
+      // If the promise hasn't settled yet, it means an unexpected close or the timeout didn't fire first.
+      // The reject in the timeout should handle unresolved promises if the close is due to a hang.
+      // If it closes cleanly before data (and not due to resolve/reject in onmessage), it's an issue.
+      // However, a simple reject here without checking if already settled can cause "already settled" errors.
+      // Relying on timeout for unresolved cases.
+    };
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<TradingDurationsData>((_, reject) => { // Ensure type matches promiseLogic
+      timeoutTimer = setTimeout(() => {
+        cleanupAndLog('Operation timed out.', true);
+        reject(new Error('getGlobalTradingOfferings operation timed out.'));
+      }, operationTimeoutDuration);
+    })
+  ]);
 }
 
 function parseDurationToMinutes(durationString: string): number {
