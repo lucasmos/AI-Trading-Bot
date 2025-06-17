@@ -159,16 +159,16 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   }, []);
 
   useEffect(() => {
-    if (userInfo?.derivAccessToken && derivDemoAccountId) {
+    const demoToken = userInfo?.derivDemoApiToken;
+    if (demoToken && derivDemoAccountId) {
       if (demoBalanceListenerRef.current) {
         demoBalanceListenerRef.current.close();
       }
-      // Optimistic set from context or keep existing fresh balance
       setFreshDemoBalance(prev => prev ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
-      setIsLoadingDemoBalance(true); // Indicate loading until first WS message
+      setIsLoadingDemoBalance(true);
 
       demoBalanceListenerRef.current = new DerivBalanceListener(
-        userInfo.derivAccessToken,
+        demoToken,
         derivDemoAccountId,
         (balanceData) => {
           setFreshDemoBalance(balanceData.balance);
@@ -206,10 +206,11 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     }
     // This effect's cleanup is implicitly handled by the next run creating a new listener and closing the old one,
     // and the main unmount cleanup.
-  }, [userInfo?.derivAccessToken, derivDemoAccountId, toast, derivDemoBalance]); // Removed setFreshDemoBalance, setIsLoadingDemoBalance from deps as they cause loops
+  }, [userInfo?.derivDemoApiToken, derivDemoAccountId, toast, derivDemoBalance, userInfo?.derivAccessToken]); // Added userInfo.derivDemoApiToken
 
   useEffect(() => {
-    if (userInfo?.derivAccessToken && derivRealAccountId) {
+    const realToken = userInfo?.derivRealApiToken;
+    if (realToken && derivRealAccountId) {
       if (realBalanceListenerRef.current) {
         realBalanceListenerRef.current.close();
       }
@@ -217,7 +218,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       setIsLoadingRealBalance(true);
 
       realBalanceListenerRef.current = new DerivBalanceListener(
-        userInfo.derivAccessToken,
+        realToken,
         derivRealAccountId,
         (balanceData) => {
           setFreshRealBalance(balanceData.balance);
@@ -252,11 +253,14 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       setFreshRealBalance(derivLiveBalance ?? DEFAULT_LIVE_BALANCE); // Fallback
       setIsLoadingRealBalance(false);
     }
-  }, [userInfo?.derivAccessToken, derivRealAccountId, toast, derivLiveBalance]); // Removed setFreshRealBalance, setIsLoadingRealBalance
+  }, [userInfo?.derivRealApiToken, derivRealAccountId, toast, derivLiveBalance, userInfo?.derivAccessToken]); // Added userInfo.derivRealApiToken
 
   const fetchBalanceForAccount = useCallback(async (accountId: string, type: 'demo' | 'real') => {
-    if (!accountId || !userInfo?.derivAccessToken) {
-      console.warn(`[DashboardPage] fetchBalanceForAccount: Missing accountId ('${accountId}') or derivAccessToken. Cannot fetch.`);
+    // This function relies on a backend API. Ensure the backend uses the correct token for the given accountId.
+    // Consider refactoring to call deriv.ts service directly with specific token if issues arise.
+    console.warn("[DashboardPage/fetchBalanceForAccount] This function relies on a backend API. Ensure the backend uses the correct token for the given accountId. Consider refactoring to call deriv.ts service directly with specific token if issues arise.");
+    if (!accountId) { // Removed direct token check here as it's backend handled
+      console.warn(`[DashboardPage] fetchBalanceForAccount: Missing accountId ('${accountId}'). Cannot fetch.`);
       return;
     }
 
@@ -365,13 +369,30 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
   useEffect(() => {
     const fetchDurations = async () => {
-      if (!currentInstrument) return;
+      if (!currentInstrument || !userInfo) return; // Added userInfo check
       setIsLoadingDurations(true);
       const derivSymbol = instrumentToDerivSymbol(currentInstrument);
-      const token = userInfo?.derivApiToken?.access_token;
+
+      let currentToken: string | undefined | null = null;
+      if (selectedDerivAccountType === 'demo') {
+        currentToken = userInfo.derivDemoApiToken;
+      } else if (selectedDerivAccountType === 'real') {
+        currentToken = userInfo.derivRealApiToken;
+      } else {
+        // Fallback or use a general token if applicable, for now, assume one must be selected for this operation
+        currentToken = userInfo.derivAccessToken; // Or the primary one if no specific type is selected
+      }
+
+      if (!currentToken) {
+        toast({ title: "Token Missing", description: `API token for ${selectedDerivAccountType || 'selected'} account not found. Cannot fetch durations.`, variant: "destructive" });
+        setIsLoadingDurations(false);
+        setIsTradeable(false);
+        setAvailableDurations([]);
+        return;
+      }
 
       try {
-        const durations = await getTradingDurations(derivSymbol, token);
+        const durations = await getTradingDurations(derivSymbol, currentToken);
         if (durations && durations.length > 0) {
           setAvailableDurations(durations);
           setIsTradeable(true);
@@ -394,7 +415,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       }
     };
     fetchDurations();
-  }, [currentInstrument, userInfo?.derivApiToken?.access_token, toast, tradeDuration]); // Dependencies for fetching durations
+  }, [currentInstrument, userInfo, selectedDerivAccountType, toast, tradeDuration]); // Updated deps
 
   // Handles the execution of a manual trade (CALL or PUT).
   // Performs several checks: authentication, market status, trade parameters validation, API token, and account ID.
@@ -420,16 +441,24 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       return;
     }
 
-    const apiToken = userInfo?.derivApiToken?.access_token;
-    if (!userInfo?.id || !apiToken) {
-      toast({ title: "Authentication Error", description: "Deriv API token not found. Please re-login or connect your Deriv account.", variant: "destructive" });
-      return;
+    let currentToken: string | undefined | null = null;
+    let currentTargetAccountId: string | undefined | null = null;
+
+    if (selectedDerivAccountType === 'demo') {
+      currentToken = userInfo?.derivDemoApiToken;
+      currentTargetAccountId = derivDemoAccountId;
+    } else if (selectedDerivAccountType === 'real') {
+      currentToken = userInfo?.derivRealApiToken;
+      currentTargetAccountId = derivRealAccountId;
     }
 
-    const targetAccountId = selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId;
-    if (!targetAccountId) {
-      toast({ title: "Deriv Account ID Missing", description: `Your selected Deriv ${selectedDerivAccountType} account ID is not available. Please check profile or re-login.`, variant: "destructive"});
+    if (!currentToken || !currentTargetAccountId) {
+      toast({ title: "Account Error", description: `Selected ${selectedDerivAccountType} account token or ID is missing.`, variant: "destructive" });
       return;
+    }
+    if (!userInfo?.id) { // Redundant with currentToken check if tokens imply user.id
+        toast({ title: "Authentication Error", description: "User ID not found.", variant: "destructive" });
+        return;
     }
 
     const durationMatch = tradeDuration.match(/^(\d+)([smhdt])$/);
@@ -445,7 +474,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     const derivSymbol = instrumentToDerivSymbol(currentInstrument);
 
     const tradePayload = {
-      token: apiToken,
+      token: currentToken,
       symbol: derivSymbol,
       contract_type: action,
       duration: durationValue,
@@ -457,27 +486,23 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       take_profit: tpAmount,
     };
 
-    console.log(`[Dashboard] Attempting to place Deriv trade on account ${targetAccountId} with details:`, tradePayload);
+    console.log(`[Dashboard] Attempting to place Deriv trade on account ${currentTargetAccountId} with details:`, tradePayload);
     try {
-      const tradeResult: PlaceTradeResponse = await placeTrade(tradePayload, targetAccountId);
-      console.log(`[Dashboard] Deriv trade placed successfully on account ${targetAccountId}:`, tradeResult);
+      const tradeResult: PlaceTradeResponse = await placeTrade(tradePayload, currentTargetAccountId);
+      console.log(`[Dashboard] Deriv trade placed successfully on account ${currentTargetAccountId}:`, tradeResult);
       toast({
         title: `Trade Placed on Deriv (${selectedDerivAccountType})`,
         description: `ID: ${tradeResult.contract_id}. Entry: ${tradeResult.entry_spot}, Buy: ${tradeResult.buy_price.toFixed(getInstrumentDecimalPlaces(currentInstrument))}`
       });
 
       // Attempt to refresh balance after successful trade
-      // RE-FETCH BALANCE AFTER TRADE
-      if (selectedDerivAccountType && targetAccountId) {
-        console.log(`[DashboardPage] Post-trade: Attempting balance refresh for ${selectedDerivAccountType} account ${targetAccountId}.`);
-        fetchBalanceForAccount(targetAccountId, selectedDerivAccountType);
+      if (selectedDerivAccountType && currentTargetAccountId) {
+        console.log(`[DashboardPage] Post-trade: Attempting balance refresh for ${selectedDerivAccountType} account ${currentTargetAccountId}.`);
+        fetchBalanceForAccount(currentTargetAccountId, selectedDerivAccountType);
       }
-      // The existing call to updateSelectedDerivAccountType might also trigger a balance refresh if that function was enhanced,
-      // but a direct call here ensures it happens immediately with the new fetchBalanceForAccount.
-      // Consider removing: await updateSelectedDerivAccountType(selectedDerivAccountType); if it's redundant for balance fetching.
 
     } catch (error) {
-      console.error(`[Dashboard] Deriv trade placement error on account ${targetAccountId}:`, error);
+      console.error(`[Dashboard] Deriv trade placement error on account ${currentTargetAccountId}:`, error);
       toast({
         title: `Deriv Trade Failed (${selectedDerivAccountType})`,
         description: error instanceof Error ? error.message : "Failed to execute trade. Please try again.",
@@ -506,8 +531,23 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         tradingMode: tradingMode,
         aiStrategyId: selectedAiStrategyId,
       };
-      const token = userInfo?.derivApiToken?.access_token;
-      const currentCandles = await getCandles(currentInstrument, 60, 60, token);
+
+      let currentToken: string | undefined | null = null;
+      if (selectedDerivAccountType === 'demo') {
+        currentToken = userInfo?.derivDemoApiToken;
+      } else if (selectedDerivAccountType === 'real') {
+        currentToken = userInfo?.derivRealApiToken;
+      } else {
+        currentToken = userInfo?.derivAccessToken; // Fallback if needed, though UI should enforce selection
+      }
+
+      if (!currentToken) {
+        toast({ title: "Token Missing", description: `API token for ${selectedDerivAccountType || 'selected'} account not found for AI recommendation.`, variant: "destructive" });
+        setIsFetchingManualRecommendation(false);
+        return;
+      }
+
+      const currentCandles = await getCandles(currentInstrument, 60, 60, currentToken);
       const closePrices = currentCandles.map(candle => candle.close);
       const highPrices = currentCandles.map(candle => candle.high);
       const lowPrices = currentCandles.map(candle => candle.low);
@@ -534,7 +574,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     } finally {
       setIsFetchingManualRecommendation(false);
     }
-  }, [currentInstrument, tradingMode, selectedAiStrategyId, authStatus, selectedDerivAccountType, userInfo?.derivApiToken?.access_token, toast, router, setIsFetchingManualRecommendation, setAiRecommendation]);
+  }, [currentInstrument, tradingMode, selectedAiStrategyId, authStatus, selectedDerivAccountType, userInfo, toast, router, setIsFetchingManualRecommendation, setAiRecommendation]); // Added userInfo
 
   const logAutomatedTradingEvent = (message: string) => {
     setAutomatedTradingLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
@@ -546,13 +586,25 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       router.push('/auth/login');
       return;
     }
-    const currentToken = userInfo?.derivApiToken?.access_token;
-    const currentTargetAccountId = selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId;
+
+    let currentToken: string | undefined | null = null;
+    let currentTargetAccountId: string | undefined | null = null;
+
+    if (selectedDerivAccountType === 'demo') {
+      currentToken = userInfo?.derivDemoApiToken;
+      currentTargetAccountId = derivDemoAccountId;
+    } else if (selectedDerivAccountType === 'real') {
+      currentToken = userInfo?.derivRealApiToken;
+      currentTargetAccountId = derivRealAccountId;
+    }
 
     if (!currentToken || !currentTargetAccountId) {
-      toast({ title: "Account Not Ready", description: "Deriv token or account ID is missing. Please check your profile.", variant: "destructive" });
+      toast({ title: "Account Not Ready", description: `The ${selectedDerivAccountType} account token or ID is missing. Please check your profile.`, variant: "destructive" });
+      setIsPreparingAutoTrades(false); // Reset preparation state
+      setIsAutoTradingActive(false); // Ensure session doesn't stay active
       return;
     }
+
     if (autoTradeTotalStake <= 0 || autoTradeTotalStake > currentBalance) {
       toast({ title: "Invalid Stake", description: `Total stake $${autoTradeTotalStake} must be positive and within balance $${currentBalance.toFixed(2)}.`, variant: "destructive" });
       return;
@@ -753,9 +805,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     logAutomatedTradingEvent("Processing open trades for potential selling...");
     const sellPromises = activeAutomatedTrades.map(async (trade) => {
       if (trade.status === 'open' && trade.isValidToSell && trade.sellPrice && !trade.id.startsWith('error_')) {
+        // currentToken and currentTargetAccountId for sellContract are defined at the start of handleStopAiAutoTrade
         try {
           logAutomatedTradingEvent(`Attempting to sell contract ID: ${trade.id} for ${trade.instrument} at price ${trade.sellPrice}`);
-          await sellContract(Number(trade.id), trade.sellPrice, currentToken, currentTargetAccountId);
+          await sellContract(Number(trade.id), trade.sellPrice, currentToken!, currentTargetAccountId!); // Added non-null assertion
           logAutomatedTradingEvent(`Successfully sold contract ID: ${trade.id}`);
           toast({ title: "Trade Sold", description: `Contract ${trade.instrument} (ID: ${trade.id}) sold.`, variant: "default" });
           return { ...trade, status: 'sold' as ActiveAutomatedTrade['status'], isSettled: true, exitTime: Date.now() }; // P&L would be determined by sell_price vs buy_price, handled by monitoring or BE
@@ -791,11 +844,20 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     }
 
     const monitoringInterval = setInterval(async () => {
-      const currentToken = userInfo?.derivApiToken?.access_token;
-      const currentTargetAccountId = selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId;
+      let currentToken: string | undefined | null = null;
+      let currentTargetAccountId: string | undefined | null = null;
+
+      if (selectedDerivAccountType === 'demo') {
+        currentToken = userInfo?.derivDemoApiToken;
+        currentTargetAccountId = derivDemoAccountId;
+      } else if (selectedDerivAccountType === 'real') {
+        currentToken = userInfo?.derivRealApiToken;
+        currentTargetAccountId = derivRealAccountId;
+      }
 
       if (!currentToken || !currentTargetAccountId) {
-        logAutomatedTradingEvent("Monitoring paused: Deriv token or account ID missing.");
+        logAutomatedTradingEvent(`Monitoring paused: ${selectedDerivAccountType} account token or ID missing.`);
+        // Potentially stop isAutoTradingActive if this persists, or alert user more strongly.
         return;
       }
 
