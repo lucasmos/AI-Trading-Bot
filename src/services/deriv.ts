@@ -251,9 +251,10 @@ export async function getCandles(
       }
       console.error('[DerivService/getCandles] WebSocket Error Event:', event);
       cleanup(true, errorMessage);
-      reject(new Error(errorMessage));
+      if (ws?.readyState !== WebSocket.CLOSING && ws?.readyState !== WebSocket.CLOSED) {
+        reject(new Error(errorMessage));
+      }
     };
-
     ws.onclose = (event) => {
       console.log(`[DerivService/getCandles] WebSocket connection closed for ${symbolForTimeoutLog}. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
       cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
