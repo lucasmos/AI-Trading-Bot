@@ -143,8 +143,23 @@ export async function getCandles(
   const decimalPlaces = getInstrumentDecimalPlaces(instrument);
 
   const ws = new WebSocket(DERIV_API_URL);
+  let operationTimeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutDuration = 15000; // 15 seconds for candles
+  const symbolForTimeoutLog = symbol; // Capture for timeout log
 
-  return new Promise((resolve, reject) => {
+  const cleanup = (isError: boolean = false, message?: string) => {
+    if (operationTimeout) {
+      clearTimeout(operationTimeout);
+      operationTimeout = null;
+    }
+    if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+      const logMessage = `[DerivService/getCandles] Closing WebSocket for ${symbolForTimeoutLog}. ${message || (isError ? "Error occurred" : "Operation complete")}`;
+      if (isError) console.error(logMessage); else console.log(logMessage);
+      ws.close(1000, message || (isError ? "Error occurred" : "Operation complete"));
+    }
+  };
+
+  const promiseLogic = new Promise<CandleData[]>((resolve, reject) => {
     ws.onopen = () => {
       let authorized = false;
       const authPayloadForLog = { authorize: token ? 'TOKEN_PRESENT' : (DERIV_API_TOKEN ? 'GLOBAL_DEMO_TOKEN_USED' : 'NO_TOKEN_SPECIFIED_FOR_AUTH') };
@@ -187,70 +202,80 @@ export async function getCandles(
         
         if (response.error) {
           console.error('[DerivService/getCandles] API Error:', response.error);
+          cleanup(true, response.error.message);
           reject(new Error(response.error.message || 'Unknown API error'));
-          ws.close();
           return;
         }
         
         if (response.msg_type === 'candles') {
           const candles: CandleData[] = (response.candles || []).map((candle: any) => ({
-            time: formatTickTime(candle.epoch), // Ensure formatTickTime is defined
+            time: formatTickTime(candle.epoch),
             epoch: candle.epoch,
             open: parseFloat(candle.open.toFixed(decimalPlaces)),
             high: parseFloat(candle.high.toFixed(decimalPlaces)),
             low: parseFloat(candle.low.toFixed(decimalPlaces)),
             close: parseFloat(candle.close.toFixed(decimalPlaces)),
           }));
-          resolve(candles.slice(-count)); // Ensure only requested count is resolved
-          ws.close();
+          cleanup(false, "Candles received successfully");
+          resolve(candles.slice(-count));
+          return;
         } else if (response.msg_type === 'authorize') {
           if (response.error) {
-            console.error('[DerivService/getCandles] Authorization Error:', response.error);
-            // Don't necessarily reject here, as candle data might still be public for some symbols.
-            // The ticks_history request will be sent after the timeout.
-            // If ticks_history fails due to auth, its own error handling will trigger.
+            console.error('[DerivService/getCandles] Authorization Error:', response.error.message);
+            // Don't reject here for auth error if public data might still be accessible
+            // The ticks_history request will proceed and fail if auth was truly required.
           } else {
             console.log('[DerivService/getCandles] Authorization successful/response received.');
           }
-          // The main logic for sending ticks_history is in the setTimeout after onopen.
-        } else if (response.msg_type === 'tick_history') { // Alternative response type for ticks_history
+        } else if (response.msg_type === 'tick_history') {
              console.warn('[DerivService/getCandles] Received tick_history instead of candles. This might indicate an issue or different API version for the symbol.');
-             // Attempt to process if structure is similar or known, otherwise reject or handle as error.
-             // For now, let's assume it might be an error in expectation for 'candles' style.
+             cleanup(true, "Received 'tick_history' msg_type when 'candles' was expected.");
              reject(new Error("Received 'tick_history' msg_type when 'candles' was expected."));
-             ws.close();
+             return;
         }
       } catch (e) {
         console.error('[DerivService/getCandles] Error processing message:', e);
+        cleanup(true, (e as Error).message);
         reject(e);
-        ws.close();
       }
     };
 
     ws.onerror = (event) => {
       let errorMessage = 'WebSocket error fetching candles.';
-      // Attempt to get more details from the event
       if (event && typeof event === 'object') {
-        // For a standard ErrorEvent, `message` might be available.
-        // For a generic Event from WebSocket, it might not have a direct 'message'.
-        // We can log the type or stringify it.
-        // Browsers usually log the Event object well, but in Node.js or some environments it might be just '{}'.
-        // The console.error below will show the object, this is for the rejected Error.
         if ('message' in event && (event as any).message) {
             errorMessage = `WebSocket Error: ${(event as any).message}`;
         } else {
             errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
         }
       }
-      console.error('[DerivService/getCandles] WebSocket Error Event:', event); // Log the full event object
-      reject(new Error(errorMessage)); // Reject with a more informative message
-        ws.close();
+      console.error('[DerivService/getCandles] WebSocket Error Event:', event);
+      cleanup(true, errorMessage);
+      reject(new Error(errorMessage));
     };
 
     ws.onclose = (event) => {
-      console.log('[DerivService/getCandles] WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+      console.log(`[DerivService/getCandles] WebSocket connection closed for ${symbolForTimeoutLog}. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
+      cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      // If the promise is still pending at this point (i.e., not resolved/rejected by onmessage, onerror, or timeout)
+      // it implies an unexpected closure. The timeout should eventually catch this if it hangs.
+      // However, if it closes cleanly before timeout AND before data, it's an issue.
+      // The cleanup call above will clear the timeout. We might need to reject here if not already settled.
+      // For now, relying on timeout or specific handlers to reject.
     };
   });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<CandleData[]>((_, rejectTimeout) => {
+      operationTimeout = setTimeout(() => {
+        const reason = `getCandles operation timed out for symbol ${symbolForTimeoutLog}`;
+        console.error(`[DerivService/getCandles] ${reason}`);
+        cleanup(true, "Operation timed out");
+        rejectTimeout(new Error(reason));
+      }, timeoutDuration);
+    })
+  ]);
 }
 
 export async function getContractOfferings(instrumentSymbol: string, token?: string): Promise<DerivContractOffering[]> {
