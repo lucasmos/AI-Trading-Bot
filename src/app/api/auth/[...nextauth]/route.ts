@@ -28,6 +28,8 @@ interface ExtendedToken {
   derivRealAccountId?: string;
   derivRealBalance?: number;
   selectedDerivAccountType?: string; // "demo" or "real"
+  derivDemoApiToken?: string; // Newly added
+  derivRealApiToken?: string; // Newly added
   name?: string | null;
   email?: string | null;
   picture?: string | null;
@@ -251,6 +253,8 @@ export const authOptions: NextAuthOptions = {
                 extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
                 extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
                 extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+                extendedToken.derivDemoApiToken = userSettings.derivDemoApiToken ?? undefined; // Added
+                extendedToken.derivRealApiToken = userSettings.derivRealApiToken ?? undefined; // Added
 
                 // Determine the primary derivAccountId for the token based on selected type
                 if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
@@ -288,6 +292,8 @@ export const authOptions: NextAuthOptions = {
                     extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
                     extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
                     extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+                    extendedToken.derivDemoApiToken = userSettings.derivDemoApiToken ?? undefined; // Added
+                    extendedToken.derivRealApiToken = userSettings.derivRealApiToken ?? undefined; // Added
                     if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
                       extendedToken.derivAccountId = userSettings.derivRealAccountId;
                     } else if (userSettings.selectedDerivAccountType === "demo" && userSettings.derivDemoAccountId) {
@@ -316,6 +322,8 @@ export const authOptions: NextAuthOptions = {
                     extendedToken.selectedDerivAccountType = userSettings.selectedDerivAccountType ?? "demo";
                     extendedToken.derivDemoBalance = userSettings.derivDemoBalance ?? undefined;
                     extendedToken.derivRealBalance = userSettings.derivRealBalance ?? undefined;
+                    extendedToken.derivDemoApiToken = userSettings.derivDemoApiToken ?? undefined; // Added
+                    extendedToken.derivRealApiToken = userSettings.derivRealApiToken ?? undefined; // Added
                      if (userSettings.selectedDerivAccountType === "real" && userSettings.derivRealAccountId) {
                       extendedToken.derivAccountId = userSettings.derivRealAccountId;
                     } else if (userSettings.selectedDerivAccountType === "demo" && userSettings.derivDemoAccountId) {
@@ -354,6 +362,8 @@ export const authOptions: NextAuthOptions = {
         derivRealAccountId: extendedToken.derivRealAccountId,
         derivRealBalance: extendedToken.derivRealBalance,
         selectedDerivAccountType: extendedToken.selectedDerivAccountType,
+        derivDemoApiTokenPresent: !!extendedToken.derivDemoApiToken, // Added for logging
+        derivRealApiTokenPresent: !!extendedToken.derivRealApiToken, // Added for logging
       });
       return extendedToken;
     },
@@ -379,6 +389,8 @@ export const authOptions: NextAuthOptions = {
         sessionUser.derivRealAccountId = extendedToken.derivRealAccountId;
         sessionUser.derivRealBalance = extendedToken.derivRealBalance;
         sessionUser.selectedDerivAccountType = extendedToken.selectedDerivAccountType;
+        sessionUser.derivDemoApiToken = extendedToken.derivDemoApiToken; // Added
+        sessionUser.derivRealApiToken = extendedToken.derivRealApiToken; // Added
       }
       
       // console.log('[NextAuth Callbacks] Session callback - session object to be returned:', JSON.stringify(session, (key, value) => key === 'derivAccessToken' && value ? '******' : value, 2));

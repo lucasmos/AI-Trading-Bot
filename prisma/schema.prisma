@@ -90,6 +90,8 @@ model UserSettings {
   derivDemoBalance          Float?
   derivRealBalance          Float?
   lastBalanceSync           DateTime? // Timestamp of the last successful balance update
+  derivRealApiToken         String?   // New field
+  derivDemoApiToken         String?   // New field
 
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt

@@ -1116,48 +1116,47 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
 
         if (response.msg_type === 'authorize') {
           if (response.authorize?.loginid) {
-            console.log(`[DerivService/placeTrade] Authorization successful for account ${accountId}. Current loginid: ${response.authorize.loginid}. Attempting to switch to target accountId: ${accountId}.`);
-            console.log('[DerivService/placeTrade] Sending account_switch request:', JSON.stringify({ account_switch: accountId }));
-            ws!.send(JSON.stringify({ account_switch: accountId }));
-          } else {
-            cleanupAndLog('Authorization failed. No loginid in response.', true);
-            reject(new Error(`Authorization failed for placing trade on account ${accountId}.`));
-          }
-        } else if (response.msg_type === 'account_switch') {
-          if (response.error) {
-            cleanupAndLog(`Error switching to account ${accountId}: ${response.error.message}`, true);
-            reject(new Error(response.error.message || `Failed to switch to Deriv account ${accountId}.`));
-            return;
-          }
+            const currentLoginId = response.authorize.loginid;
+            console.log(`[DerivService/placeTrade] Authorization successful. Token's current active account: ${currentLoginId}. Target account for trade: ${accountId}.`);
 
-          const switchedToLoginId = response.account_switch?.current_loginid || response.account_switch?.loginid; // Deriv API might use either
-          if (switchedToLoginId === accountId) {
-            console.log(`[DerivService/placeTrade] Successfully switched to account: ${accountId}. Requesting proposal...`);
+            if (currentLoginId !== accountId) {
+              const errorMessage = `Session not active on target trade account. Current active: ${currentLoginId}, Target: ${accountId}. Please re-select account in UI or ensure Deriv session is active on target.`;
+              console.error(`[DerivService/placeTrade] Account mismatch: ${errorMessage}`);
+              cleanupAndLog(`Account mismatch: ${errorMessage}`, true); // cleanupAndLog is defined in placeTrade
+              reject(new Error(errorMessage));
+              return; // Stop further processing
+            }
 
-            // Construct and send proposal request
-            const apiContractType = tradeDetails.contract_type; // CORRECTED LOGIC
+            // If we reach here, currentLoginId === accountId, so we are on the correct account.
+            console.log(`[DerivService/placeTrade] Session already active on target account ${accountId}. Proceeding to proposal...`);
+
+            // Construct and send proposal request (this part of the logic can be moved here from the old 'account_switch' success path)
+            const apiContractType = tradeDetails.contract_type;
             const proposalRequest: any = {
               proposal: 1,
-              subscribe: 1, // Subscribe to keep the proposal ID valid for a short time
+              subscribe: 1,
               amount: tradeDetails.amount,
               basis: tradeDetails.basis,
-              contract_type: apiContractType, // Use the corrected type
+              contract_type: apiContractType,
               currency: tradeDetails.currency,
               duration: tradeDetails.duration,
               duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
-              // Include stop_loss / take_profit here if your API supports it at proposal or if you adapt this
             };
-            // This console.log was already present, but I'm ensuring it's exactly as requested by the prompt, which it is.
-            console.log(`[DerivService/placeTrade] Sending proposal request for account ${accountId}:`, proposalRequest);
+            console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
             ws!.send(JSON.stringify(proposalRequest));
+
           } else {
-            cleanupAndLog(`Failed to switch to account ${accountId}. Expected ${accountId} but got ${switchedToLoginId}. Response: ${JSON.stringify(response)}`, true);
-            reject(new Error(`Failed to switch to Deriv account ${accountId}. Active account is ${switchedToLoginId}.`));
+            // Authorization itself failed (e.g., invalid token)
+            const authFailedMsg = 'Authorization failed. No loginid in response.';
+            console.error(`[DerivService/placeTrade] ${authFailedMsg}`, JSON.stringify(response));
+            cleanupAndLog(authFailedMsg, true);
+            reject(new Error(authFailedMsg));
+            return;
           }
         } else if (response.msg_type === 'proposal') {
           if (response.proposal && response.proposal.id && response.proposal.spot) {
-            proposalId = response.proposal.id;
+            proposalId = response.proposal.id; // proposalId is a variable in placeTrade scope
             entrySpot = response.proposal.spot;
             console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
 

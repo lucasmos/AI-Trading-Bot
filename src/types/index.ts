@@ -169,7 +169,7 @@ export interface UserInfo {
   provider?: string; // From NextAuth account
 
   // Deriv Specific fields - these should align with what's passed from NextAuth session and used in AuthContext
-  derivAccessToken?: string; // The raw access token from Deriv
+  derivAccessToken?: string; // The raw access token from Deriv (usually the one for the currently selected real/demo account type for general API calls)
   derivApiToken?: { // Structured token, potentially for easier use or if it includes more than just access_token
     access_token: string;
     // Potentially other token-related fields like expiry if available/needed later
@@ -180,6 +180,9 @@ export interface UserInfo {
   derivDemoBalance?: number | null;
   derivRealBalance?: number | null;
   selectedDerivAccountType?: 'demo' | 'real' | null; // User's preferred account type to use by default
+
+  derivDemoApiToken?: string | null; // Token specifically for the Demo account
+  derivRealApiToken?: string | null; // Token specifically for the Real account
 
   // Older Deriv fields from a previous structure - review if still needed or can be deprecated
   derivId?: string | null; // Potentially the Deriv User ID (providerAccountId)

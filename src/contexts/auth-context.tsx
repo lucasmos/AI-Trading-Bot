@@ -186,6 +186,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         selectedDerivAccountType: nextAuthUser.selectedDerivAccountType as ('demo' | 'real' | null),
         // Ensure derivApiToken is correctly mapped if it's a nested object in session
         derivApiToken: nextAuthUser.derivApiToken || (nextAuthUser.derivAccessToken ? { access_token: nextAuthUser.derivAccessToken } : undefined),
+
+        // Newly added mappings:
+        derivDemoApiToken: nextAuthUser.derivDemoApiToken || null, // Ensure fallback to null if undefined
+        derivRealApiToken: nextAuthUser.derivRealApiToken || null, // Ensure fallback to null if undefined
       };
 
       console.log('[AuthContext] Adapted user from NextAuth session:', JSON.stringify(adaptedUser, null, 2));
