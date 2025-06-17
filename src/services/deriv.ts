@@ -451,23 +451,13 @@ export async function getGlobalTradingOfferings(token?: string): Promise<Trading
   const req_id = Date.now(); // Unique req_id for this call
 
   // Local cleanup function
-  const cleanupAndLog = (
-    logMessage: string,
-    isError: boolean = false,
-    wsToClose: WebSocket | null = ws,
-    shouldClose: boolean = true,
-  ) => {
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
     if (timeoutTimer) clearTimeout(timeoutTimer);
     timeoutTimer = null; // Important to nullify to prevent reuse by other logic if ws persists
     const fullLogMessage = `[DerivService/getGlobalTradingOfferings] ${logMessage}`;
     if (isError) console.error(fullLogMessage);
     else console.log(fullLogMessage);
-    if (
-      shouldClose &&
-      wsToClose &&
-      wsToClose.readyState !== WebSocket.CLOSED &&
-      wsToClose.readyState !== WebSocket.CLOSING
-    ) {
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
       wsToClose.close(1000, logMessage.substring(0, 100));
     }
   };
@@ -477,11 +467,9 @@ export async function getGlobalTradingOfferings(token?: string): Promise<Trading
     console.log('[DerivService/getGlobalTradingOfferings] Attempting to connect...');
 
     ws.onopen = () => {
-ws.onopen = () => {
-  console.log("[DerivService/getGlobalTradingOfferings] WebSocket connection opened.");
-  const authReqId = req_id + 1;
-  // …rest of onopen logic…
-};
+      cleanupAndLog("WebSocket connection opened."); // Log with context
+      const authReqId = req_id + 1; // Separate req_id for auth
+
       if (token) {
         console.log('[DerivService/getGlobalTradingOfferings] Sending authorize request:', JSON.stringify({ authorize: 'TOKEN_PRESENT', req_id: authReqId }));
         ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
