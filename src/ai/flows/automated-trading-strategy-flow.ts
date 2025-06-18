@@ -83,7 +83,7 @@ Available Trade Offerings by Instrument (IMPORTANT!):
   For Instrument: {{@key}}
     {{#if this.rise_fall}}
     - Trade Type: Rise/Fall (CALL/PUT)
-      Available Durations: {{#if this.rise_fall.length}}{{join this.rise_fall ", "}}{{else}}None specified{{/if}}
+      Available Durations: {{#if this.rise_fall.length}}{{#each this.rise_fall}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None specified{{/if}}
     {{else}}
     - No Rise/Fall trade type specified for this instrument in the offerings.
     {{/if}}
