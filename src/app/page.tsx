@@ -863,7 +863,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         try {
           logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s using global offerings.`);
 
+          let symbolOfferings: FlowAutomatedTradingStrategyInput | undefined; // This type is incorrect, should be SymbolTradeDurations
+          // Correcting type for symbolOfferings based on expected structure of globalOfferingsData
           let foundSymbolOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
+
           for (const market of globalOfferingsData!) {
             for (const symGroup of market.data) {
               if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) { // Added s &&

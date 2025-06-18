@@ -467,7 +467,7 @@ export async function getGlobalTradingOfferings(token?: string): Promise<Trading
     console.log('[DerivService/getGlobalTradingOfferings] Attempting to connect...');
 
     ws.onopen = () => {
-      cleanupAndLog("WebSocket connection opened."); // Log with context
+      cleanupAndLog("WebSocket connection opened.", false, null); // Log with context, prevent default close
       const authReqId = req_id + 1; // Separate req_id for auth
 
       if (token) {
