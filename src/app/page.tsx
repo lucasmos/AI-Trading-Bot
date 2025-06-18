@@ -497,7 +497,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       }
 
       if (currentInstrumentTradingTimes && currentInstrumentTradingTimes.times) {
-        const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData);
+        const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, new Date()); // Pass new Date()
         setIsCurrentInstrumentMarketOpen(status.isOpen);
 
         const formattedTimes = formatTradingHoursForDisplay(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, ['GMT', 'UTC', 'Africa/Nairobi']);

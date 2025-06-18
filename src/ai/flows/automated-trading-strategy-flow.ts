@@ -16,6 +16,7 @@ import type {
   AutomatedTradingStrategyOutput as ImportedAutomatedTradingStrategyOutput,
   AutomatedTradeProposal as ImportedAutomatedTradeProposal
 } from '@/types';
+import { FOREX_CRYPTO_COMMODITY_INSTRUMENTS } from '@/config/instruments';
 
 // Define a schema for individual instrument indicators (can be shared or redefined)
 const InstrumentIndicatorDataSchema = zod.object({
@@ -32,11 +33,11 @@ const PriceTickSchema = zod.object({
   time: zod.string(),
 });
 
-const ForexCryptoCommodityInstrumentTypeSchema = zod.string(); // Using string and casting
+const ForexCryptoCommodityInstrumentTypeSchema = zod.string(); // This will be replaced by zod.enum
 
 const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid conflict with exported type alias
   totalStake: zod.number().min(1),
-  instruments: zod.array(ForexCryptoCommodityInstrumentTypeSchema),
+  instruments: zod.array(zod.enum(FOREX_CRYPTO_COMMODITY_INSTRUMENTS as [string, ...string[]])),
   tradingMode: zod.enum(['conservative', 'balanced', 'aggressive']),
   aiStrategyId: zod.string().optional().describe('The selected AI trading strategy ID.'),
   stopLossPercentage: zod.number().min(1).max(50).optional().describe('User-defined stop-loss percentage (e.g., 1-50%). Default is 5% if not provided.'),
@@ -131,33 +132,46 @@ const automatedTradingStrategyFlow = ai.defineFlow(
       }
     }
 
+    // Process instrumentOfferings immutably
+    const processedInstrumentOfferings: AutomatedTradingStrategyFlowInput['instrumentOfferings'] = {};
+    if (input.instrumentOfferings) {
+      for (const instrumentKey in input.instrumentOfferings) {
+        const originalOffering = input.instrumentOfferings[instrumentKey];
+        // Create a new offering object by spreading the originalOffering
+        // and explicitly type the newOffering to include tradingTimesDataString
+        const newOffering: typeof originalOffering & { tradingTimesDataString?: string } = { ...originalOffering };
+
+        let ttDataString = 'Data not available.'; // Default
+        if (originalOffering.tradingTimesData) {
+          // Type-safe check for error property
+          if (typeof originalOffering.tradingTimesData === 'object' &&
+              originalOffering.tradingTimesData !== null &&
+              'error' in originalOffering.tradingTimesData &&
+              typeof originalOffering.tradingTimesData.error === 'string') {
+            ttDataString = `Error fetching trading times: ${originalOffering.tradingTimesData.error}`;
+          } else if (typeof originalOffering.tradingTimesData === 'object' && originalOffering.tradingTimesData !== null) {
+            // Check if it's not the error object before stringifying
+            if (!('error' in originalOffering.tradingTimesData)) {
+                 ttDataString = JSON.stringify(originalOffering.tradingTimesData);
+            } else {
+                // It's an object but has an error property we didn't catch above, or some other structure
+                ttDataString = 'Trading times data in unexpected error format.';
+            }
+          }
+          // Non-object tradingTimesData will use the default 'Data not available.'
+        }
+        newOffering.tradingTimesDataString = ttDataString;
+        processedInstrumentOfferings[instrumentKey] = newOffering;
+      }
+    }
+
     // Ensure all properties passed to prompt are defined in AutomatedTradingStrategyInputZodSchema
     const promptInput: AutomatedTradingStrategyFlowInput = {
       ...input,
-      instruments: input.instruments as ForexCryptoCommodityInstrumentType[],
+      instruments: input.instruments,
+      instrumentOfferings: processedInstrumentOfferings, // Use the new immutable object
       formattedIndicatorsString: formattedIndicators,
     };
-
-    // Prepare instrumentOfferings with tradingTimesDataString for the prompt
-    if (promptInput.instrumentOfferings) {
-      for (const instrumentKey in promptInput.instrumentOfferings) {
-        const offering = promptInput.instrumentOfferings[instrumentKey];
-        if (offering.tradingTimesData) {
-          if (offering.tradingTimesData.error) {
-            offering.tradingTimesDataString = `Error fetching trading times: ${offering.tradingTimesData.error}`;
-          } else {
-            try {
-              offering.tradingTimesDataString = JSON.stringify(offering.tradingTimesData);
-            } catch (e) {
-              console.error(`[automatedTradingStrategyFlow] Error stringifying tradingTimesData for ${instrumentKey}:`, e);
-              offering.tradingTimesDataString = "Error: Could not process trading times data.";
-            }
-          }
-        } else {
-          offering.tradingTimesDataString = 'Data not available.';
-        }
-      }
-    }
     // stopLossPercentage will be passed through via ...input if present
 
     const result = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };

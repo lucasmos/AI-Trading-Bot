@@ -7,6 +7,7 @@
 // import WebSocket from 'ws'; // Removed: 'ws' is for Node.js, browser has native WebSocket
 // Types import - ensuring CandleData is recognized
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
+import type { DerivSymbolSpecificTradingData } from '../types/trading-times'; // Added import
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 console.log('[DerivService Client-Side Check] Initial process.env.NEXT_PUBLIC_DERIV_WS_URL:', process.env.NEXT_PUBLIC_DERIV_WS_URL);
@@ -345,31 +346,9 @@ export async function getCandles(
   ]);
 }
 
-// --- Start of Trading Times Interfaces ---
-interface DerivMarketTimes {
-  opens: string[]; // e.g., ["00:00:00", "10:00:00"] (HH:MM:SS format, GMT)
-  closes: string[]; // e.g., ["08:00:00", "23:59:59"]
-  settlement?: string; // e.g., "23:59:59"
-}
+// Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
 
-interface DerivTradingEvent {
-  dates: string; // e.g., "Fridays", "2023-12-25"
-  descrip: string; // e.g., "Closes early", "Christmas Day"
-  times?: string; // e.g., "20:55:00 GMT"
-}
-
-export interface DerivSymbolSpecificTradingData {
-  feed_license?: string;
-  events: DerivTradingEvent[];
-  times?: DerivMarketTimes;
-}
-// --- End of Trading Times Interfaces ---
-
-export async function getTradingTimes(
-  instrumentSymbol: string,
-  date: string = 'today',
-  token?: string
-): Promise<DerivSymbolSpecificTradingData | { error: string }> {
+export async function getTradingTimes(instrumentSymbol: string, date: string = 'today', token?: string): Promise<any | { error: string }> {
   let ws: WebSocket | null = null;
   const operationTimeoutDuration = 15000; // 15 seconds
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
