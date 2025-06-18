@@ -7,6 +7,7 @@
 // import WebSocket from 'ws'; // Removed: 'ws' is for Node.js, browser has native WebSocket
 // Types import - ensuring CandleData is recognized
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
+import type { DerivSymbolSpecificTradingData } from '../types/trading-times'; // Added import
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 console.log('[DerivService Client-Side Check] Initial process.env.NEXT_PUBLIC_DERIV_WS_URL:', process.env.NEXT_PUBLIC_DERIV_WS_URL);
@@ -345,11 +346,13 @@ export async function getCandles(
   ]);
 }
 
-export async function getTradingTimes(instrumentSymbol: string, date: string = 'today', token?: string): Promise<any> {
+// Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
+
+export async function getTradingTimes(instrumentSymbol: string, date: string = 'today', token?: string): Promise<any | { error: string }> {
   let ws: WebSocket | null = null;
   const operationTimeoutDuration = 15000; // 15 seconds
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
-  const req_id = Date.now(); // Unique req_id for this call
+  const req_id = Date.now(); // Unique req_id for the trading_times request
   const startTime = Date.now();
 
   const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
@@ -373,11 +376,12 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
 
     ws.onopen = () => {
       cleanupAndLog("WebSocket connection opened.", false, null);
-      const authReqId = req_id + 1;
 
       if (token) {
-        console.log(`[DerivService/getTradingTimes] Sending authorize request (req_id: ${authReqId}) for symbol: ${instrumentSymbol}`);
+        const authReqId = req_id + 1; // Distinct req_id for authorization
+        console.log(`[DerivService/getTradingTimes] Sending authorize request (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}`);
         ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
+        // The trading_times request will be sent upon successful authorization
       } else {
         console.log(`[DerivService/getTradingTimes] Sending trading_times request (req_id: ${req_id}) without prior auth for symbol: ${instrumentSymbol}`);
         ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
@@ -389,55 +393,67 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
         const response = JSON.parse(event.data as string);
 
         if (response.error) {
-          cleanupAndLog(`API Error: ${response.error.message}`, true);
-          reject(new Error(response.error.message || `Deriv API error in getTradingTimes for ${instrumentSymbol}`));
+          const errorMessage = response.error.message || `Unknown API error fetching trading times for ${instrumentSymbol}.`;
+          cleanupAndLog(`API Error: ${errorMessage}`, true);
+          reject({ error: errorMessage });
           return;
         }
 
+        // Use authReqId for checking authorization response if token was present
+        const authReqId = token ? req_id + 1 : null;
+
         if (response.msg_type === 'authorize') {
-          if (response.req_id === authReqId && response.authorize) {
-            console.log(`[DerivService/getTradingTimes] Authorization successful for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
-            ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
-          } else if (response.req_id === authReqId && !response.authorize) {
-            cleanupAndLog(`Authorization failed for symbol: ${instrumentSymbol}.`, true);
-            reject(new Error(`Authorization failed in getTradingTimes for ${instrumentSymbol}.`));
-          }
-          // Ignore other authorize messages not matching authReqId
-        } else if (response.msg_type === 'trading_times') {
-          if (response.req_id === req_id) {
-            cleanupAndLog(`Received trading_times response for symbol: ${instrumentSymbol}.`);
-            resolve(response.trading_times); // Resolve with the trading_times data structure
+          if (authReqId && response.req_id === authReqId) { // Check if this is the response to our specific auth request
+            if (response.authorize) {
+              console.log(`[DerivService/getTradingTimes] Authorization successful (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
+              ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
+            } else {
+              const authFailedMsg = `Authorization failed in getTradingTimes (authReqId: ${authReqId}) for ${instrumentSymbol}.`;
+              cleanupAndLog(authFailedMsg, true);
+              reject({ error: authFailedMsg });
+            }
           } else {
-            // Log if a trading_times message with a different req_id is received, but don't reject.
+            // Log unexpected authorize messages but don't necessarily fail the main request yet
+            console.warn(`[DerivService/getTradingTimes] Received an authorize message with unexpected req_id: ${response.req_id} (expected ${authReqId}). Ignoring for main promise.`);
+          }
+        } else if (response.msg_type === 'trading_times') {
+          if (response.req_id === req_id) { // Match with the main trading_times req_id
+            cleanupAndLog(`Received trading_times response (req_id: ${req_id}) for symbol: ${instrumentSymbol}.`);
+            resolve(response.trading_times);
+          } else {
             console.warn(`[DerivService/getTradingTimes] Received trading_times with mismatched req_id. Expected ${req_id}, got ${response.req_id}. Ignoring.`);
           }
         } else {
           console.log(`[DerivService/getTradingTimes] Received other message type: ${response.msg_type} for symbol: ${instrumentSymbol}. Waiting for trading_times or error.`);
         }
       } catch (e: any) {
-        cleanupAndLog(`Error processing message for symbol: ${instrumentSymbol}: ${e?.message || String(e)}`, true);
-        reject(e);
+        const processErrorMsg = `Error processing message for symbol: ${instrumentSymbol}: ${e?.message || String(e)}`;
+        cleanupAndLog(processErrorMsg, true);
+        reject({ error: processErrorMsg });
       }
     };
 
     ws.onerror = (event) => {
-      cleanupAndLog(`WebSocket error for symbol: ${instrumentSymbol}. Type: ${(event as any)?.type}`, true);
-      reject(new Error(`WebSocket error in getTradingTimes for ${instrumentSymbol}.`));
+      const errorMsg = `WebSocket error in getTradingTimes for ${instrumentSymbol}. Type: ${(event as any)?.type}`;
+      cleanupAndLog(errorMsg, true);
+      reject({ error: errorMsg });
     };
 
     ws.onclose = (event) => {
       cleanupAndLog(`WebSocket connection closed for symbol: ${instrumentSymbol}. Code: ${event.code}, Reason: ${event.reason}`, !event.wasClean);
-      // If the promise hasn't settled, it means an unexpected close or the timeout didn't fire first.
-      // The reject in the timeout should handle unresolved promises if the close is due to a hang.
+      // If the promise hasn't settled and it wasn't a clean closure after data, consider it an error.
+      // This is tricky because resolve/reject might have already been called.
+      // The timeout is the main guard against hangs. For now, just logging.
     };
   });
 
   return Promise.race([
     promiseLogic,
-    new Promise<any>((_, reject) => {
+    new Promise<any>((_, reject) => { // Changed from Promise<any | { error: string }> to just Promise<any> for the race
       timeoutTimer = setTimeout(() => {
-        cleanupAndLog(`Operation timed out for symbol: ${instrumentSymbol}.`, true);
-        reject(new Error(`getTradingTimes operation timed out for ${instrumentSymbol}.`));
+        const reason = `getTradingTimes operation timed out for ${instrumentSymbol}.`;
+        cleanupAndLog(reason, true);
+        reject({ error: reason }); // Ensure timeout also rejects with the error object structure
       }, operationTimeoutDuration);
     })
   ]);

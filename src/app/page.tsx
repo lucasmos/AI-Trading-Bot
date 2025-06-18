@@ -30,7 +30,12 @@ import {
   DEFAULT_INSTRUMENT,
   FOREX_CRYPTO_COMMODITY_INSTRUMENTS
 } from "@/config/instruments";
-import { getMarketStatus } from '@/lib/market-hours';
+// Old getMarketStatus will be removed, new ones imported
+import {
+  getCurrentMarketStatus,
+  formatTradingHoursForDisplay,
+  type DerivSymbolSpecificTradingData
+} from '@/lib/market-hours';
 import { DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { DerivBalanceListener } from '@/services/deriv-balance-listener';
@@ -117,8 +122,13 @@ export default function DashboardPage() {
   const [isTradeable, setIsTradeable] = useState<boolean>(true);
   const [stakeAmount, setStakeAmount] = useState<number>(10);
 
-  const [isMarketOpenForSelected, setIsMarketOpenForSelected] = useState<boolean>(true);
-  const [marketStatusMessage, setMarketStatusMessage] = useState<string | null>(null);
+  // const [isMarketOpenForSelected, setIsMarketOpenForSelected] = useState<boolean>(true); // Old state
+  // const [marketStatusMessage, setMarketStatusMessage] = useState<string | null>(null); // Old state
+
+  const [currentInstrumentTradingTimes, setCurrentInstrumentTradingTimes] = useState<DerivSymbolSpecificTradingData | { error: string } | null>(null);
+  const [isCurrentInstrumentMarketOpen, setIsCurrentInstrumentMarketOpen] = useState<boolean | null>(null);
+  const [marketStatusDisplayMessage, setMarketStatusDisplayMessage] = useState<string>('');
+  const [isLoadingTradingTimes, setIsLoadingTradingTimes] = useState<boolean>(false);
 
   const [aiRecommendation, setAiRecommendation] = useState<AiRecommendation | null>(null);
   const [isFetchingManualRecommendation, setIsFetchingManualRecommendation] = useState(false);
@@ -419,11 +429,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   ]);
 
   // Effect to update market status (open/closed) for the currently selected instrument.
-  useEffect(() => {
-    const { isOpen, statusMessage } = getMarketStatus(currentInstrument);
-    setIsMarketOpenForSelected(isOpen);
-    setMarketStatusMessage(statusMessage);
-  }, [currentInstrument]); // Re-run when the current instrument changes
+  // REMOVED OLD useEffect for getMarketStatus
 
   const handleInstrumentChange = (instrument: InstrumentType) => {
     if (FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(instrument as ForexCryptoCommodityInstrumentType)) {
@@ -437,11 +443,82 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             duration: 5000
         });
     }
-    const { isOpen, statusMessage } = getMarketStatus(instrument);
-    setIsMarketOpenForSelected(isOpen);
-    setMarketStatusMessage(statusMessage);
+    // Old status update removed, new useEffects will handle it
     setAiRecommendation(null); 
   };
+
+  // Fetch Trading Times for currentInstrument
+  useEffect(() => {
+    if (!currentInstrument || !userInfo) {
+      setCurrentInstrumentTradingTimes(null);
+      setIsCurrentInstrumentMarketOpen(null);
+      setMarketStatusDisplayMessage('Trading hours require instrument selection and login.');
+      return;
+    }
+
+    const fetchTimes = async () => {
+      setIsLoadingTradingTimes(true);
+      setMarketStatusDisplayMessage(`Loading trading hours for ${currentInstrument}...`);
+      setCurrentInstrumentTradingTimes(null); // Clear previous data
+      setIsCurrentInstrumentMarketOpen(null);
+
+      const derivSymbol = instrumentToDerivSymbol(currentInstrument);
+      let token = selectedDerivAccountType === 'demo' ? userInfo.derivDemoApiToken : userInfo.derivRealApiToken;
+      if (!token) token = userInfo.derivAccessToken; // Fallback
+
+      try {
+        const timesData = await getTradingTimes(derivSymbol, 'today', token || undefined);
+        setCurrentInstrumentTradingTimes(timesData);
+      } catch (err: any) {
+        setCurrentInstrumentTradingTimes({ error: err.message || 'Failed to fetch trading times.' });
+      } finally {
+        setIsLoadingTradingTimes(false);
+      }
+    };
+
+    fetchTimes();
+  }, [currentInstrument, userInfo, selectedDerivAccountType, logAutomatedTradingEvent]);
+
+  // Update Market Status Periodically based on fetched trading times
+  useEffect(() => {
+    const updateStatus = () => {
+      if (!currentInstrumentTradingTimes) {
+        if (!isLoadingTradingTimes) {
+           setMarketStatusDisplayMessage('Trading hours data not available.');
+        }
+        setIsCurrentInstrumentMarketOpen(null);
+        return;
+      }
+
+      if ('error' in currentInstrumentTradingTimes) {
+        setIsCurrentInstrumentMarketOpen(false);
+        setMarketStatusDisplayMessage(`Error fetching trading hours: ${currentInstrumentTradingTimes.error}`);
+        return;
+      }
+
+      if (currentInstrumentTradingTimes && currentInstrumentTradingTimes.times) {
+        const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, new Date()); // Pass new Date()
+        setIsCurrentInstrumentMarketOpen(status.isOpen);
+
+        const formattedTimes = formatTradingHoursForDisplay(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, ['GMT', 'UTC', 'Africa/Nairobi']);
+        let displayMessage = `${status.isOpen ? 'Market Open' : 'Market Closed'}.`;
+        if (status.nextEventTime && status.nextEventType) {
+          // const nextEventOriginalTz = status.nextEventTime.includes('GMT') ? 'GMT' : 'UTC';
+          let nextEventDisplay = status.nextEventTime;
+          displayMessage += ` ${status.nextEventType === 'open' ? 'Opens' : 'Closes'} at ${nextEventDisplay}.`;
+        }
+        displayMessage += ` Details: ${formattedTimes}`;
+        setMarketStatusDisplayMessage(displayMessage);
+      } else {
+        setIsCurrentInstrumentMarketOpen(false);
+        setMarketStatusDisplayMessage('Trading hours data is incomplete or in an unexpected format.');
+      }
+    };
+
+    updateStatus();
+    const intervalId = setInterval(updateStatus, 60000);
+    return () => clearInterval(intervalId);
+  }, [currentInstrumentTradingTimes, isLoadingTradingTimes]);
 
   useEffect(() => {
     const processDurationsFromGlobalOfferings = () => {
@@ -1367,9 +1444,21 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                 instrument={currentInstrument}
                 onInstrumentChange={handleInstrumentChange}
                 instrumentsToShow={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
-                isMarketOpen={isMarketOpenForSelected}
-                marketStatusMessage={marketStatusMessage}
+                isMarketOpen={isCurrentInstrumentMarketOpen === true}
+                marketStatusMessage={isLoadingTradingTimes ? 'Loading trading hours...' : marketStatusDisplayMessage}
             />
+          {/* Example - place this where your current market status is shown */}
+          <div className="text-sm p-2 text-center">
+            {isLoadingTradingTimes ? (
+              <p>Loading trading hours for {currentInstrument}...</p>
+            ) : marketStatusDisplayMessage ? (
+              <p className={isCurrentInstrumentMarketOpen === true ? 'text-green-500' : isCurrentInstrumentMarketOpen === false ? 'text-red-500' : 'text-gray-500'}>
+                <strong>{currentInstrument}:</strong> {marketStatusDisplayMessage}
+              </p>
+            ) : (
+              <p className="text-gray-500"><strong>{currentInstrument}:</strong> Market status unavailable.</p>
+            )}
+          </div>
           {isAutoTradingActive && activeAutomatedTrades.length > 0 && (
             <Card className="shadow-lg">
               <CardHeader>
@@ -1467,8 +1556,8 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             currentBalance={currentBalance}
             supportedInstrumentsForManualAi={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
             currentSelectedInstrument={currentInstrument}
-            isMarketOpenForSelected={isMarketOpenForSelected}
-            marketStatusMessage={marketStatusMessage}
+            isMarketOpenForSelected={isCurrentInstrumentMarketOpen === true} // Use new state
+            marketStatusMessage={isLoadingTradingTimes ? 'Loading trading hours...' : marketStatusDisplayMessage} // Use new state
             stopLossPercentage={selectedStopLossPercentage}
             onStopLossPercentageChange={setSelectedStopLossPercentage}
             stopLossValue={stopLossValue}
