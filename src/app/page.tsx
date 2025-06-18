@@ -447,16 +447,14 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       if (!currentInstrument || !userInfo) {
         setAvailableDurations([]);
         setIsTradeable(false);
+        setTradeDuration('');
         setIsLoadingDurations(false);
         return;
       }
 
-      // Handle loading state or errors from global offerings
       if (isLoadingGlobalOfferings) {
-        setIsLoadingDurations(true); // Reflect that we are waiting for global data
-        // setAvailableDurations([]); // Optionally clear while global is loading
-        // setIsTradeable(false);
-        return; // Wait for global offerings to load
+        setIsLoadingDurations(true);
+        return;
       }
 
       if (globalOfferingsError || !globalOfferingsData) {
@@ -464,24 +462,22 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         toast({ title: "Offerings Error", description: `Could not load duration data: ${globalOfferingsError || 'No offerings data'}.`, variant: "destructive" });
         setAvailableDurations([]);
         setIsTradeable(false);
-        setIsLoadingDurations(false);
         setTradeDuration('');
+        setIsLoadingDurations(false);
         return;
       }
 
-      setIsLoadingDurations(true); // Start loading durations for the specific instrument
+      setIsLoadingDurations(true);
 
       const derivSymbol = instrumentToDerivSymbol(currentInstrument);
       let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
 
       for (const market of globalOfferingsData) {
         for (const symGroup of market.data) {
-          // Check if symGroup.symbol is an array and then find
           if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s.name === derivSymbol)) {
             symbolMarketOfferings = symGroup;
             break;
           } else if (!Array.isArray(symGroup.symbol) && symGroup.symbol.name === derivSymbol) {
-            // Handle cases where symGroup.symbol might not be an array (based on type observation)
             symbolMarketOfferings = symGroup;
             break;
           }
@@ -489,66 +485,77 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         if (symbolMarketOfferings) break;
       }
 
-      if (symbolMarketOfferings) {
-        const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
-
-        if (riseFallTradeType && riseFallTradeType.durations) {
-          const newDurationsSet = new Set<string>();
-          riseFallTradeType.durations.forEach(detail => {
-            if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
-              if (detail.min > 0) newDurationsSet.add(`${detail.min}${detail.name}`);
-
-              // Add some steps for s, m, h, d if range allows
-              if (detail.name === 's' || detail.name === 'm' || detail.name === 'h' || detail.name === 'd') {
-                const minSec = parseDurationToSeconds(`${detail.min}${detail.name}`);
-                const maxSec = parseDurationToSeconds(`${detail.max}${detail.name}`);
-                if (maxSec > minSec && detail.max !== 0) { // max 0 can mean no_expiry or very large
-                    // Simple step: add mid-point if significantly different from min and max
-                    const midSec = Math.floor((minSec + maxSec) / 2);
-                    const midVal = Math.floor(midSec / (detail.name === 's' ? 1 : detail.name === 'm' ? 60 : detail.name === 'h' ? 3600 : 24 * 3600));
-                    if (midVal > detail.min && midVal < detail.max) {
-                         newDurationsSet.add(`${midVal}${detail.name}`);
-                    }
-                   newDurationsSet.add(`${detail.max}${detail.name}`);
-                }
-              } else if (detail.name === 't') { // For ticks, list min to max if reasonable
-                  if (detail.max > detail.min && detail.max !==0 && (detail.max - detail.min <= 10)) { // Only list all if range is small
-                     for(let i = detail.min + 1; i <= detail.max; i++) {
-                        newDurationsSet.add(`${i}${detail.name}`);
-                     }
-                  } else if (detail.max > detail.min && detail.max !== 0) { // if range is large, just add max
-                     newDurationsSet.add(`${detail.max}${detail.name}`);
-                  }
-              }
-            }
-          });
-
-          const sortedDurations = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
-
-          setAvailableDurations(sortedDurations);
-          setIsTradeable(sortedDurations.length > 0);
-
-          if (sortedDurations.length > 0) {
-            if (!sortedDurations.includes(tradeDuration) || tradeDuration === '') {
-              setTradeDuration(sortedDurations[0] as TradeDuration);
-            }
-          } else {
-            setTradeDuration('');
-            setIsTradeable(false); // Ensure tradeable is false if no durations
-            logAutomatedTradingEvent(`No valid 'rise_fall' durations generated for ${currentInstrument} from global offerings.`);
-          }
-        } else {
-          logAutomatedTradingEvent(`No 'rise_fall' trade type or its durations found for ${currentInstrument} in global offerings.`);
-          setAvailableDurations([]);
-          setIsTradeable(false);
-          setTradeDuration('');
-        }
-      } else {
-        logAutomatedTradingEvent(`Symbol ${derivSymbol} for ${currentInstrument} not found in global offerings market data.`);
+      if (!symbolMarketOfferings) {
+        logAutomatedTradingEvent(`Symbol ${derivSymbol} for ${currentInstrument} not found in global offerings.`);
         setAvailableDurations([]);
         setIsTradeable(false);
         setTradeDuration('');
+        setIsLoadingDurations(false);
+        return;
       }
+
+      const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
+
+      if (!riseFallTradeType) {
+        logAutomatedTradingEvent(`No 'rise_fall' trade type found for ${currentInstrument}.`);
+        setAvailableDurations([]);
+        setIsTradeable(false);
+        setTradeDuration('');
+        setIsLoadingDurations(false);
+        return;
+      }
+
+      if (!riseFallTradeType.durations || riseFallTradeType.durations.length === 0) {
+        logAutomatedTradingEvent(`No durations listed for 'rise_fall' on ${currentInstrument}.`);
+        setAvailableDurations([]);
+        setIsTradeable(false);
+        setTradeDuration('');
+        setIsLoadingDurations(false);
+        return;
+      }
+
+      const newDurationsSet = new Set<string>();
+      riseFallTradeType.durations.forEach(detail => { // detail is TradingDurationDetail { display_name, max, min, name }
+        if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
+          // Add the 'min' duration value as a specific offering if positive
+          if (detail.min > 0) {
+            newDurationsSet.add(`${detail.min}${detail.name}`);
+          }
+
+          // For non-tick units ('s', 'm', 'h', 'd'), if max is different from min and positive, add it.
+          if (detail.name !== 't' && detail.max > 0 && detail.max !== detail.min) {
+            newDurationsSet.add(`${detail.max}${detail.name}`);
+          }
+          // For tick units ('t'), if max is greater than min (min already added if >0)
+          else if (detail.name === 't' && detail.max > detail.min) {
+            if ((detail.max - detail.min) <= 10) { // Small range: add intermediate ticks
+              for (let i = detail.min + 1; i <= detail.max; i++) {
+                newDurationsSet.add(`${i}${detail.name}`);
+              }
+            } else { // Large range: add max if different from min (min already added)
+              // The condition detail.max > 0 && detail.max !== detail.min is implicitly true if detail.max > detail.min
+              newDurationsSet.add(`${detail.max}${detail.name}`);
+            }
+          }
+        }
+      });
+
+      const sortedDurations = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
+
+      setAvailableDurations(sortedDurations);
+      setIsTradeable(sortedDurations.length > 0);
+
+      if (sortedDurations.length > 0) {
+        if (!sortedDurations.includes(tradeDuration) || tradeDuration === '') {
+          setTradeDuration(sortedDurations[0] as TradeDuration);
+        }
+      } else {
+        // This case should be covered by the checks above, but as a fallback:
+        logAutomatedTradingEvent(`No valid 'rise_fall' durations generated for ${currentInstrument} after processing.`);
+        setTradeDuration('');
+        setIsTradeable(false);
+      }
+
       setIsLoadingDurations(false);
     };
 
@@ -852,82 +859,89 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       const newActiveTradesBatch: ActiveAutomatedTrade[] = [];
 
       for (const proposedTrade of strategyResult.tradesToExecute) {
+        // This code block goes inside the loop: for (const proposedTrade of strategyResult.tradesToExecute) {
+        // It replaces the previous complex validation logic for duration.
+
         const derivSymbol = instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType);
-        let isValidProposal = false; // Initialize for each proposed trade
-        let validationMessage = `Validation for ${derivSymbol} (proposed: ${proposedTrade.durationSeconds}s) not yet fully performed.`; // Initial message
+        let isValidProposal = false;
+        let validationMessage = '';
+        let instrumentSpecificAvailableDurations: string[] = [];
 
-        // minDurSec and maxDurSec will be defined inside the loop or remain at defaults if no compatible range found
-        let minDurSec = 0;
-        let maxDurSec = Infinity;
+        logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s`);
 
-        try {
-          logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationSeconds}s using global offerings.`);
-
-          let symbolOfferings: FlowAutomatedTradingStrategyInput | undefined; // This type is incorrect, should be SymbolTradeDurations
-          // Correcting type for symbolOfferings based on expected structure of globalOfferingsData
-          let foundSymbolOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
-
-          for (const market of globalOfferingsData!) {
+        // 1. Find symbolMarketOfferings for proposedTrade.instrument from globalOfferingsData
+        let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
+        if (globalOfferingsData) { // Ensure globalOfferingsData is loaded and available in scope
+          for (const market of globalOfferingsData) {
             for (const symGroup of market.data) {
-              if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) { // Added s &&
-                foundSymbolOfferings = symGroup;
+              // Ensure s and symGroup.symbol are not null before accessing properties
+              if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
+                symbolMarketOfferings = symGroup;
                 break;
-              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) { // Added symGroup.symbol &&
-                foundSymbolOfferings = symGroup;
+              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
+                symbolMarketOfferings = symGroup;
                 break;
               }
             }
-            if (foundSymbolOfferings) break;
+            if (symbolMarketOfferings) break;
           }
+        }
 
-          if (!foundSymbolOfferings) {
-            validationMessage = `Instrument ${derivSymbol} not found in global offerings.`;
+        // 2. If symbol offerings found, extract its specific durations for 'rise_fall' trade type
+        if (symbolMarketOfferings) {
+          const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
+          if (riseFallTradeType && riseFallTradeType.durations && riseFallTradeType.durations.length > 0) {
+            const newDurationsSet = new Set<string>();
+            riseFallTradeType.durations.forEach(detail => {
+              if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
+                if (detail.min > 0) {
+                  newDurationsSet.add(`${detail.min}${detail.name}`);
+                }
+                if (detail.name !== 't' && detail.max > 0 && detail.max !== detail.min) {
+                  newDurationsSet.add(`${detail.max}${detail.name}`);
+                }
+                // For tick units ('t'), if max is greater than min (min already added if >0)
+                else if (detail.name === 't' && detail.max > detail.min) {
+                  if ((detail.max - detail.min) <= 10) { // Small range: add intermediate ticks
+                    for (let i = detail.min + 1; i <= detail.max; i++) {
+                      newDurationsSet.add(`${i}${detail.name}`);
+                    }
+                  } else { // Large range: add max if different from min (min already added)
+                    newDurationsSet.add(`${detail.max}${detail.name}`);
+                  }
+                }
+              }
+            });
+            instrumentSpecificAvailableDurations = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
           } else {
-            const riseFallTradeType = foundSymbolOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
-            if (!riseFallTradeType) {
-              validationMessage = `Trade type 'rise_fall' (for CALL/PUT) not offered for ${derivSymbol}.`;
-            } else {
-              let foundValidDurationRange = false; // Reset for each proposal before checking its duration details
-              for (const durDetail of riseFallTradeType.durations) {
-                if (durDetail.name === 't') {
-                  logAutomatedTradingEvent(`Offering for ${derivSymbol} is in ticks (${durDetail.min}t-${durDetail.max}t), AI proposed ${proposedTrade.durationSeconds}s. This specific offering is not a time match.`);
-                  continue; // Skip tick-based offerings if AI proposes in seconds
-                }
-
-                // For time-based units s, m, h, d
-                minDurSec = parseDurationToSeconds(durDetail.min + durDetail.name);
-                // Reset maxDurSec for each durDetail
-                maxDurSec = parseDurationToSeconds(durDetail.max + durDetail.name);
-
-                if (durDetail.name === 'no_expiry' || (durDetail.name !== 's' && durDetail.name !== 't' && durDetail.max === 0)) {
-                  maxDurSec = Infinity;
-                }
-                // No special handling for maxDurSec = 0 for 's' needed here as parseDurationToSeconds would return 0, which is fine.
-
-                if (proposedTrade.durationSeconds >= minDurSec && proposedTrade.durationSeconds <= maxDurSec) {
-                  isValidProposal = true;
-                  foundValidDurationRange = true;
-                  validationMessage = `Proposal for ${derivSymbol} with duration ${proposedTrade.durationSeconds}s is valid within range [${minDurSec}s - ${maxDurSec}s] for unit ${durDetail.name}.`;
-                  logAutomatedTradingEvent(validationMessage); // Log success immediately
-                  break;
-                }
-              } // End of iterating durDetail
-
-              if (!foundValidDurationRange) { // If loop completes and no time-based range matched
-                isValidProposal = false; // Ensure it's false if no range was found
-                // Update validationMessage only if it hasn't already been set to a more specific error like "not offered" or "not found"
-                if (!validationMessage.includes("not found in global offerings") && !validationMessage.includes("not offered for") && !validationMessage.includes("is valid within range")) {
-                   validationMessage = `Proposed duration ${proposedTrade.durationSeconds}s for ${derivSymbol} did not match any available time-based offerings. Last checked range for non-tick: [${minDurSec}s - ${maxDurSec}s].`;
-                }
-              }
-            }
+            validationMessage = `No 'rise_fall' durations found for ${derivSymbol} in its specific offerings.`;
+            // instrumentSpecificAvailableDurations remains empty
           }
+        } else {
+          validationMessage = `Symbol ${derivSymbol} not found in global offerings data.`;
+          // instrumentSpecificAvailableDurations remains empty
+        }
 
-          // Log final validation outcome for this proposal if it wasn't a success or already specific error
-          if (!isValidProposal && !validationMessage.includes("is valid within range")) {
-             logAutomatedTradingEvent(validationMessage);
-          }
+        // 3. Perform the validation using instrumentSpecificAvailableDurations
+        const proposedDurationString = `${proposedTrade.durationSeconds}s`; // AI proposes in seconds
 
+        if (instrumentSpecificAvailableDurations.length === 0) {
+          isValidProposal = false;
+          // Prepend to existing validationMessage if it's already set (e.g. from not finding symbol or rise_fall type)
+          validationMessage = validationMessage ? `${validationMessage} Cannot validate proposal.` : `Could not determine available durations for ${derivSymbol}. Cannot validate proposal.`;
+        } else if (instrumentSpecificAvailableDurations.includes(proposedDurationString)) {
+          isValidProposal = true;
+          validationMessage = `Proposal for ${derivSymbol} with duration ${proposedDurationString} is valid.`;
+        } else {
+          isValidProposal = false;
+          validationMessage = `Proposed duration ${proposedDurationString} for ${derivSymbol} is NOT in its specific list of available durations: [${instrumentSpecificAvailableDurations.join(', ')}].`;
+        }
+        logAutomatedTradingEvent(validationMessage); // Log the final validation outcome
+
+        // The rest of the logic in the loop (if (!isValidProposal) { ... } else { placeTrade... }) remains the same.
+        // Make sure `globalOfferingsData`, `instrumentToDerivSymbol`, `parseDurationToSeconds`, and `logAutomatedTradingEvent`
+        // are accessible within the `startAutomatedTradingSession` function's scope.
+        try {
           if (!isValidProposal) {
             newActiveTradesBatch.push({
               id: `error_validation_${uuidv4()}`,
