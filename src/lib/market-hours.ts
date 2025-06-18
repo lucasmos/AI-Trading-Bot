@@ -241,7 +241,11 @@ export function getCurrentMarketStatus(
       ? `Market Open until ${displayEventTime} GMT.`
       : `Market Closed until ${displayEventTime} GMT.`;
       // Add (Next Day) if epoch is for tomorrow
-      if (createGmtDate(nextEventTimeStr).getUTCDate() !== nowUtc.getUTCDate() && closestNextEventTimeEpoch > nowUtc.getTime()) {
+      const nextEventDate = createGmtDate(nextEventTimeStr);
+      const isNextDay = nextEventDate.getTime() >= nowUtc.getTime() + (24 * 60 * 60 * 1000) ||
+                       (nextEventDate.getUTCDate() !== nowUtc.getUTCDate() &&
+                        nextEventDate.getTime() > nowUtc.getTime());
+      if (isNextDay) {
           message += " (next day)";
       }
   }
