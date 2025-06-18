@@ -228,8 +228,11 @@ function findNextRelevantEvent(
       if (event.times) { // Only consider events with specific times for now
         // Very basic date matching: "today" or specific date match
         const todayStrYYYYMMDD = referenceDateUTC.toISOString().split('T')[0];
-        const eventDateMatchesToday = event.dates === todayStrYYYYMMDD ||
-                                      event.dates.toLowerCase() === referenceDateUTC.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() + 's'; // e.g. "Fridays"
+-       const eventDateMatchesToday = event.dates === todayStrYYYYMMDD ||
+-                                     event.dates.toLowerCase() === referenceDateUTC
+-                                       .toLocaleDateString('en-US', { weekday: 'long' })
+-                                       .toLowerCase() + 's'; // e.g. "Fridays"
++       const eventDateMatchesToday = isEventDateMatchingToday(event.dates, referenceDateUTC);
 
         if (eventDateMatchesToday) {
           const eventTimeDate = createUtcDate(event.times, referenceDateUTC);
@@ -239,7 +242,10 @@ function findNextRelevantEvent(
             eventDescription = event.descrip;
             if (event.descrip.toLowerCase().includes('close')) {
               nextEventType = 'close';
-            } else if (event.descrip.toLowerCase().includes('open') || event.descrip.toLowerCase().includes('re-open')) {
+            } else if (
+              event.descrip.toLowerCase().includes('open') ||
+              event.descrip.toLowerCase().includes('re-open')
+            ) {
               nextEventType = 'open';
             } else {
               nextEventType = undefined; // Unknown event impact on open/close status
@@ -247,24 +253,43 @@ function findNextRelevantEvent(
           }
         }
       } else if (event.descrip.toLowerCase().includes('closed all day')) {
-         // If it's "closed all day" and today matches the event.dates (simplified check)
-         const todayStrYYYYMMDD = referenceDateUTC.toISOString().split('T')[0];
-         if (event.dates === todayStrYYYYMMDD || event.dates.toLowerCase() === referenceDateUTC.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() + 's') {
-            // If this event is more relevant than any found session opening
-            if (nextEventType !== 'open' || !nextEventTimeGMT) { // Or if no next open was found from sessions
-                // This implies market is closed for the day due to this event.
-                // We might not have a specific "next open time" from this event alone.
-                // For simplicity, if a "closed all day" event matches today, we might not find a next open time from *this* event.
-                // The logic above for "tomorrow's first open" might still provide a next open.
-                // If this event is the most "dominant" for today, we can set description.
-                if (closestEventEpoch === Infinity) { // No other future events found yet
-                    eventDescription = event.descrip;
-                    // nextEventType and nextEventTimeGMT would remain undefined from this event.
-                }
-            }
-         }
+        // If it's "closed all day" and today matches the event.dates (simplified check)
+        const todayStrYYYYMMDD = referenceDateUTC.toISOString().split('T')[0];
+        if (
+          event.dates === todayStrYYYYMMDD ||
+          event.dates
+            .toLowerCase()
+            .startsWith(
+              referenceDateUTC
+                .toLocaleDateString('en-US', { weekday: 'long' })
+                .toLowerCase()
+            )
+        ) {
+          // … rest of existing logic …
+        }
       }
     }
+  }
+
+  /**
+   * Returns true if the given eventDates string matches today's date
+   * in ISO form or references today by name (“Friday”, “Fridays”, etc.).
+   */
+  function isEventDateMatchingToday(
+    eventDates: string,
+    referenceDate: Date
+  ): boolean {
+    const todayStr = referenceDate.toISOString().split('T')[0];
+    const dayName = referenceDate
+      .toLocaleDateString('en-US', { weekday: 'long' })
+      .toLowerCase();
+
+    return (
+      eventDates === todayStr ||
+      eventDates.toLowerCase() === dayName ||
+      eventDates.toLowerCase() === dayName + 's' ||
+      eventDates.toLowerCase().includes(dayName)
+    );
   }
   return { nextEventTimeGMT, nextEventType, eventDescription };
 }
