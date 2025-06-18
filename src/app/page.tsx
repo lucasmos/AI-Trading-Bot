@@ -70,17 +70,19 @@ function validateTradeParameters(stake: number, balance: number, accountType: 'd
 
 function parseDurationToSeconds(durationString?: string): number {
   if (!durationString) return 0;
+  // Ensure we extract only leading numbers for parseInt
   const value = parseInt(durationString);
-  if (isNaN(value)) return 0; // Handle cases where parseInt fails, e.g., "unknown"
+  if (isNaN(value)) return 0;
 
   if (durationString.endsWith('s')) return value;
   if (durationString.endsWith('m')) return value * 60;
   if (durationString.endsWith('h')) return value * 60 * 60;
   if (durationString.endsWith('d')) return value * 24 * 60 * 60;
+  if (durationString.endsWith('t')) return value; // Handle ticks - return tick count
 
-  // Fallback for if unit is missing but it's a number (treat as seconds)
-  // This might be too lenient, adjust if strict format adherence is required
-  if (!isNaN(parseInt(durationString))) return parseInt(durationString);
+  // Fallback if just a number (treat as seconds, as per previous logic)
+  // This check should be specific to ensure it's ONLY a number string
+  if (/^\d+$/.test(durationString)) return value;
 
   console.warn(`[parseDurationToSeconds] Unknown duration format: ${durationString}`);
   return 0;
@@ -851,8 +853,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
       for (const proposedTrade of strategyResult.tradesToExecute) {
         const derivSymbol = instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType);
-        let validationMessage = `Validation for ${derivSymbol} not yet performed.`;
-        let isValidProposal = false;
+        let isValidProposal = false; // Initialize for each proposed trade
+        let validationMessage = `Validation for ${derivSymbol} (proposed: ${proposedTrade.durationSeconds}s) not yet fully performed.`; // Initial message
+
+        // minDurSec and maxDurSec will be defined inside the loop or remain at defaults if no compatible range found
         let minDurSec = 0;
         let maxDurSec = Infinity;
 
@@ -865,10 +869,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
           for (const market of globalOfferingsData!) {
             for (const symGroup of market.data) {
-              if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s.name === derivSymbol)) {
+              if (Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) { // Added s &&
                 foundSymbolOfferings = symGroup;
                 break;
-              } else if (!Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) { // Handle non-array case, assuming 'name' exists
+              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) { // Added symGroup.symbol &&
                 foundSymbolOfferings = symGroup;
                 break;
               }
@@ -883,25 +887,46 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             if (!riseFallTradeType) {
               validationMessage = `Trade type 'rise_fall' (for CALL/PUT) not offered for ${derivSymbol}.`;
             } else {
-              let foundValidDurationRange = false;
+              let foundValidDurationRange = false; // Reset for each proposal before checking its duration details
               for (const durDetail of riseFallTradeType.durations) {
+                if (durDetail.name === 't') {
+                  logAutomatedTradingEvent(`Offering for ${derivSymbol} is in ticks (${durDetail.min}t-${durDetail.max}t), AI proposed ${proposedTrade.durationSeconds}s. This specific offering is not a time match.`);
+                  continue; // Skip tick-based offerings if AI proposes in seconds
+                }
+
+                // For time-based units s, m, h, d
                 minDurSec = parseDurationToSeconds(durDetail.min + durDetail.name);
+                // Reset maxDurSec for each durDetail
                 maxDurSec = parseDurationToSeconds(durDetail.max + durDetail.name);
-                if (durDetail.name === 'no_expiry' || durDetail.max === 0) maxDurSec = Infinity;
+
+                if (durDetail.name === 'no_expiry' || (durDetail.name !== 's' && durDetail.name !== 't' && durDetail.max === 0)) {
+                  maxDurSec = Infinity;
+                }
+                // No special handling for maxDurSec = 0 for 's' needed here as parseDurationToSeconds would return 0, which is fine.
 
                 if (proposedTrade.durationSeconds >= minDurSec && proposedTrade.durationSeconds <= maxDurSec) {
                   isValidProposal = true;
                   foundValidDurationRange = true;
                   validationMessage = `Proposal for ${derivSymbol} with duration ${proposedTrade.durationSeconds}s is valid within range [${minDurSec}s - ${maxDurSec}s] for unit ${durDetail.name}.`;
+                  logAutomatedTradingEvent(validationMessage); // Log success immediately
                   break;
                 }
-              }
-              if (!foundValidDurationRange) {
-                validationMessage = `Proposed duration ${proposedTrade.durationSeconds}s for ${derivSymbol} is not valid for any available 'rise_fall' duration units/ranges. Last checked range: [${minDurSec}s - ${maxDurSec}s].`;
+              } // End of iterating durDetail
+
+              if (!foundValidDurationRange) { // If loop completes and no time-based range matched
+                isValidProposal = false; // Ensure it's false if no range was found
+                // Update validationMessage only if it hasn't already been set to a more specific error like "not offered" or "not found"
+                if (!validationMessage.includes("not found in global offerings") && !validationMessage.includes("not offered for") && !validationMessage.includes("is valid within range")) {
+                   validationMessage = `Proposed duration ${proposedTrade.durationSeconds}s for ${derivSymbol} did not match any available time-based offerings. Last checked range for non-tick: [${minDurSec}s - ${maxDurSec}s].`;
+                }
               }
             }
           }
-          logAutomatedTradingEvent(validationMessage);
+
+          // Log final validation outcome for this proposal if it wasn't a success or already specific error
+          if (!isValidProposal && !validationMessage.includes("is valid within range")) {
+             logAutomatedTradingEvent(validationMessage);
+          }
 
           if (!isValidProposal) {
             newActiveTradesBatch.push({
