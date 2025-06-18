@@ -134,6 +134,24 @@ export interface GetGlobalTradingDurationsApiResponse { // Top-level API respons
  * Maps user-friendly instrument names to Deriv API symbols.
  */
 export const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
+  const knownDerivSymbolPatterns = [
+    /^frx[A-Z]+$/,    // Forex, e.g., frxEURUSD
+    /^cry[A-Z]+$/,    // Crypto, e.g., cryBTCUSD
+    /^R_\d+$/,        // Volatility Indices (old), e.g., R_100
+    /^1HZ\d+V?$/,     // 1HZ Volatility Indices, e.g., 1HZ10V, 1HZ100V
+    /^stpRNG\d*$/,    // Step Indices, e.g., stpRNG, stpRNG2
+    /^(BOOM|CRASH)\d+N?$/, // Boom/Crash Indices, e.g., BOOM500, CRASH300N
+    /^JD\d+$/,         // Jump Indices, e.g., JD10
+    /^OTC_[A-Z0-9]+$/, // OTC Stock Indices, e.g., OTC_NDX
+    /^WLD[A-Z]+$/      // Basket Indices, e.g., WLDAUD
+  ];
+
+  for (const pattern of knownDerivSymbolPatterns) {
+    if (pattern.test(instrument)) {
+      return instrument; // Input is already a Deriv symbol
+    }
+  }
+
   switch (instrument) {
     case 'EUR/USD':
       return 'frxEURUSD';
