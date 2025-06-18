@@ -384,7 +384,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
         // The trading_times request will be sent upon successful authorization
       } else {
         console.log(`[DerivService/getTradingTimes] Sending trading_times request (req_id: ${req_id}) without prior auth for symbol: ${instrumentSymbol}`);
-        ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
+        ws!.send(JSON.stringify({ trading_times: date, underlying_symbol: instrumentSymbol, req_id: req_id }));
       }
     };
 
@@ -406,7 +406,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
           if (authReqId && response.req_id === authReqId) { // Check if this is the response to our specific auth request
             if (response.authorize) {
               console.log(`[DerivService/getTradingTimes] Authorization successful (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
-              ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
+              ws!.send(JSON.stringify({ trading_times: date, underlying_symbol: instrumentSymbol, req_id: req_id }));
             } else {
               const authFailedMsg = `Authorization failed in getTradingTimes (authReqId: ${authReqId}) for ${instrumentSymbol}.`;
               cleanupAndLog(authFailedMsg, true);
