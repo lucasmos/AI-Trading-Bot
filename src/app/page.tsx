@@ -17,7 +17,8 @@ import {
   type PlaceTradeResponse, type DerivContractStatusData, getContractStatus,
   sellContract, getContractOfferings, type DerivContractOffering,
   getGlobalTradingOfferings, // Added for global offerings
-  type TradingDurationsData // Added for global offerings type
+  type TradingDurationsData, // Added for global offerings type
+  getTradingTimes // Added for fetching trading times
 } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid'; 
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
@@ -834,14 +835,15 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
     // Inside startAutomatedTradingSession, before const strategyInput = { ... };
     const instrumentOfferingsDataForAI: {
-      [key: string]: { rise_fall?: string[] }
+      [key: string]: { rise_fall?: string[], tradingTimesData?: any }
     } = {};
 
-    if (globalOfferingsData) { // Ensure globalOfferingsData is loaded
+    if (globalOfferingsData) {
       for (const userFriendlyInstrumentName of instrumentsToTrade) {
         const derivSymbol = instrumentToDerivSymbol(userFriendlyInstrumentName as InstrumentType);
+        instrumentOfferingsDataForAI[derivSymbol] = { rise_fall: [] }; // Initialize
+
         let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
-        // Logic to find symbolMarketOfferings for derivSymbol from globalOfferingsData (same as in validation block)
         for (const market of globalOfferingsData) {
           for (const symGroup of market.data) {
             if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
@@ -871,14 +873,21 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                 }
               }
             });
-            instrumentOfferingsDataForAI[derivSymbol] = {
-              rise_fall: Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b))
-            };
-          } else {
-            instrumentOfferingsDataForAI[derivSymbol] = { rise_fall: [] }; // No rise/fall durations
+            instrumentOfferingsDataForAI[derivSymbol].rise_fall = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
           }
         } else {
-          instrumentOfferingsDataForAI[derivSymbol] = { rise_fall: [] }; // Symbol not found in offerings
+          logAutomatedTradingEvent(`No symbol market offerings found for ${derivSymbol} to extract rise/fall durations.`);
+        }
+
+        // Fetch trading times
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const times = await getTradingTimes(derivSymbol, today, currentToken);
+          instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = times;
+          logAutomatedTradingEvent(`Fetched trading times for ${derivSymbol}.`);
+        } catch (error: any) {
+          logAutomatedTradingEvent(`Error fetching trading times for ${derivSymbol}: ${error.message}`);
+          instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = { error: error.message };
         }
       }
     }
