@@ -999,11 +999,19 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
               id: `error_validation_${uuidv4()}`,
               instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
               derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: 0, // Or handle differently, as durationString is the source
+              durationSeconds: 0,
               durationString: proposedTrade.durationString,
               reasoning: proposedTrade.reasoning,
-              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
+              entrySpot: 0,
+              buyPrice: 0,
+              startTime: Date.now(),
+              status: 'error_validation',
               validationError: validationMessage,
+              stopLossPrice: 0, // For error entries
+              currentPrice: undefined,
+              currentProfitLoss: undefined,
+              sellPrice: undefined,
+              finalProfitLoss: undefined,
             } as ActiveAutomatedTrade);
             continue;
           }
@@ -1016,11 +1024,19 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
               id: `error_parsing_duration_${uuidv4()}`,
               instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
               derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: 0, // Or handle differently
+              durationSeconds: 0,
               durationString: proposedTrade.durationString,
               reasoning: proposedTrade.reasoning + ` (Error: Invalid duration string format from AI: ${proposedTrade.durationString})`,
-              entrySpot: 0, buyPrice: 0, startTime: Date.now(), status: 'error_validation',
+              entrySpot: 0,
+              buyPrice: 0,
+              startTime: Date.now(),
+              status: 'error_validation',
               validationError: `Invalid duration string format from AI: ${proposedTrade.durationString}`,
+              stopLossPrice: 0, // For error entries
+              currentPrice: undefined,
+              currentProfitLoss: undefined,
+              sellPrice: undefined,
+              finalProfitLoss: undefined,
             } as ActiveAutomatedTrade);
             continue;
           }
@@ -1054,22 +1070,27 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             derivSymbol: tradeDetails.symbol,
             action: proposedTrade.action,
             stake: proposedTrade.stake,
-            durationSeconds: parseDurationToSeconds(proposedTrade.durationString), // Store the second equivalent for internal use if needed
-            durationString: proposedTrade.durationString, // Keep original string
+            durationSeconds: parseDurationToSeconds(proposedTrade.durationString),
+            durationString: proposedTrade.durationString,
             reasoning: proposedTrade.reasoning,
-            entrySpot: tradeResult.entry_spot,
+            entrySpot: tradeResult.entry_spot, // Assigned from tradeResult
             buyPrice: tradeResult.buy_price,
+            stopLossPrice: proposedTrade.action === 'CALL' ? tradeResult.entry_spot * (1 - (selectedStopLossPercentage / 100)) : tradeResult.entry_spot * (1 + (selectedStopLossPercentage / 100)),
             startTime: Date.now(),
             longcode: tradeResult.longcode,
             status: 'open',
             monitoringRetryCount: 0,
+            currentPrice: undefined,
+            currentProfitLoss: undefined,
+            sellPrice: undefined,
+            finalProfitLoss: undefined,
           } as ActiveAutomatedTrade);
 
         } catch (error: any) { // This catch now handles errors from getContractOfferings and placeTrade
           logAutomatedTradingEvent(`Error processing or placing trade for ${proposedTrade.instrument} ${proposedTrade.action}: ${error.message}`);
           toast({ title: `Trade Processing Error (${proposedTrade.instrument})`, description: error.message, variant: "destructive" });
           newActiveTradesBatch.push({
-            id: `error_processing_${uuidv4()}`, // Changed prefix to distinguish from pure placement error
+            id: `error_processing_${uuidv4()}`,
             instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
             derivSymbol,
             action: proposedTrade.action,
@@ -1077,9 +1098,16 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             durationSeconds: parseDurationToSeconds(proposedTrade.durationString),
             durationString: proposedTrade.durationString,
             reasoning: proposedTrade.reasoning + ` (Processing/Placement Error: ${error.message})`,
-            entrySpot: 0, buyPrice: 0, startTime: Date.now(),
+            entrySpot: 0, // Error entry
+            buyPrice: 0,
+            startTime: Date.now(),
             status: 'error_placement',
             validationError: error.message,
+            stopLossPrice: 0, // Error entry
+            currentPrice: undefined,
+            currentProfitLoss: undefined,
+            sellPrice: undefined,
+            finalProfitLoss: undefined,
           } as ActiveAutomatedTrade);
         }
       }
@@ -1363,18 +1391,18 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                             {trade.action}
                           </Badge>
                         </TableCell>
-                        <TableCell>${trade.stake.toFixed(2)}</TableCell>
-                        <TableCell>{trade.entryPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
+                        <TableCell>${trade.stake?.toFixed(2) ?? '0.00'}</TableCell>
+                        <TableCell>{trade.entrySpot?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
                         <TableCell>{trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
-                        <TableCell>{trade.stopLossPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
+                        <TableCell>{trade.stopLossPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
                         <TableCell>
                            <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
                                   className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
                             {trade.status}
                            </Badge>
                         </TableCell>
-                        <TableCell className={trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                          {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
+                        <TableCell className={(trade.isSettled ? trade.finalProfitLoss : trade.currentProfitLoss) !== undefined && (trade.isSettled ? trade.finalProfitLoss : trade.currentProfitLoss)! > 0 ? 'text-green-500' : (trade.isSettled ? trade.finalProfitLoss : trade.currentProfitLoss) !== undefined && (trade.isSettled ? trade.finalProfitLoss : trade.currentProfitLoss)! < 0 ? 'text-red-500' : ''}>
+                          { (trade.isSettled ? trade.finalProfitLoss : trade.currentProfitLoss) !== undefined ? `$${(trade.isSettled ? trade.finalProfitLoss! : trade.currentProfitLoss!).toFixed(2)}` : '-' }
                         </TableCell>
                       </TableRow>
                     ))}
