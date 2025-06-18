@@ -89,6 +89,7 @@ export interface ActiveAutomatedTrade { // For binary options auto-trading
   currentProfitLossPercentage?: number;
   isValidToSell?: boolean;
   sellPrice?: number;
+  stopLossPrice?: number; // Ensure this is present
 
   // Settlement Fields
   exitTime?: number;
