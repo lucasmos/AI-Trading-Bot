@@ -365,7 +365,11 @@ export interface DerivSymbolSpecificTradingData {
 }
 // --- End of Trading Times Interfaces ---
 
-export async function getTradingTimes(instrumentSymbol: string, date: string = 'today', token?: string): Promise<any | { error: string }> {
+export async function getTradingTimes(
+  instrumentSymbol: string,
+  date: string = 'today',
+  token?: string
+): Promise<DerivSymbolSpecificTradingData | { error: string }> {
   let ws: WebSocket | null = null;
   const operationTimeoutDuration = 15000; // 15 seconds
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
