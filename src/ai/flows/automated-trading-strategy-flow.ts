@@ -46,10 +46,11 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
   instrumentOfferings: zod.record(
     zod.string(), // Instrument symbol (e.g., "frxEURUSD")
     zod.object({
-      rise_fall: zod.array(zod.string()).optional() // Array of valid duration strings (e.g., ["15m", "1h"])
+      rise_fall: zod.array(zod.string()).optional(), // Array of valid duration strings (e.g., ["15m", "1h"])
+      tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.') // New field
       // Future: extendable for other contract types like 'multiplier'
     })
-  ).optional().describe('Specific available trade types (e.g., rise_fall) and their exact string durations for each instrument symbol.')
+  ).optional().describe('Specific available trade types (e.g., rise_fall) and their exact string durations, and trading times for each instrument symbol.')
 });
 
 // This is the type for the flow function's input parameter
@@ -87,12 +88,23 @@ Available Trade Offerings by Instrument (IMPORTANT!):
     {{else}}
     - No Rise/Fall trade type specified for this instrument in the offerings.
     {{/if}}
+    {{#if this.tradingTimesData}}
+      {{#if this.tradingTimesData.error}}
+    - Trading Hours: Error fetching - {{this.tradingTimesData.error}}
+      {{else}}
+    - Trading Hours Data (raw JSON): {{jsonStringify this.tradingTimesData}}
+      {{/if}}
+    {{else}}
+    - Trading Hours: Data not available.
+    {{/if}}
   {{/each}}
 {{else}}
 (Detailed instrument-specific offerings not provided. You will have to rely on general knowledge for durations, but this is less reliable.)
 {{/if}}
 
-Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each instrument.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration. **You MUST select a duration from the 'Available Durations' listed for the chosen instrument and 'Rise/Fall' trade type in the 'Available Trade Offerings by Instrument' section.** If no durations are listed for Rise/Fall or the type itself is not available for an instrument, DO NOT propose a Rise/Fall trade for it. Durations are strings like '15m', '1h', '300s'. You must output the chosen duration string exactly as provided in the 'Available Durations' list. The system will parse this string. Do not convert it to seconds yourself. Instead, use the output field named durationString (this is a new field that replaces durationSeconds).
+Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each instrument.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them.
+    **Crucially, before proposing a trade for an instrument, you MUST check its 'Trading Hours Data' (provided in 'Available Trade Offerings by Instrument'). If this data indicates the market for the instrument is likely closed at the current time (assume current time is UTC and within a few minutes of the 'Recent Price Ticks' timestamps), or if no trading hours data is available or shows an error, DO NOT propose a trade for that instrument.**
+    Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration. **You MUST select a duration from the 'Available Durations' listed for the chosen instrument and 'Rise/Fall' trade type in the 'Available Trade Offerings by Instrument' section.** If no durations are listed for Rise/Fall or the type itself is not available for an instrument, DO NOT propose a Rise/Fall trade for it. Durations are strings like '15m', '1h', '300s'. You must output the chosen duration string exactly as provided in the 'Available Durations' list. The system will parse this string. Do not convert it to seconds yourself. Instead, use the output field named durationString (this is a new field that replaces durationSeconds).
     *   The system will set a {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss. Your reasoning should reflect an understanding of this.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
 5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
 Each trade's 'durationString' must be the exact string from the available offerings (e.g., "15m", "60s").
