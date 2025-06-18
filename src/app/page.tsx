@@ -847,7 +847,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
               symbolMarketOfferings = symGroup;
               break;
-            } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
+            } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any)?.name === derivSymbol) {
               symbolMarketOfferings = symGroup;
               break;
             }
