@@ -369,7 +369,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
   let ws: WebSocket | null = null;
   const operationTimeoutDuration = 15000; // 15 seconds
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
-  const req_id = Date.now(); // Unique req_id for this call
+  const req_id = Date.now(); // Unique req_id for the trading_times request
   const startTime = Date.now();
 
   const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
@@ -393,11 +393,12 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
 
     ws.onopen = () => {
       cleanupAndLog("WebSocket connection opened.", false, null);
-      const authReqId = req_id + 1;
 
       if (token) {
-        console.log(`[DerivService/getTradingTimes] Sending authorize request (req_id: ${authReqId}) for symbol: ${instrumentSymbol}`);
+        const authReqId = req_id + 1; // Distinct req_id for authorization
+        console.log(`[DerivService/getTradingTimes] Sending authorize request (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}`);
         ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
+        // The trading_times request will be sent upon successful authorization
       } else {
         console.log(`[DerivService/getTradingTimes] Sending trading_times request (req_id: ${req_id}) without prior auth for symbol: ${instrumentSymbol}`);
         ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
@@ -415,19 +416,26 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
           return;
         }
 
+        // Use authReqId for checking authorization response if token was present
+        const authReqId = token ? req_id + 1 : null;
+
         if (response.msg_type === 'authorize') {
-          if (response.req_id === authReqId && response.authorize) {
-            console.log(`[DerivService/getTradingTimes] Authorization successful for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
-            ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
-          } else if (response.req_id === authReqId && !response.authorize) {
-            const authFailedMsg = `Authorization failed in getTradingTimes for ${instrumentSymbol}.`;
-            cleanupAndLog(authFailedMsg, true);
-            reject({ error: authFailedMsg });
+          if (authReqId && response.req_id === authReqId) { // Check if this is the response to our specific auth request
+            if (response.authorize) {
+              console.log(`[DerivService/getTradingTimes] Authorization successful (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
+              ws!.send(JSON.stringify({ trading_times: date, symbol: instrumentSymbol, req_id: req_id }));
+            } else {
+              const authFailedMsg = `Authorization failed in getTradingTimes (authReqId: ${authReqId}) for ${instrumentSymbol}.`;
+              cleanupAndLog(authFailedMsg, true);
+              reject({ error: authFailedMsg });
+            }
+          } else {
+            // Log unexpected authorize messages but don't necessarily fail the main request yet
+            console.warn(`[DerivService/getTradingTimes] Received an authorize message with unexpected req_id: ${response.req_id} (expected ${authReqId}). Ignoring for main promise.`);
           }
-          // Ignore other authorize messages not matching authReqId
         } else if (response.msg_type === 'trading_times') {
-          if (response.req_id === req_id) {
-            cleanupAndLog(`Received trading_times response for symbol: ${instrumentSymbol}.`);
+          if (response.req_id === req_id) { // Match with the main trading_times req_id
+            cleanupAndLog(`Received trading_times response (req_id: ${req_id}) for symbol: ${instrumentSymbol}.`);
             resolve(response.trading_times);
           } else {
             console.warn(`[DerivService/getTradingTimes] Received trading_times with mismatched req_id. Expected ${req_id}, got ${response.req_id}. Ignoring.`);

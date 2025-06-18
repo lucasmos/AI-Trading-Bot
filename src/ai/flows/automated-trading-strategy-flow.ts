@@ -47,7 +47,8 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
     zod.string(), // Instrument symbol (e.g., "frxEURUSD")
     zod.object({
       rise_fall: zod.array(zod.string()).optional(), // Array of valid duration strings (e.g., ["15m", "1h"])
-      tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.') // New field
+      tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.'), // Original field for data from page.tsx
+      tradingTimesDataString: zod.string().optional().describe('JSON string representation of trading times data, or error message.') // New field for prompt
       // Future: extendable for other contract types like 'multiplier'
     })
   ).optional().describe('Specific available trade types (e.g., rise_fall) and their exact string durations, and trading times for each instrument symbol.')
@@ -88,14 +89,10 @@ Available Trade Offerings by Instrument (IMPORTANT!):
     {{else}}
     - No Rise/Fall trade type specified for this instrument in the offerings.
     {{/if}}
-    {{#if this.tradingTimesData}}
-      {{#if this.tradingTimesData.error}}
-    - Trading Hours: Error fetching - {{this.tradingTimesData.error}}
-      {{else}}
-    - Trading Hours Data (raw JSON): {{jsonStringify this.tradingTimesData}}
-      {{/if}}
+    {{#if this.tradingTimesDataString}}
+    - Trading Hours Data: {{{this.tradingTimesDataString}}}
     {{else}}
-    - Trading Hours: Data not available.
+    - Trading Hours: Data explicitly not available or not processed.
     {{/if}}
   {{/each}}
 {{else}}
@@ -137,10 +134,31 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     // Ensure all properties passed to prompt are defined in AutomatedTradingStrategyInputZodSchema
     const promptInput: AutomatedTradingStrategyFlowInput = {
       ...input,
-      instruments: input.instruments as ForexCryptoCommodityInstrumentType[], // Cast to specific string literal types if FlowFn needs it
+      instruments: input.instruments as ForexCryptoCommodityInstrumentType[],
       formattedIndicatorsString: formattedIndicators,
-      // stopLossPercentage will be passed through via ...input if present
     };
+
+    // Prepare instrumentOfferings with tradingTimesDataString for the prompt
+    if (promptInput.instrumentOfferings) {
+      for (const instrumentKey in promptInput.instrumentOfferings) {
+        const offering = promptInput.instrumentOfferings[instrumentKey];
+        if (offering.tradingTimesData) {
+          if (offering.tradingTimesData.error) {
+            offering.tradingTimesDataString = `Error fetching trading times: ${offering.tradingTimesData.error}`;
+          } else {
+            try {
+              offering.tradingTimesDataString = JSON.stringify(offering.tradingTimesData);
+            } catch (e) {
+              console.error(`[automatedTradingStrategyFlow] Error stringifying tradingTimesData for ${instrumentKey}:`, e);
+              offering.tradingTimesDataString = "Error: Could not process trading times data.";
+            }
+          }
+        } else {
+          offering.tradingTimesDataString = 'Data not available.';
+        }
+      }
+    }
+    // stopLossPercentage will be passed through via ...input if present
 
     const result = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
     if (!result || !result.output) {

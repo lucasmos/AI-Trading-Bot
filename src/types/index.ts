@@ -120,7 +120,8 @@ export type AutomatedTradingStrategyInput = {
   instrumentOfferings?: {
     [key: string]: { // Instrument symbol e.g., "frxEURUSD"
       rise_fall?: string[];     // Existing: Array of valid duration strings e.g., ["15m", "1h"]
-      tradingTimesData?: any;  // New: Raw trading times data from API
+      tradingTimesData?: any;  // Raw trading times data from API
+      tradingTimesDataString?: string; // New: JSON string representation or error/unavailable message
     }
   };
 };
