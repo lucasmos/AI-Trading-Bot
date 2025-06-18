@@ -61,7 +61,7 @@ export interface AutomatedTradeProposal { // For binary options auto-trading (Fo
   instrument: ForexCryptoCommodityInstrumentType;
   action: 'CALL' | 'PUT';
   stake: number;
-  durationSeconds: number; 
+  durationString: string;
   reasoning: string;
   avatarUrl?: string;
 }
@@ -72,7 +72,8 @@ export interface ActiveAutomatedTrade { // For binary options auto-trading
   derivSymbol: string;
   action: 'CALL' | 'PUT';
   stake: number;
-  durationSeconds: number;
+  durationSeconds: number; // Remains for internal calculations/display consistency
+  durationString?: string; // Added to store the AI's output duration string
   reasoning?: string;
 
   // From placeTrade response
@@ -115,6 +116,11 @@ export type AutomatedTradingStrategyInput = {
   instrumentTicks: Record<ForexCryptoCommodityInstrumentType, PriceTick[]>; 
   instrumentIndicators?: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData>;
   formattedIndicatorsString?: string;
+  instrumentOfferings?: {
+    [key: string]: { // Instrument symbol e.g., "frxEURUSD"
+      rise_fall?: string[]; // Array of valid duration strings e.g., ["15m", "1h"]
+    }
+  };
 };
 
 export interface AutomatedTradingStrategyOutput {
