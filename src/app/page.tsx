@@ -1095,51 +1095,98 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
     // Inside startAutomatedTradingSession, before const strategyInput = { ... };
     const instrumentOfferingsDataForAI: {
-      [key: string]: { rise_fall?: string[], tradingTimesData?: any }
+      [key: string]: {
+        availableContracts?: any[], // Will be populated according to new schema
+        tradingTimesData?: any,
+        isMarketCurrentlyOpen?: boolean
+      }
     } = {};
 
     if (globalOfferingsData) {
       for (const userFriendlyInstrumentName of instrumentsToTrade) {
         const derivSymbol = instrumentToDerivSymbol(userFriendlyInstrumentName as InstrumentType);
-        instrumentOfferingsDataForAI[derivSymbol] = { rise_fall: [] }; // Initialize
+
+        // Initialize for the current symbol
+        instrumentOfferingsDataForAI[derivSymbol] = {
+          availableContracts: [],
+          // tradingTimesData and isMarketCurrentlyOpen will be populated later in this loop
+        };
 
         let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
-        for (const market of globalOfferingsData) {
-          for (const symGroup of market.data) {
-            if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
-              symbolMarketOfferings = symGroup;
-              break;
-            } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
-              symbolMarketOfferings = symGroup;
-              break;
-            }
-          }
-          if (symbolMarketOfferings) break;
-        }
-
-        if (symbolMarketOfferings) {
-          const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
-          if (riseFallTradeType && riseFallTradeType.durations && riseFallTradeType.durations.length > 0) {
-            const newDurationsSet = new Set<string>();
-            riseFallTradeType.durations.forEach(detail => {
-              if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
-                if (detail.min > 0) newDurationsSet.add(`${detail.min}${detail.name}`);
-                if (detail.name !== 't' && detail.max > 0 && detail.max !== detail.min) newDurationsSet.add(`${detail.max}${detail.name}`);
-                else if (detail.name === 't' && detail.max > detail.min) {
-                  if ((detail.max - detail.min) <= 10) {
-                    for (let i = detail.min + 1; i <= detail.max; i++) newDurationsSet.add(`${i}${detail.name}`);
-                  }
-                  else if (detail.max !== detail.min) newDurationsSet.add(`${detail.max}${detail.name}`);
+        if (globalOfferingsData) {
+          for (const market of globalOfferingsData) {
+            for (const symGroup of market.data) {
+              if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
+                symbolMarketOfferings = symGroup;
+                break;
+              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
+                // Handle cases where symGroup.symbol is a single object, not an array (based on API snippet for Cryptos)
+                if((symGroup.symbol as any).name === derivSymbol) {
+                    symbolMarketOfferings = symGroup;
+                    break;
                 }
               }
-            });
-            instrumentOfferingsDataForAI[derivSymbol].rise_fall = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
+            }
+            if (symbolMarketOfferings) break;
           }
-        } else {
-          logAutomatedTradingEvent(`No symbol market offerings found for ${derivSymbol} to extract rise/fall durations.`);
         }
 
-        // Fetch trading times - This individual fetch is removed.
+        if (symbolMarketOfferings && symbolMarketOfferings.trade_durations) {
+          symbolMarketOfferings.trade_durations.forEach(tradeTypeOffering => {
+            const contractDetails: any = { // Build according to new Zod schema for availableContracts
+              tradeTypeName: tradeTypeOffering.trade_type.name,
+              displayName: tradeTypeOffering.trade_type.display_name,
+              availableDurations: [],
+            };
+
+            if (tradeTypeOffering.durations && tradeTypeOffering.durations.length > 0) {
+              const durationsSet = new Set<string>();
+              tradeTypeOffering.durations.forEach(detail => {
+                if (detail.name === 'no_expiry') {
+                  durationsSet.add('no_expiry');
+                } else if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
+                  if (detail.min > 0) {
+                    durationsSet.add(`${detail.min}${detail.name}`);
+                  }
+                  // For non-tick, non-no_expiry, if max is different and positive, add it.
+                  if (detail.name !== 't' && detail.name !== 'no_expiry' && detail.max > 0 && detail.max !== detail.min) {
+                    durationsSet.add(`${detail.max}${detail.name}`);
+                  }
+                  // For tick units, handle range if small, or just min/max if large
+                  else if (detail.name === 't' && detail.max > detail.min) {
+                    if ((detail.max - detail.min) <= 10) { // Small range
+                      for (let i = detail.min + 1; i <= detail.max; i++) { // Include min (already added) and max
+                        durationsSet.add(`${i}${detail.name}`);
+                      }
+                    } else { // Large range
+                       if (detail.max !== detail.min) durationsSet.add(`${detail.max}${detail.name}`);
+                    }
+                  }
+                }
+              });
+              contractDetails.availableDurations = Array.from(durationsSet).sort((a, b) => {
+                if (a === 'no_expiry') return -1; // Keep 'no_expiry' first if present
+                if (b === 'no_expiry') return 1;
+                return parseDurationToSeconds(a) - parseDurationToSeconds(b);
+              });
+            }
+
+            // Add min/max multiplier if applicable (example for 'multiplier' trade type)
+            if (tradeTypeOffering.trade_type.name === 'multiplier') {
+              // Assuming min/max multiplier might be directly on tradeTypeOffering or its durations for multipliers
+              // This part needs to align with how Deriv provides min/max for multipliers in trading_durations API
+              // For now, we'll leave it empty and AI can use general knowledge or it can be added if structure known
+              // Example: contractDetails.minMultiplier = tradeTypeOffering.min_multiplier;
+              // Example: contractDetails.maxMultiplier = tradeTypeOffering.max_multiplier;
+            }
+            instrumentOfferingsDataForAI[derivSymbol].availableContracts!.push(contractDetails);
+          });
+        } else {
+          logAutomatedTradingEvent(`No trade durations found for ${derivSymbol} in global offerings, or symbol not found.`);
+        }
+
+        // The existing logic for populating tradingTimesData and isMarketCurrentlyOpen should follow AFTER this block.
+        // Ensure that instrumentOfferingsDataForAI[derivSymbol] is initialized before trying to push to availableContracts.
         // Instead, use data from allTradingTimesData
         let specificSymbolTimesData: DerivSymbolSpecificTradingData | { error: string } | undefined;
         if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
