@@ -521,45 +521,68 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   }, [currentInstrument, allTradingTimesData, isLoadingAllTradingTimes, logAutomatedTradingEvent]);
 
   // Update Market Status Periodically based on derived currentInstrumentTradingTimes
-   useEffect(() => {
+  useEffect(() => {
     const updateStatus = () => {
+      if (isLoadingTradingTimes || isLoadingAllTradingTimes) { // Check both loading flags
+        setMarketStatusDisplayMessage(`Loading trading hours for ${currentInstrument}...`);
+        setIsCurrentInstrumentMarketOpen(null);
+        return;
+      }
+
       if (!currentInstrumentTradingTimes) {
-        if (!isLoadingTradingTimes) {
-           setMarketStatusDisplayMessage('Trading hours data not available.');
-        }
+        // This case might be hit if allTradingTimesData is loaded but currentInstrument data couldn't be derived.
+        // Or if allTradingTimesData itself is null (and not loading).
+        setMarketStatusDisplayMessage('Trading hours data not yet available for the selected instrument.');
         setIsCurrentInstrumentMarketOpen(null);
         return;
       }
 
       if ('error' in currentInstrumentTradingTimes) {
         setIsCurrentInstrumentMarketOpen(false);
-        setMarketStatusDisplayMessage(`Error fetching trading hours: ${currentInstrumentTradingTimes.error}`);
+        setMarketStatusDisplayMessage(`Error determining trading hours: ${currentInstrumentTradingTimes.error}`);
         return;
       }
 
+      // Type guard to ensure currentInstrumentTradingTimes is DerivSymbolSpecificTradingData
+      // The check for `.times` is important because an empty object might be passed if symbol not found in global allTradingTimesData
       if (currentInstrumentTradingTimes && currentInstrumentTradingTimes.times) {
-        const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, new Date()); // Pass new Date()
+        const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, new Date());
         setIsCurrentInstrumentMarketOpen(status.isOpen);
 
         const formattedTimes = formatTradingHoursForDisplay(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, ['GMT', 'UTC', 'Africa/Nairobi']);
-        let displayMessage = `${status.isOpen ? 'Market Open' : 'Market Closed'}.`;
-        if (status.nextEventTime && status.nextEventType) {
-          // const nextEventOriginalTz = status.nextEventTime.includes('GMT') ? 'GMT' : 'UTC';
-          let nextEventDisplay = status.nextEventTime;
-          displayMessage += ` ${status.nextEventType === 'open' ? 'Opens' : 'Closes'} at ${nextEventDisplay}.`;
+        let displayMessage = `${status.isOpen ? 'Market Open' : 'Market Closed'}`;
+
+        if (status.eventDescription && !status.nextEventTimeGMT) { // E.g. "Market is Closed (Market event: Closed all day)"
+             displayMessage += ` (${status.eventDescription})`;
+        } else if (status.nextEventTimeGMT && status.nextEventType) {
+            displayMessage += `. Next ${status.nextEventType} at ${status.nextEventTimeGMT} GMT`;
+            if (status.eventDescription && status.eventDescription !== `Market session ${status.nextEventType}`) { // Avoid redundant session open/close
+                displayMessage += ` (${status.eventDescription})`;
+            }
         }
-        displayMessage += ` Details: ${formattedTimes}`;
+        // Always append detailed formatted times if available, unless it's a simple 24/7 message
+        if (status.message !== "Market Open (24/7)") {
+             displayMessage += ` Details: ${formattedTimes}`;
+        } else if (status.message === "Market Open (24/7)" && status.eventDescription) {
+            // For 24/7 markets that might have a specific event description (e.g. upcoming maintenance)
+             displayMessage = `${status.message} (${status.eventDescription})`;
+        } else {
+            displayMessage = status.message; // Use the direct "Market Open (24/7)"
+        }
+
         setMarketStatusDisplayMessage(displayMessage);
       } else {
         setIsCurrentInstrumentMarketOpen(false);
-        setMarketStatusDisplayMessage('Trading hours data is incomplete or in an unexpected format.');
+        // This message implies that currentInstrumentTradingTimes was not null, not an error object, but also didn't have .times
+        // This could happen if the extraction logic from allTradingTimesData failed to find the symbol but didn't set an error.
+        setMarketStatusDisplayMessage('Trading hours data is incomplete or in an unexpected format for the selected instrument.');
       }
     };
 
     updateStatus();
     const intervalId = setInterval(updateStatus, 60000);
     return () => clearInterval(intervalId);
-  }, [currentInstrumentTradingTimes, isLoadingTradingTimes]);
+  }, [currentInstrument, currentInstrumentTradingTimes, isLoadingTradingTimes, isLoadingAllTradingTimes]); // Added currentInstrument
 
   useEffect(() => {
     const processDurationsFromGlobalOfferings = () => {
@@ -1011,7 +1034,8 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                     foundSymbolData = { // Constructing DerivSymbolSpecificTradingData structure
                       times: symbolEntry.times,
                       events: symbolEntry.events,
-                      feed_license: symbolEntry.feed_license
+                      feed_license: symbolEntry.feed_license,
+                      trading_days: symbolEntry.trading_days // Added trading_days
                     };
                     break;
                   }

@@ -84,9 +84,37 @@ export function formatTradingHoursForDisplay(
 export function getCurrentMarketStatus(
   tradingTimesData: DerivSymbolSpecificTradingData | null | undefined,
   referenceDateUTC: Date
-): { isOpen: boolean; message: string; nextEventTimeGMT?: string; nextEventType?: 'open' | 'close' } {
+): { isOpen: boolean; message: string; nextEventTimeGMT?: string; nextEventType?: 'open' | 'close', eventDescription?: string } {
   if (!tradingTimesData || !tradingTimesData.times || !tradingTimesData.times.opens || !tradingTimesData.times.closes || tradingTimesData.times.opens.length === 0 || tradingTimesData.times.opens.length !== tradingTimesData.times.closes.length) {
     return { isOpen: false, message: "Trading hours data unavailable or incomplete." };
+  }
+
+  // Check for 24/7 market
+  const { times, trading_days, events } = tradingTimesData;
+  if (
+    times.opens.length === 1 && times.opens[0] === "00:00:00" &&
+    times.closes.length === 1 && (times.closes[0] === "23:59:59" || times.closes[0] === "23:59:59.999" || times.closes[0] === "24:00:00") && // Adjusted for potential variations
+    trading_days && trading_days.length === 7 // Check if it trades all 7 days
+  ) {
+    // Further check if there are no events that indicate a closure for today
+    const todayStrYYYYMMDD = referenceDateUTC.toISOString().split('T')[0];
+    const currentDayNameLower = referenceDateUTC.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+    const isClosedByEvent = events?.some(event => {
+        const eventDateLower = event.dates.toLowerCase();
+        const eventMatchesToday = eventDateLower === todayStrYYYYMMDD ||
+                                  eventDateLower === currentDayNameLower ||
+                                  eventDateLower === (currentDayNameLower + 's');
+        return eventMatchesToday && event.descrip.toLowerCase().includes('closed');
+    });
+
+    if (!isClosedByEvent) {
+        return {
+          isOpen: true,
+          message: "Market Open (24/7)",
+          // Optional: nextEventTimeGMT, nextEventType, eventDescription can be omitted or set to reflect continuous operation
+        };
+    }
   }
 
   let isOpen = false;
@@ -97,39 +125,41 @@ export function getCurrentMarketStatus(
     }
   }
 
-  const nextEvent = findNextRelevantEvent(referenceDateUTC, tradingTimesData, referenceDateUTC);
+  const nextEventDetails = findNextRelevantEvent(referenceDateUTC, tradingTimesData, referenceDateUTC);
 
   let message = isOpen ? `Market is Open.` : `Market is Closed.`;
-  if (nextEvent.nextEventTimeGMT && nextEvent.nextEventType) {
-    const displayEventTime = convertGmtToTargetTimezone(nextEvent.nextEventTimeGMT, 'GMT'); // Keep it GMT for this message
+  if (nextEventDetails.nextEventTimeGMT && nextEventDetails.nextEventType) {
+    const displayEventTime = convertGmtToTargetTimezone(nextEventDetails.nextEventTimeGMT, 'GMT');
     message = isOpen
       ? `Market Open until ${displayEventTime} GMT`
       : `Market Closed until ${displayEventTime} GMT`;
 
-    // Check if the next event is on a different day
-    const [h,m,s] = nextEvent.nextEventTimeGMT.split(':').map(Number);
-    const nextEventDateToday = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate(), h, m, s || 0));
-    if (nextEventDateToday <= referenceDateUTC && nextEvent.nextEventType === 'open') { // If next open is today but already passed, or is now (implying tomorrow)
-        // This simple check assumes if next open time is <= current time, it must be for the next day.
-        // A more robust check would involve comparing the full date object of the next event.
-         message += " (likely next trading day)";
-    } else if (nextEventDateToday.getUTCDate() !== referenceDateUTC.getUTCDate()){
+    const [h,m,s] = nextEventDetails.nextEventTimeGMT.split(':').map(Number);
+    const nextEventDateForDayCheck = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate(), h, m, s || 0));
+
+    // If the determined next event time on the referenceDateUTC is actually earlier than or same as current time,
+    // and it's an 'open' event, it implies the opening is for the next day.
+    if (nextEventDateForDayCheck <= referenceDateUTC && nextEventDetails.nextEventType === 'open') {
+         message += " (next trading day)";
+    } else if (nextEventDateForDayCheck.getUTCDate() !== referenceDateUTC.getUTCDate() && nextEventDetails.nextEventType === 'open'){
+         // If the date part of the next open event is different from referenceDateUTC's date part
          message += " (next day)";
     }
-     if (nextEvent.eventDescription) {
-        message += ` (${nextEvent.eventDescription})`;
+    // Always add event description if available
+     if (nextEventDetails.eventDescription) {
+        message += ` (${nextEventDetails.eventDescription})`;
     }
 
-  } else if (nextEvent.eventDescription) { // If only a descriptive event is found
-     message += ` (${nextEvent.eventDescription})`;
+  } else if (nextEventDetails.eventDescription) {
+     message += ` (${nextEventDetails.eventDescription})`;
   }
-
 
   return {
     isOpen: isOpen,
     message: message,
-    nextEventTimeGMT: nextEvent.nextEventTimeGMT,
-    nextEventType: nextEvent.nextEventType
+    nextEventTimeGMT: nextEventDetails.nextEventTimeGMT,
+    nextEventType: nextEventDetails.nextEventType,
+    eventDescription: nextEventDetails.eventDescription
   };
 }
 
