@@ -286,7 +286,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (nextAuthStatus === 'loading') {
         if (authStatus !== 'pending') setAuthStatus('pending');
         lastProcessedNextAuthUserId.current = null;
-        setHasAttemptedInitialSessionBalanceSync(false); // Reset for next auth cycle
+        // DO NOT reset hasAttemptedInitialSessionBalanceSync here.
         return;
       }
 
@@ -307,8 +307,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       clearAuthData,
       userInfo,
       authStatus,
-      updateNextAuthSession, // Added
-      hasAttemptedInitialSessionBalanceSync // Added
+      updateNextAuthSession,
+      hasAttemptedInitialSessionBalanceSync
   ]);
 
 
