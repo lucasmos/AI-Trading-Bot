@@ -129,6 +129,8 @@ export default function DashboardPage() {
   const [isCurrentInstrumentMarketOpen, setIsCurrentInstrumentMarketOpen] = useState<boolean | null>(null);
   const [marketStatusDisplayMessage, setMarketStatusDisplayMessage] = useState<string>('');
   const [isLoadingTradingTimes, setIsLoadingTradingTimes] = useState<boolean>(false);
+  const [allTradingTimesData, setAllTradingTimesData] = useState<any | { error: string } | null>(null);
+  const [isLoadingAllTradingTimes, setIsLoadingAllTradingTimes] = useState<boolean>(false);
 
   const [aiRecommendation, setAiRecommendation] = useState<AiRecommendation | null>(null);
   const [isFetchingManualRecommendation, setIsFetchingManualRecommendation] = useState(false);
@@ -371,7 +373,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   // DerivBalanceListener handles initial and subsequent updates.
 
   useEffect(() => {
-    const fetchOfferings = async () => {
+    const fetchGlobalData = async () => {
       if (!userInfo) {
         return;
       }
@@ -385,31 +387,48 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         currentToken = userInfo.derivDemoApiToken || userInfo.derivRealApiToken || userInfo.derivAccessToken;
       }
 
+      // Fetch Global Offerings
       if (!globalOfferingsData && !isLoadingGlobalOfferings) {
-          console.log(`[DashboardPage] Fetching global trading offerings... (Using token for ${selectedDerivAccountType || 'default an account'})`);
-          setIsLoadingGlobalOfferings(true);
-          setGlobalOfferingsError(null);
-          try {
-            const offeringsData = await getGlobalTradingOfferings(currentToken);
-            if (offeringsData) {
-              setGlobalOfferingsData(offeringsData);
-              console.log("[DashboardPage] Global trading offerings fetched and cached successfully.");
-            } else {
-              throw new Error("Received null or empty offerings data.");
-            }
-          } catch (error: any) {
-            console.error("[DashboardPage] Error fetching global trading offerings:", error);
-            setGlobalOfferingsError(error.message || "Failed to load global trading offerings.");
-            toast({ title: "Offerings Load Error", description: `Failed to load global trading offerings: ${error.message}`, variant: "destructive" });
-            setGlobalOfferingsData(null);
-          } finally {
-            setIsLoadingGlobalOfferings(false);
+        console.log(`[DashboardPage] Fetching global trading offerings... (Using token for ${selectedDerivAccountType || 'default account'})`);
+        setIsLoadingGlobalOfferings(true);
+        setGlobalOfferingsError(null);
+        try {
+          const offeringsData = await getGlobalTradingOfferings(currentToken);
+          if (offeringsData) {
+            setGlobalOfferingsData(offeringsData);
+            console.log("[DashboardPage] Global trading offerings fetched successfully.");
+          } else {
+            throw new Error("Received null or empty global offerings data.");
           }
+        } catch (error: any) {
+          console.error("[DashboardPage] Error fetching global trading offerings:", error);
+          setGlobalOfferingsError(error.message || "Failed to load global trading offerings.");
+          toast({ title: "Offerings Load Error", description: `Failed to load global offerings: ${error.message}`, variant: "destructive" });
+          setGlobalOfferingsData(null);
+        } finally {
+          setIsLoadingGlobalOfferings(false);
+        }
+      }
+
+      // Fetch All Trading Times
+      if (!allTradingTimesData && !isLoadingAllTradingTimes && currentToken) { // Ensure token is available
+        logAutomatedTradingEvent("Fetching all trading times data...");
+        setIsLoadingAllTradingTimes(true);
+        try {
+          const timesData = await getTradingTimes('today', currentToken); // getTradingTimes now takes (date, token)
+          setAllTradingTimesData(timesData);
+          logAutomatedTradingEvent("All trading times data fetched successfully.");
+        } catch (err: any) {
+          logAutomatedTradingEvent(`Error fetching all trading times: ${err.message || 'Unknown error'}`);
+          setAllTradingTimesData({ error: err.message || 'Failed to fetch all trading times.' });
+        } finally {
+          setIsLoadingAllTradingTimes(false);
+        }
       }
     };
 
-    fetchOfferings();
-  }, [userInfo, selectedDerivAccountType, globalOfferingsData, isLoadingGlobalOfferings, toast]);
+    fetchGlobalData();
+  }, [userInfo, selectedDerivAccountType, globalOfferingsData, isLoadingGlobalOfferings, toast, allTradingTimesData, isLoadingAllTradingTimes, logAutomatedTradingEvent]);
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
@@ -447,40 +466,62 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     setAiRecommendation(null); 
   };
 
-  // Fetch Trading Times for currentInstrument
+  // OLD useEffect that fetched individual trading times for currentInstrument is REMOVED.
+
+  // New useEffect to derive currentInstrumentTradingTimes from allTradingTimesData
   useEffect(() => {
-    if (!currentInstrument || !userInfo) {
+    if (isLoadingAllTradingTimes) {
+      // Wait for allTradingTimesData to be loaded
+      setCurrentInstrumentTradingTimes(null); // Or a loading state specific to current instrument
+      return;
+    }
+    if (!allTradingTimesData) {
       setCurrentInstrumentTradingTimes(null);
-      setIsCurrentInstrumentMarketOpen(null);
-      setMarketStatusDisplayMessage('Trading hours require instrument selection and login.');
+      logAutomatedTradingEvent("All trading times data is not available to derive current instrument times.");
+      return;
+    }
+    if ('error' in allTradingTimesData) {
+      setCurrentInstrumentTradingTimes({ error: `Failed to load global trading times: ${allTradingTimesData.error}` });
+      logAutomatedTradingEvent(`Cannot derive current instrument times due to global fetch error: ${allTradingTimesData.error}`);
       return;
     }
 
-    const fetchTimes = async () => {
-      setIsLoadingTradingTimes(true);
-      setMarketStatusDisplayMessage(`Loading trading hours for ${currentInstrument}...`);
-      setCurrentInstrumentTradingTimes(null); // Clear previous data
-      setIsCurrentInstrumentMarketOpen(null);
+    const derivSymbol = instrumentToDerivSymbol(currentInstrument);
+    let foundSymbolData: DerivSymbolSpecificTradingData | null = null;
 
-      const derivSymbol = instrumentToDerivSymbol(currentInstrument);
-      let token = selectedDerivAccountType === 'demo' ? userInfo.derivDemoApiToken : userInfo.derivRealApiToken;
-      if (!token) token = userInfo.derivAccessToken; // Fallback
-
-      try {
-        const timesData = await getTradingTimes(derivSymbol, 'today', token || undefined);
-        setCurrentInstrumentTradingTimes(timesData);
-      } catch (err: any) {
-        setCurrentInstrumentTradingTimes({ error: err.message || 'Failed to fetch trading times.' });
-      } finally {
-        setIsLoadingTradingTimes(false);
+    if (allTradingTimesData && Array.isArray(allTradingTimesData.markets)) {
+      for (const market of allTradingTimesData.markets) {
+        if (market && Array.isArray(market.submarkets)) {
+          for (const submarket of market.submarkets) {
+            if (submarket && Array.isArray(submarket.symbols)) {
+              const symbolData = submarket.symbols.find((s: any) => s && s.symbol === derivSymbol);
+              if (symbolData) {
+                foundSymbolData = {
+                  times: symbolData.times,
+                  events: symbolData.events,
+                  feed_license: symbolData.feed_license,
+                };
+                break;
+              }
+            }
+          }
+        }
+        if (foundSymbolData) break;
       }
-    };
+    }
 
-    fetchTimes();
-  }, [currentInstrument, userInfo, selectedDerivAccountType, logAutomatedTradingEvent]);
+    if (foundSymbolData) {
+      setCurrentInstrumentTradingTimes(foundSymbolData);
+      logAutomatedTradingEvent(`Successfully derived trading times for ${derivSymbol}.`);
+    } else {
+      const errorMessage = `Trading times data not found for ${derivSymbol} in the global list.`;
+      setCurrentInstrumentTradingTimes({ error: errorMessage });
+      logAutomatedTradingEvent(errorMessage);
+    }
+  }, [currentInstrument, allTradingTimesData, isLoadingAllTradingTimes, logAutomatedTradingEvent]);
 
-  // Update Market Status Periodically based on fetched trading times
-  useEffect(() => {
+  // Update Market Status Periodically based on derived currentInstrumentTradingTimes
+   useEffect(() => {
     const updateStatus = () => {
       if (!currentInstrumentTradingTimes) {
         if (!isLoadingTradingTimes) {
@@ -956,16 +997,47 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           logAutomatedTradingEvent(`No symbol market offerings found for ${derivSymbol} to extract rise/fall durations.`);
         }
 
-        // Fetch trading times
-        try {
-          const today = new Date().toISOString().split('T')[0];
-          const times = await getTradingTimes(derivSymbol, today, currentToken);
-          instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = times;
-          logAutomatedTradingEvent(`Fetched trading times for ${derivSymbol}.`);
-        } catch (error: any) {
-          logAutomatedTradingEvent(`Error fetching trading times for ${derivSymbol}: ${error.message}`);
-          instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = { error: error.message };
+        // Fetch trading times - This individual fetch is removed.
+        // Instead, use data from allTradingTimesData
+        let specificSymbolTimesData: DerivSymbolSpecificTradingData | { error: string } | undefined;
+        if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
+          let foundSymbolData = null;
+          for (const market of allTradingTimesData.markets) {
+            if (market && Array.isArray(market.submarkets)) {
+              for (const submarket of market.submarkets) {
+                if (submarket && Array.isArray(submarket.symbols)) {
+                  const symbolEntry = submarket.symbols.find((s: any) => s && s.symbol === derivSymbol);
+                  if (symbolEntry) {
+                    foundSymbolData = { // Constructing DerivSymbolSpecificTradingData structure
+                      times: symbolEntry.times,
+                      events: symbolEntry.events,
+                      feed_license: symbolEntry.feed_license
+                    };
+                    break;
+                  }
+                }
+              }
+            }
+            if (foundSymbolData) break;
+          }
+          if (foundSymbolData) {
+            specificSymbolTimesData = foundSymbolData;
+          } else {
+            specificSymbolTimesData = { error: `Trading times not found for ${derivSymbol} in global data.` };
+          }
+        } else if (allTradingTimesData && 'error' in allTradingTimesData) {
+          specificSymbolTimesData = { error: `Failed to fetch global trading times: ${allTradingTimesData.error}` };
+        } else {
+          specificSymbolTimesData = { error: 'Global trading times data is unavailable or in unexpected format.' };
         }
+
+        // Assign to the instrumentOfferingsDataForAI map
+        // Ensure the entry for derivSymbol exists from rise/fall duration processing
+        if (!instrumentOfferingsDataForAI[derivSymbol]) {
+            instrumentOfferingsDataForAI[derivSymbol] = {}; // Initialize if it wasn't (e.g. if no rise/fall)
+        }
+        instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = specificSymbolTimesData;
+        logAutomatedTradingEvent(specificSymbolTimesData && !('error' in specificSymbolTimesData) ? `Using cached trading times for ${derivSymbol}.` : `Trading times for ${derivSymbol}: ${(specificSymbolTimesData as {error: string}).error}`);
       }
     }
 

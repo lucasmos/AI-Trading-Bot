@@ -348,7 +348,7 @@ export async function getCandles(
 
 // Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
 
-export async function getTradingTimes(instrumentSymbol: string, date: string = 'today', token?: string): Promise<any | { error: string }> {
+export async function getTradingTimes(date: string = 'today', token?: string): Promise<any | { error: string }> {
   let ws: WebSocket | null = null;
   const operationTimeoutDuration = 15000; // 15 seconds
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
@@ -361,7 +361,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
       timeoutTimer = null;
     }
     const duration = Date.now() - startTime;
-    const fullLogMessage = `[DerivService/getTradingTimes] Symbol: ${instrumentSymbol}, Date: ${date}. ${logMessage}. Duration: ${duration}ms.`;
+    const fullLogMessage = `[DerivService/getTradingTimes] Date: ${date}. ${logMessage}. Duration: ${duration}ms.`;
     if (isError) console.error(fullLogMessage);
     else console.log(fullLogMessage);
 
@@ -372,19 +372,19 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
 
   const promiseLogic = new Promise<any>((resolve, reject) => {
     ws = new WebSocket(DERIV_API_URL);
-    console.log(`[DerivService/getTradingTimes] Attempting to connect for symbol: ${instrumentSymbol}, date: ${date}`);
+    console.log(`[DerivService/getTradingTimes] Attempting to connect for trading_times, date: ${date}`);
 
     ws.onopen = () => {
       cleanupAndLog("WebSocket connection opened.", false, null);
 
       if (token) {
         const authReqId = req_id + 1; // Distinct req_id for authorization
-        console.log(`[DerivService/getTradingTimes] Sending authorize request (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}`);
+        console.log(`[DerivService/getTradingTimes] Sending authorize request (authReqId: ${authReqId}) for date: ${date}`);
         ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
         // The trading_times request will be sent upon successful authorization
       } else {
-        console.log(`[DerivService/getTradingTimes] Sending trading_times request (req_id: ${req_id}) without prior auth for symbol: ${instrumentSymbol}`);
-        ws!.send(JSON.stringify({ trading_times: date, underlying_symbol: instrumentSymbol, req_id: req_id }));
+        console.log(`[DerivService/getTradingTimes] Sending trading_times request (req_id: ${req_id}) without prior auth for date: ${date}`);
+        ws!.send(JSON.stringify({ trading_times: date, req_id: req_id }));
       }
     };
 
@@ -393,7 +393,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
         const response = JSON.parse(event.data as string);
 
         if (response.error) {
-          const errorMessage = response.error.message || `Unknown API error fetching trading times for ${instrumentSymbol}.`;
+          const errorMessage = response.error.message || `Unknown API error fetching trading times.`;
           cleanupAndLog(`API Error: ${errorMessage}`, true);
           reject({ error: errorMessage });
           return;
@@ -405,10 +405,10 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
         if (response.msg_type === 'authorize') {
           if (authReqId && response.req_id === authReqId) { // Check if this is the response to our specific auth request
             if (response.authorize) {
-              console.log(`[DerivService/getTradingTimes] Authorization successful (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}. Now sending trading_times request (req_id: ${req_id}).`);
-              ws!.send(JSON.stringify({ trading_times: date, underlying_symbol: instrumentSymbol, req_id: req_id }));
+              console.log(`[DerivService/getTradingTimes] Authorization successful (authReqId: ${authReqId}) for date: ${date}. Now sending trading_times request (req_id: ${req_id}).`);
+              ws!.send(JSON.stringify({ trading_times: date, req_id: req_id }));
             } else {
-              const authFailedMsg = `Authorization failed in getTradingTimes (authReqId: ${authReqId}) for ${instrumentSymbol}.`;
+              const authFailedMsg = `Authorization failed in getTradingTimes (authReqId: ${authReqId}) for date: ${date}.`;
               cleanupAndLog(authFailedMsg, true);
               reject({ error: authFailedMsg });
             }
@@ -418,29 +418,29 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
           }
         } else if (response.msg_type === 'trading_times') {
           if (response.req_id === req_id) { // Match with the main trading_times req_id
-            cleanupAndLog(`Received trading_times response (req_id: ${req_id}) for symbol: ${instrumentSymbol}.`);
+            cleanupAndLog(`Received trading_times response (req_id: ${req_id}) for date: ${date}.`);
             resolve(response.trading_times);
           } else {
             console.warn(`[DerivService/getTradingTimes] Received trading_times with mismatched req_id. Expected ${req_id}, got ${response.req_id}. Ignoring.`);
           }
         } else {
-          console.log(`[DerivService/getTradingTimes] Received other message type: ${response.msg_type} for symbol: ${instrumentSymbol}. Waiting for trading_times or error.`);
+          console.log(`[DerivService/getTradingTimes] Received other message type: ${response.msg_type} for date: ${date}. Waiting for trading_times or error.`);
         }
       } catch (e: any) {
-        const processErrorMsg = `Error processing message for symbol: ${instrumentSymbol}: ${e?.message || String(e)}`;
+        const processErrorMsg = `Error processing message for date: ${date}: ${e?.message || String(e)}`;
         cleanupAndLog(processErrorMsg, true);
         reject({ error: processErrorMsg });
       }
     };
 
     ws.onerror = (event) => {
-      const errorMsg = `WebSocket error in getTradingTimes for ${instrumentSymbol}. Type: ${(event as any)?.type}`;
+      const errorMsg = `WebSocket error in getTradingTimes for date: ${date}. Type: ${(event as any)?.type}`;
       cleanupAndLog(errorMsg, true);
       reject({ error: errorMsg });
     };
 
     ws.onclose = (event) => {
-      cleanupAndLog(`WebSocket connection closed for symbol: ${instrumentSymbol}. Code: ${event.code}, Reason: ${event.reason}`, !event.wasClean);
+      cleanupAndLog(`WebSocket connection closed for date: ${date}. Code: ${event.code}, Reason: ${event.reason}`, !event.wasClean);
       // If the promise hasn't settled and it wasn't a clean closure after data, consider it an error.
       // This is tricky because resolve/reject might have already been called.
       // The timeout is the main guard against hangs. For now, just logging.
@@ -451,7 +451,7 @@ export async function getTradingTimes(instrumentSymbol: string, date: string = '
     promiseLogic,
     new Promise<any>((_, reject) => { // Changed from Promise<any | { error: string }> to just Promise<any> for the race
       timeoutTimer = setTimeout(() => {
-        const reason = `getTradingTimes operation timed out for ${instrumentSymbol}.`;
+        const reason = `getTradingTimes operation timed out for date: ${date}.`;
         cleanupAndLog(reason, true);
         reject({ error: reason }); // Ensure timeout also rejects with the error object structure
       }, operationTimeoutDuration);
