@@ -1520,6 +1520,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       // Check if all trades are settled to stop the session
       const allSettled = updatedTrades.every(t => t.isSettled || t.id.startsWith('error_'));
       if (allSettled && updatedTrades.length > 0) {
+        logAutomatedTradingEvent(`Monitoring: Checking for session completion. Trades in list: ${updatedTrades.length}. All settled: ${allSettled}.`);
         logAutomatedTradingEvent("All active trades have been settled. Stopping AI session.");
         setIsAutoTradingActive(false); // Stop the session
         toast({ title: "AI Session Complete", description: "All trades are settled." });
