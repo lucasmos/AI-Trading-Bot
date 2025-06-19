@@ -15,4 +15,5 @@ export interface DerivSymbolSpecificTradingData {
   feed_license?: string;
   events: DerivTradingEvent[];
   times?: DerivMarketTimes;
+  trading_days?: string[]; // Add this line (e.g., ["Mon", "Tue", ..., "Sun"])
 }
