@@ -59,37 +59,44 @@ export type InstrumentIndicatorData = {
 
 export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Crypto/Commodity)
   instrument: ForexCryptoCommodityInstrumentType;
-  action: 'CALL' | 'PUT';
+  tradeType: string; // e.g. CALL, PUT, MULTUP, MULTDOWN
   stake: number;
-  durationString: string;
+  durationString?: string; // e.g. "15m", "no_expiry"
+  multiplier?: number;
+  takeProfit?: number;
+  stopLoss?: number;
   reasoning: string;
   avatarUrl?: string;
 }
 
-export interface ActiveAutomatedTrade { // For binary options auto-trading
-  id: string; // Deriv's contract_id (ensure it's a string if Deriv ID is number)
+export interface ActiveAutomatedTrade {
+  id: string;
   instrument: ForexCryptoCommodityInstrumentType;
   derivSymbol: string;
-  action: 'CALL' | 'PUT';
+  tradeType: string; // e.g., "CALL", "PUT", "MULTUP", "MULTDOWN"
   stake: number;
-  durationSeconds: number; // Remains for internal calculations/display consistency
-  durationString?: string; // Added to store the AI's output duration string
-  reasoning?: string;
 
-  // From placeTrade response
-  entrySpot: number;
+  durationSeconds?: number; // For duration-based trades; can be 0 or sentinel for multipliers
+  durationString?: string;  // e.g., "15m", "no_expiry"
+
+  multiplier?: number;      // For multiplier trades
+  takeProfitAmount?: number; // For multiplier trades (monetary value)
+  stopLossAmount?: number;   // For multiplier trades (monetary value)
+
+  reasoning?: string;
+  entrySpot?: number;
   buyPrice: number;
-  startTime: number; // Timestamp
+  startTime: number;
   longcode?: string;
 
   // Status & Monitoring Fields
-  status: 'open' | 'won' | 'lost' | 'sold' | 'cancelled' | 'error_monitoring' | 'error_placement';
+  status: 'open' | 'won' | 'lost' | 'sold' | 'cancelled' | 'error_monitoring' | 'error_placement' | 'error_validation';
   currentPrice?: number;
   currentProfitLoss?: number;
   currentProfitLossPercentage?: number;
   isValidToSell?: boolean;
   sellPrice?: number;
-  stopLossPrice?: number; // Ensure this is present
+  stopLossPrice?: number;
 
   // Settlement Fields
   exitTime?: number;
@@ -97,7 +104,7 @@ export interface ActiveAutomatedTrade { // For binary options auto-trading
   isSettled?: boolean;
 
   validationError?: string;
-  monitoringRetryCount?: number; // For retry logic
+  monitoringRetryCount?: number;
 }
 
 export interface ProfitsClaimable {
@@ -119,9 +126,16 @@ export type AutomatedTradingStrategyInput = {
   formattedIndicatorsString?: string;
   instrumentOfferings?: {
     [key: string]: { // Instrument symbol e.g., "frxEURUSD"
-      rise_fall?: string[];     // Existing: Array of valid duration strings e.g., ["15m", "1h"]
       tradingTimesData?: any;  // Raw trading times data from API
-      tradingTimesDataString?: string; // New: JSON string representation or error/unavailable message
+      tradingTimesDataString?: string;
+      isMarketCurrentlyOpen?: boolean;
+      availableContracts?: Array<{
+        tradeTypeName: string;
+        displayName?: string;
+        availableDurations?: string[];
+        minMultiplier?: number;
+        maxMultiplier?: number;
+      }>;
     }
   };
 };

@@ -1462,16 +1462,22 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 }
 
 export interface TradeDetails {
-  symbol: string; // Deriv API symbol e.g. "R_100", "frxEURUSD"
-  contract_type: "CALL" | "PUT";
-  duration: number;
-  duration_unit: "s" | "m" | "h" | "d" | "t"; // seconds, minutes, hours, days, ticks
-  amount: number; // Stake amount
-  currency: string; // e.g., "USD"
-  stop_loss?: number; // Optional stop loss
-  take_profit?: number; // Optional take profit
-  basis: string; // e.g., "stake" or "payout"
-  token: string; // Deriv API token for authorization
+  symbol: string;         // Deriv API symbol e.g. "R_100", "frxEURUSD"
+  contract_type: string;  // e.g., "CALL", "PUT", "MULTUP", "MULTDOWN"
+  amount: number;         // Stake amount
+  currency: string;       // e.g., "USD"
+  basis: string;          // e.g., "stake" or "payout"
+  token: string;          // Deriv API token for authorization
+
+  // Optional fields for duration-based contracts (e.g., CALL/PUT)
+  duration?: number;
+  duration_unit?: "s" | "m" | "h" | "d" | "t";
+
+  // Optional fields for multiplier contracts
+  multiplier?: number;
+  // For multipliers, take_profit and stop_loss are typically absolute price offsets or amounts
+  take_profit?: number;
+  stop_loss?: number;
 }
 
 export interface DerivContractStatusData {
@@ -1585,19 +1591,51 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // If we reach here, currentLoginId === accountId, so we are on the correct account.
             console.log(`[DerivService/placeTrade] Session already active on target account ${accountId}. Proceeding to proposal...`);
 
-            // Construct and send proposal request (this part of the logic can be moved here from the old 'account_switch' success path)
-            const apiContractType = tradeDetails.contract_type;
             const proposalRequest: any = {
               proposal: 1,
-              subscribe: 1,
+              subscribe: 1, // To get a proposal ID
               amount: tradeDetails.amount,
-              basis: tradeDetails.basis,
-              contract_type: apiContractType,
+              basis: tradeDetails.basis, // Usually "stake"
+              contract_type: tradeDetails.contract_type, // e.g., "CALL", "PUT", "MULTUP", "MULTDOWN"
               currency: tradeDetails.currency,
-              duration: tradeDetails.duration,
-              duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
             };
+
+            if (tradeDetails.contract_type === "CALL" || tradeDetails.contract_type === "PUT") {
+              if (tradeDetails.duration && tradeDetails.duration_unit) {
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+              } else {
+                // Handle error: duration and duration_unit are required for CALL/PUT
+                cleanupAndLog("API Error: Duration and duration_unit are required for CALL/PUT contracts.", true);
+                reject(new Error("Duration and duration_unit are required for CALL/PUT contracts."));
+                return; // Exit onmessage handler
+              }
+              // Optional SL/TP for CALL/PUT if your API version supports it in proposal
+              // For simplicity, we assume SL/TP for CALL/PUT are handled by other means or not used in proposal
+            } else if (tradeDetails.contract_type === "MULTUP" || tradeDetails.contract_type === "MULTDOWN") {
+              if (tradeDetails.multiplier) {
+                proposalRequest.multiplier = tradeDetails.multiplier;
+              } else {
+                // Handle error: multiplier is required for MULTUP/MULTDOWN
+                cleanupAndLog("API Error: Multiplier is required for MULTUP/MULTDOWN contracts.", true);
+                reject(new Error("Multiplier is required for MULTUP/MULTDOWN contracts."));
+                return; // Exit onmessage handler
+              }
+              if (tradeDetails.take_profit !== undefined) {
+                proposalRequest.take_profit = tradeDetails.take_profit;
+              }
+              if (tradeDetails.stop_loss !== undefined) {
+                proposalRequest.stop_loss = tradeDetails.stop_loss;
+              }
+              // Duration and duration_unit are typically not sent for multiplier proposals
+              // as they are often "no_expiry" or determined by SL/TP.
+            } else {
+                // Handle unknown contract type
+                cleanupAndLog(`API Error: Unknown contract_type '${tradeDetails.contract_type}' for proposal.`, true);
+                reject(new Error(`Unknown contract_type '${tradeDetails.contract_type}' for proposal.`));
+                return; // Exit onmessage handler
+            }
             console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
             ws!.send(JSON.stringify(proposalRequest));
 
