@@ -169,7 +169,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
 
+      // --- START: New logic for determining initial account type ---
+      let determinedInitialAccountType: 'demo' | 'real' | null = null;
+      if (typeof window !== 'undefined') {
+        const lastUsed = localStorage.getItem('lastUsedDerivAccountType') as 'demo' | 'real' | null;
+        if (lastUsed) {
+          if (lastUsed === 'demo' && nextAuthUser.derivDemoAccountId && nextAuthUser.derivDemoApiToken) {
+            determinedInitialAccountType = 'demo';
+          } else if (lastUsed === 'real' && nextAuthUser.derivRealAccountId && nextAuthUser.derivRealApiToken) {
+            determinedInitialAccountType = 'real';
+          }
+        }
+      }
+
+      if (!determinedInitialAccountType) {
+        if (nextAuthUser.derivDemoAccountId && nextAuthUser.derivDemoApiToken) {
+          determinedInitialAccountType = 'demo';
+        } else if (nextAuthUser.derivRealAccountId && nextAuthUser.derivRealApiToken) {
+          determinedInitialAccountType = 'real';
+        } else {
+          determinedInitialAccountType = nextAuthUser.selectedDerivAccountType as ('demo' | 'real' | null) || null;
+        }
+      }
+      console.log('[AuthContext] Determined initial account type:', determinedInitialAccountType);
+      // --- END: New logic for determining initial account type ---
+
       // Adapt session user to UserInfo, ensuring all Deriv fields are included
+      // Use determinedInitialAccountType to set the active token and account ID
+      const activeDerivToken = determinedInitialAccountType === 'real' ? nextAuthUser.derivRealApiToken : nextAuthUser.derivDemoApiToken;
+      const activeDerivAccountId = determinedInitialAccountType === 'real' ? nextAuthUser.derivRealAccountId : nextAuthUser.derivDemoAccountId;
+
       const adaptedUser: UserInfo = {
         id: nextAuthUser.id || '',
         name: nextAuthUser.name || nextAuthUser.email?.split('@')[0] || 'User',
@@ -177,22 +206,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: nextAuthUser.image,
         authMethod: authMethodFromProvider,
         provider: nextAuthUser.provider,
-        derivAccessToken: nextAuthUser.derivAccessToken, // Ensure this is passed from session
-        derivAccountId: nextAuthUser.derivAccountId, // Main selected account ID
-        derivDemoAccountId: nextAuthUser.derivDemoAccountId,
-        derivRealAccountId: nextAuthUser.derivRealAccountId,
-        derivDemoBalance: nextAuthUser.derivDemoBalance,
-        derivRealBalance: nextAuthUser.derivRealBalance,
-        selectedDerivAccountType: nextAuthUser.selectedDerivAccountType as ('demo' | 'real' | null),
-        // Ensure derivApiToken is correctly mapped if it's a nested object in session
-        derivApiToken: nextAuthUser.derivApiToken || (nextAuthUser.derivAccessToken ? { access_token: nextAuthUser.derivAccessToken } : undefined),
+        // Core Deriv fields now reflect the determined initial account type
+        selectedDerivAccountType: determinedInitialAccountType,
+        derivAccessToken: activeDerivToken || null,
+        derivAccountId: activeDerivAccountId || null,
+        derivApiToken: activeDerivToken ? { access_token: activeDerivToken } : undefined,
 
-        // Newly added mappings:
-        derivDemoApiToken: nextAuthUser.derivDemoApiToken || null, // Ensure fallback to null if undefined
-        derivRealApiToken: nextAuthUser.derivRealApiToken || null, // Ensure fallback to null if undefined
+        // Specific account details remain available
+        derivDemoAccountId: nextAuthUser.derivDemoAccountId || null,
+        derivRealAccountId: nextAuthUser.derivRealAccountId || null,
+        derivDemoBalance: nextAuthUser.derivDemoBalance, // Keep as is from session
+        derivRealBalance: nextAuthUser.derivRealBalance, // Keep as is from session
+        derivDemoApiToken: nextAuthUser.derivDemoApiToken || null,
+        derivRealApiToken: nextAuthUser.derivRealApiToken || null,
       };
 
-      console.log('[AuthContext] Adapted user from NextAuth session:', JSON.stringify(adaptedUser, null, 2));
+      console.log('[AuthContext] Adapted user from NextAuth session with initial type selection:', JSON.stringify(adaptedUser, null, 2));
 
       // Check the flag HERE
       if (userJustSwitchedAccountTypeRef.current) {
@@ -291,32 +320,72 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setPaperBalance(newDemoBalance); // Reflect the other balance too
       }
        // Update userInfo state as well to keep it in sync with context for other consumers
-      setUserInfo(prevUserInfo => prevUserInfo ? ({
-        ...prevUserInfo,
-        selectedDerivAccountType: updatedSettings.selectedDerivAccountType,
-        derivDemoAccountId: updatedSettings.derivDemoAccountId,
-        derivRealAccountId: updatedSettings.derivRealAccountId,
-        derivDemoBalance: newDemoBalance,
-        derivRealBalance: newRealBalance,
-      }) : null);
+      setUserInfo(prevUserInfo => {
+        if (!prevUserInfo) return null;
+
+        const newSelectedType = updatedSettings.selectedDerivAccountType as 'demo' | 'real';
+        let newAccessToken = prevUserInfo.derivAccessToken;
+        let newAccountId = prevUserInfo.derivAccountId;
+
+        if (newSelectedType === 'demo') {
+          newAccessToken = prevUserInfo.derivDemoApiToken || undefined;
+          newAccountId = updatedSettings.derivDemoAccountId || null;
+        } else if (newSelectedType === 'real') {
+          newAccessToken = prevUserInfo.derivRealApiToken || undefined;
+          newAccountId = updatedSettings.derivRealAccountId || null;
+        }
+
+        return {
+          ...prevUserInfo,
+          selectedDerivAccountType: newSelectedType,
+          derivDemoAccountId: updatedSettings.derivDemoAccountId || null,
+          derivRealAccountId: updatedSettings.derivRealAccountId || null,
+          derivDemoBalance: newDemoBalance,
+          derivRealBalance: newRealBalance,
+          derivAccessToken: newAccessToken,
+          derivAccountId: newAccountId,
+          derivApiToken: newAccessToken ? { access_token: newAccessToken, token_type: prevUserInfo.derivApiToken?.token_type || 'bearer' } : undefined,
+        };
+      });
 
       // After local context states are updated, also update the NextAuth session
+      let activeTokenForSession = (nextSession?.user as any)?.derivAccessToken;
+      let activeAccountIdForSession = (nextSession?.user as any)?.derivAccountId;
+
+      if (updatedSettings.selectedDerivAccountType === 'demo') {
+          activeTokenForSession = (userInfo?.derivDemoApiToken) || undefined; // Use userInfo from context which should be updated by now, or nextSession's specific demo token
+          activeAccountIdForSession = updatedSettings.derivDemoAccountId || null;
+      } else if (updatedSettings.selectedDerivAccountType === 'real') {
+          activeTokenForSession = (userInfo?.derivRealApiToken) || undefined; // Use userInfo from context or nextSession's specific real token
+          activeAccountIdForSession = updatedSettings.derivRealAccountId || null;
+      }
+
+      // Store the newly selected type in localStorage
+      if (typeof window !== 'undefined' && updatedSettings.selectedDerivAccountType) {
+        localStorage.setItem('lastUsedDerivAccountType', updatedSettings.selectedDerivAccountType);
+      }
+
       await updateNextAuthSession({
         ...nextSession,
         user: {
-          ...nextSession?.user,
+          ...nextSession?.user, // Spread existing user fields
           selectedDerivAccountType: updatedSettings.selectedDerivAccountType,
           derivDemoAccountId: updatedSettings.derivDemoAccountId,
           derivRealAccountId: updatedSettings.derivRealAccountId,
           derivDemoBalance: newDemoBalance,
           derivRealBalance: newRealBalance,
+          // Update these to reflect the switch:
+          derivAccessToken: activeTokenForSession,
+          derivAccountId: activeAccountIdForSession,
+          // Carry over other important fields from existing session user
           id: nextSession?.user?.id,
           name: nextSession?.user?.name,
           email: nextSession?.user?.email,
           image: nextSession?.user?.image,
           provider: (nextSession?.user as any)?.provider,
-          derivAccessToken: (nextSession?.user as any)?.derivAccessToken,
-          derivAccountId: updatedSettings.selectedDerivAccountType === 'demo' ? updatedSettings.derivDemoAccountId : updatedSettings.derivRealAccountId,
+          // Also ensure specific tokens in session are passed through if they exist from initial login
+          derivDemoApiToken: (nextSession?.user as any)?.derivDemoApiToken,
+          derivRealApiToken: (nextSession?.user as any)?.derivRealApiToken,
         }
       });
       console.log('[AuthContext] NextAuth session update requested after account type switch.');

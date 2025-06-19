@@ -207,7 +207,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
   useEffect(() => {
     const demoToken = userInfo?.derivDemoApiToken;
-    if (demoToken && derivDemoAccountId) {
+    if (selectedDerivAccountType === 'demo' && demoToken && derivDemoAccountId) {
       if (demoBalanceListenerRef.current) {
         demoBalanceListenerRef.current.close();
       }
@@ -219,45 +219,47 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         derivDemoAccountId,
         (balanceData) => {
           setFreshDemoBalance(balanceData.balance);
-          // setIsLoadingDemoBalance(false); // Status change will handle this
         },
         (error) => {
           console.error('[DashboardPage] Demo Balance Listener Error:', error);
-          // Toast is now handled by onStatusChange for 'error'
         },
-        (status, message) => { // onStatusChange callback
+        (status, message) => {
           setDemoSyncStatus(status);
           if (message) console.log(`[DashboardPage] Demo Listener Status: ${status} - ${message}`);
           if (status === 'error' && message) {
             toast({ title: 'Demo Balance Sync Issue', description: message, variant: 'destructive'});
           }
-          // Manage loading state based on status
           if (status === 'connected' || status === 'error' || status === 'disconnected' || status === 'idle') {
             setIsLoadingDemoBalance(false);
           } else {
             setIsLoadingDemoBalance(true);
           }
         },
-        (closeEvent) => { // onClose callback
+        (closeEvent) => {
           console.log(`[DashboardPage] Demo Balance Listener Closed. Code: ${closeEvent.code}, Clean: ${closeEvent.wasClean}`);
-          // if (!closeEvent.wasClean) setIsLoadingDemoBalance(false); // Covered by onStatusChange
         }
       );
     } else {
        if (demoBalanceListenerRef.current) {
           demoBalanceListenerRef.current.close();
           demoBalanceListenerRef.current = null;
+          console.log('[DashboardPage] Demo Balance Listener explicitly closed due to account type mismatch or missing token/ID.');
        }
-       setFreshDemoBalance(derivDemoBalance ?? DEFAULT_PAPER_BALANCE); // Fallback if no token/ID
+       setFreshDemoBalance(derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
        setIsLoadingDemoBalance(false);
+       setDemoSyncStatus('idle');
     }
-    // This effect's cleanup is implicitly handled by the next run creating a new listener and closing the old one,
-    // and the main unmount cleanup.
-  }, [userInfo?.derivDemoApiToken, derivDemoAccountId, toast, derivDemoBalance, userInfo?.derivAccessToken]); // Added userInfo.derivDemoApiToken
+    return () => {
+      if (demoBalanceListenerRef.current) {
+        demoBalanceListenerRef.current.close();
+        demoBalanceListenerRef.current = null;
+      }
+    };
+  }, [userInfo?.derivDemoApiToken, derivDemoAccountId, toast, derivDemoBalance, selectedDerivAccountType, userInfo?.derivAccessToken]);
 
   useEffect(() => {
     const realToken = userInfo?.derivRealApiToken;
-    if (realToken && derivRealAccountId) {
+    if (selectedDerivAccountType === 'real' && realToken && derivRealAccountId) {
       if (realBalanceListenerRef.current) {
         realBalanceListenerRef.current.close();
       }
@@ -269,13 +271,11 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         derivRealAccountId,
         (balanceData) => {
           setFreshRealBalance(balanceData.balance);
-          // setIsLoadingRealBalance(false);
         },
         (error) => {
           console.error('[DashboardPage] Real Balance Listener Error:', error);
-          // Toast handled by onStatusChange
         },
-        (status, message) => { // onStatusChange callback
+        (status, message) => {
           setRealSyncStatus(status);
           if (message) console.log(`[DashboardPage] Real Listener Status: ${status} - ${message}`);
           if (status === 'error' && message) {
@@ -287,20 +287,27 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             setIsLoadingRealBalance(true);
           }
         },
-        (closeEvent) => { // onClose callback
+        (closeEvent) => {
           console.log(`[DashboardPage] Real Balance Listener Closed. Code: ${closeEvent.code}, Clean: ${closeEvent.wasClean}`);
-          // if (!closeEvent.wasClean) setIsLoadingRealBalance(false); // Covered by onStatusChange
         }
       );
     } else {
       if (realBalanceListenerRef.current) {
           realBalanceListenerRef.current.close();
           realBalanceListenerRef.current = null;
+          console.log('[DashboardPage] Real Balance Listener explicitly closed due to account type mismatch or missing token/ID.');
       }
-      setFreshRealBalance(derivLiveBalance ?? DEFAULT_LIVE_BALANCE); // Fallback
+      setFreshRealBalance(derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
       setIsLoadingRealBalance(false);
+      setRealSyncStatus('idle');
     }
-  }, [userInfo?.derivRealApiToken, derivRealAccountId, toast, derivLiveBalance, userInfo?.derivAccessToken]); // Added userInfo.derivRealApiToken
+    return () => {
+      if (realBalanceListenerRef.current) {
+        realBalanceListenerRef.current.close();
+        realBalanceListenerRef.current = null;
+      }
+    };
+  }, [userInfo?.derivRealApiToken, derivRealAccountId, toast, derivLiveBalance, selectedDerivAccountType, userInfo?.derivAccessToken]);
 
   const fetchBalanceForAccount = useCallback(async (accountId: string, type: 'demo' | 'real') => {
     // This function relies on a backend API. Ensure the backend uses the correct token for the given accountId.
@@ -373,62 +380,77 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   // DerivBalanceListener handles initial and subsequent updates.
 
   useEffect(() => {
-    const fetchGlobalData = async () => {
-      if (!userInfo) {
-        return;
-      }
-
+    const fetchInitialGlobalData = async () => {
       let currentToken: string | undefined | null = null;
-      if (selectedDerivAccountType === 'demo' && userInfo.derivDemoApiToken) {
-        currentToken = userInfo.derivDemoApiToken;
-      } else if (selectedDerivAccountType === 'real' && userInfo.derivRealApiToken) {
-        currentToken = userInfo.derivRealApiToken;
-      } else {
-        currentToken = userInfo.derivDemoApiToken || userInfo.derivRealApiToken || userInfo.derivAccessToken;
+      if (userInfo) {
+        if (selectedDerivAccountType === 'demo' && userInfo.derivDemoApiToken) {
+          currentToken = userInfo.derivDemoApiToken;
+        } else if (selectedDerivAccountType === 'real' && userInfo.derivRealApiToken) {
+          currentToken = userInfo.derivRealApiToken;
+        } else {
+          currentToken = userInfo.derivAccessToken;
+        }
       }
 
       // Fetch Global Offerings
-      if (!globalOfferingsData && !isLoadingGlobalOfferings) {
-        console.log(`[DashboardPage] Fetching global trading offerings... (Using token for ${selectedDerivAccountType || 'default account'})`);
+      if (userInfo && !globalOfferingsData && !isLoadingGlobalOfferings) {
         setIsLoadingGlobalOfferings(true);
-        setGlobalOfferingsError(null);
+        setGlobalOfferingsError(null); // Clear previous errors
+        logAutomatedTradingEvent('Fetching global trading offerings...');
         try {
-          const offeringsData = await getGlobalTradingOfferings(currentToken);
-          if (offeringsData) {
+          // Use currentToken or undefined if null, as getGlobalTradingOfferings might expect string | undefined
+          const offeringsData = await getGlobalTradingOfferings(currentToken || undefined);
+          if (offeringsData && !offeringsData.error) {
             setGlobalOfferingsData(offeringsData);
-            console.log("[DashboardPage] Global trading offerings fetched successfully.");
+            logAutomatedTradingEvent("[DashboardPage] Global trading offerings fetched and cached successfully.");
           } else {
-            throw new Error("Received null or empty global offerings data.");
+            const errorMsg = offeringsData?.error || 'Failed to fetch global offerings (empty response).';
+            setGlobalOfferingsError(errorMsg);
+            setGlobalOfferingsData(null);
+            logAutomatedTradingEvent(`[DashboardPage] Error fetching global trading offerings: ${errorMsg}`);
+            // toast({ title: "Offerings Load Error", description: errorMsg, variant: "destructive" }); // Optionally toast here or rely on other UI
           }
-        } catch (error: any) {
-          console.error("[DashboardPage] Error fetching global trading offerings:", error);
-          setGlobalOfferingsError(error.message || "Failed to load global trading offerings.");
-          toast({ title: "Offerings Load Error", description: `Failed to load global offerings: ${error.message}`, variant: "destructive" });
+        } catch (err: any) {
+          const errorMsg = err.message || 'Exception while fetching global offerings.';
+          setGlobalOfferingsError(errorMsg);
           setGlobalOfferingsData(null);
+          logAutomatedTradingEvent(`[DashboardPage] Error fetching global trading offerings: ${errorMsg}`);
+          // toast({ title: "Offerings Load Error", description: errorMsg, variant: "destructive" }); // Optionally toast here
         } finally {
           setIsLoadingGlobalOfferings(false);
         }
       }
 
-      // Fetch All Trading Times
-      if (!allTradingTimesData && !isLoadingAllTradingTimes && currentToken) { // Ensure token is available
-        logAutomatedTradingEvent("Fetching all trading times data...");
+      // Fetch All Trading Times - TARGET SECTION FOR FIXING MULTIPLE TRADING TIMES FETCH
+      if (currentToken && allTradingTimesData === null && !isLoadingAllTradingTimes) {
         setIsLoadingAllTradingTimes(true);
+        logAutomatedTradingEvent('Fetching all trading times data (once)...');
         try {
-          const timesData = await getTradingTimes('today', currentToken); // getTradingTimes now takes (date, token)
-          setAllTradingTimesData(timesData);
-          logAutomatedTradingEvent("All trading times data fetched successfully.");
+          const timesData = await getTradingTimes('today', currentToken);
+          if (timesData && typeof timesData === 'object' && 'error' in timesData) {
+            setAllTradingTimesData({ error: timesData.error });
+            logAutomatedTradingEvent(`Error fetching all trading times: ${timesData.error}`);
+          } else if (timesData) {
+            setAllTradingTimesData(timesData);
+            logAutomatedTradingEvent('All trading times data fetched successfully.');
+          } else {
+            setAllTradingTimesData({ error: 'Failed to fetch all trading times (empty or unexpected response).' });
+            logAutomatedTradingEvent('Error fetching all trading times: Empty or unexpected response.');
+          }
         } catch (err: any) {
-          logAutomatedTradingEvent(`Error fetching all trading times: ${err.message || 'Unknown error'}`);
-          setAllTradingTimesData({ error: err.message || 'Failed to fetch all trading times.' });
+          const errorMsg = err.message || 'Exception while fetching all trading times.';
+          setAllTradingTimesData({ error: errorMsg });
+          logAutomatedTradingEvent(`Error fetching all trading times: ${errorMsg}`);
         } finally {
           setIsLoadingAllTradingTimes(false);
         }
       }
     };
 
-    fetchGlobalData();
-  }, [userInfo, selectedDerivAccountType, globalOfferingsData, isLoadingGlobalOfferings, toast, allTradingTimesData, isLoadingAllTradingTimes, logAutomatedTradingEvent]);
+    if (userInfo) { // Only run if userInfo is available
+      fetchInitialGlobalData();
+    }
+  }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, logAutomatedTradingEvent, toast]); // isLoadingGlobalOfferings and isLoadingAllTradingTimes removed from deps
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
@@ -500,6 +522,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                   times: symbolData.times,
                   events: symbolData.events,
                   feed_license: symbolData.feed_license,
+                  trading_days: symbolData.trading_days // Ensure trading_days is included
                 };
                 break;
               }
@@ -1035,7 +1058,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                       times: symbolEntry.times,
                       events: symbolEntry.events,
                       feed_license: symbolEntry.feed_license,
-                      trading_days: symbolEntry.trading_days // Added trading_days
+                      trading_days: symbolEntry.trading_days // This should already be here from previous step, verifying
                     };
                     break;
                   }
