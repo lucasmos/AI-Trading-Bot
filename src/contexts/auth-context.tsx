@@ -158,7 +158,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const redirectTo = typeof options.redirect === 'string' ? options.redirect : '/';
         router.push(redirectTo);
     }
-  }, [router, paperBalance, liveBalance]); // Added paperBalance, liveBalance as they are set inside
+  }, [router]);
 
   useEffect(() => {
     console.log('[AuthContext] Main effect running. NextAuth status:', nextAuthStatus);
@@ -365,6 +365,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem('lastUsedDerivAccountType', updatedSettings.selectedDerivAccountType);
       }
 
+      setAuthStatus('authenticated');
       await updateNextAuthSession({
         ...nextSession,
         user: {
