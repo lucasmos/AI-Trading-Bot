@@ -86,11 +86,10 @@ Available Trade Offerings by Instrument (IMPORTANT!):
   {{#each instrumentOfferings}}
   For Instrument: {{@key}}
     {{#if this.isMarketCurrentlyOpen}}
-    - Current Market Status: OPEN (explicitly determined)
-    {{else if (eq this.isMarketCurrentlyOpen false)}}
-    - Current Market Status: CLOSED (explicitly determined)
+    - Current Market Status Flag: OPEN (system determined this market is likely open)
     {{else}}
-    - Current Market Status: Unknown (rely on Trading Hours Data below)
+    {{! This covers isMarketCurrentlyOpen being false, null, or undefined }}
+    - Current Market Status Flag: Potentially CLOSED or UNKNOWN (system determined market may be closed, or flag was not available). You MUST verify with 'Trading Hours Data' below. If 'Trading Hours Data' confirms closed or is unavailable, DO NOT TRADE.
     {{/if}}
     {{#if this.rise_fall}}
     - Trade Type: Rise/Fall (CALL/PUT)

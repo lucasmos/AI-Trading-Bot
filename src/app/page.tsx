@@ -1191,6 +1191,22 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           logAutomatedTradingEvent(`Market status for ${derivSymbol}: UNKNOWN (no trading times data). Assuming closed for AI.`);
         }
         instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = marketCurrentlyOpen;
+
+        // Override for known 24/7 instruments like BTC/USD, ETH/USD
+        const knownTwentyFourSevenSymbols = ['cryBTCUSD', 'cryETHUSD'];
+        // Potentially add Deriv's synthetic Volatility Index symbols here if they are part of instrumentsToTrade
+        // and if their tradingTimesData is also sparse leading to incorrect 'CLOSED' status.
+        // For now, focusing on the explicitly mentioned cryBTCUSD and cryETHUSD.
+
+        if (knownTwentyFourSevenSymbols.includes(derivSymbol)) {
+          if (instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen === false) {
+            logAutomatedTradingEvent(`OVERRIDE: Forcing market status to OPEN for 24/7 instrument ${derivSymbol} as ` +
+                                     `getCurrentMarketStatus initially reported it closed (likely due to sparse trading_times data for 24/7 markets).`);
+          } else {
+            logAutomatedTradingEvent(`INFO: Market status for 24/7 instrument ${derivSymbol} correctly determined as OPEN or was already true.`);
+          }
+          instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = true;
+        }
         logAutomatedTradingEvent(specificSymbolTimesData && !('error' in specificSymbolTimesData) ? `Using cached trading times for ${derivSymbol}.` : `Trading times for ${derivSymbol}: ${(specificSymbolTimesData as {error: string}).error}`);
       }
     }
