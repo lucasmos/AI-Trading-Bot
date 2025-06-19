@@ -23,6 +23,7 @@ import { executeAiTradingStrategy, TradeExecutionResult } from '@/app/actions/tr
 import { useToast } from '@/hooks/use-toast';
 import { getCandles } from '@/services/deriv';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
+import { getMarketStatus } from '@/lib/market-hours';
 
 const AVAILABLE_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
   'EUR/USD', 'GBP/USD', 'BTC/USD', 'XAU/USD',

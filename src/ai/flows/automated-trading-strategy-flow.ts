@@ -47,12 +47,19 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
   instrumentOfferings: zod.record(
     zod.string(), // Instrument symbol (e.g., "frxEURUSD")
     zod.object({
-      rise_fall: zod.array(zod.string()).optional(), // Array of valid duration strings (e.g., ["15m", "1h"])
-      tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.'), // Original field for data from page.tsx
-      tradingTimesDataString: zod.string().optional().describe('JSON string representation of trading times data, or error message.') // New field for prompt
-      // Future: extendable for other contract types like 'multiplier'
+      tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.'),
+      tradingTimesDataString: zod.string().optional().describe('JSON string representation of trading times data, or error message.'),
+      isMarketCurrentlyOpen: zod.boolean().optional().describe('Whether the market for this instrument is determined to be currently open based on its detailed trading hours.'),
+      availableContracts: zod.array(zod.object({
+        tradeTypeName: zod.string().describe("The API name of the trade type, e.g., 'CALL', 'PUT', 'MULTUP', 'MULTDOWN', 'multiplier', 'touchnotouch' etc. For Rise/Fall, AI should propose 'CALL' or 'PUT' as tradeType based on direction."),
+        displayName: zod.string().optional().describe("User-friendly display name of the trade type."),
+        availableDurations: zod.array(zod.string()).optional().describe("Specific duration strings like '15m', '60s', or 'no_expiry' if applicable."),
+        minMultiplier: zod.number().optional().describe("Minimum multiplier value, if type is multiplier."),
+        maxMultiplier: zod.number().optional().describe("Maximum multiplier value, if type is multiplier."),
+        // Potentially add min/max stake, min/max payout etc. later if needed
+      })).optional().describe("List of available contract types and their specific parameters for this instrument.")
     })
-  ).optional().describe('Specific available trade types (e.g., rise_fall) and their exact string durations, and trading times for each instrument symbol.')
+  ).optional().describe('Detailed offerings for each instrument, including available contract types, their durations, and market status.')
 });
 
 // This is the type for the flow function's input parameter
@@ -63,9 +70,12 @@ export type AutomatedTradingStrategyInput = AutomatedTradingStrategyFlowInput;
 
 const AutomatedTradeProposalZodSchema = zod.object({
   instrument: ForexCryptoCommodityInstrumentTypeSchema,
-  action: zod.enum(['CALL', 'PUT']),
-  stake: zod.number().min(0.01),
-  durationString: zod.string().describe('The exact duration string, e.g., "15m", "60s", "1h", selected from available offerings.'),
+  tradeType: zod.string().describe("The specific contract type name from Deriv API. For Rise/Fall, use 'CALL' or 'PUT'. For Multipliers, use 'MULTUP' (for price increase expectation) or 'MULTDOWN' (for price decrease expectation)."),
+  stake: zod.number().min(0.01).describe("The monetary value to stake."),
+  durationString: zod.string().optional().describe("Duration string like '15m', '60s'. Required for contract types like CALL/PUT. May not be applicable for 'multiplier' types which might be 'no_expiry'."),
+  multiplier: zod.number().optional().describe("The multiplier value (e.g., 100, 200) for multiplier-type trades."),
+  takeProfit: zod.number().optional().describe("Take profit amount/offset for the trade, if applicable (especially for multipliers)."),
+  stopLoss: zod.number().optional().describe("Stop loss amount/offset for the trade, if applicable (especially for multipliers)."),
   reasoning: zod.string(),
 });
 
@@ -84,14 +94,26 @@ Available Trade Offerings by Instrument (IMPORTANT!):
 {{#if instrumentOfferings}}
   {{#each instrumentOfferings}}
   For Instrument: {{@key}}
-    {{#if this.rise_fall}}
-    - Trade Type: Rise/Fall (CALL/PUT)
-      Available Durations: {{#if this.rise_fall.length}}{{#each this.rise_fall}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}None specified{{/if}}
+    {{#if this.isMarketCurrentlyOpen}}
+    - Current Market Status Flag: OPEN (system determined this market is likely open)
     {{else}}
-    - No Rise/Fall trade type specified for this instrument in the offerings.
+    {{! This covers isMarketCurrentlyOpen being false, null, or undefined }}
+    - Current Market Status Flag: Potentially CLOSED or UNKNOWN (system determined market may be closed, or flag was not available). You MUST verify with 'Trading Hours Data' below. If 'Trading Hours Data' confirms closed or is unavailable, DO NOT TRADE.
+    {{/if}}
+    {{#if this.availableContracts}}
+      Available Contract Types:
+      {{#each this.availableContracts}}
+      - Type Name: '{{{this.tradeTypeName}}}' (Display: '{{this.displayName}}')
+        {{#if this.availableDurations}}
+        Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
+        {{/if}}
+        {{#if this.minMultiplier}}Min Multiplier: {{this.minMultiplier}}{{/if}} {{#if this.maxMultiplier}}Max Multiplier: {{this.maxMultiplier}}{{/if}}
+      {{/each}}
+    {{else}}
+    - No specific contract types or durations listed for this instrument.
     {{/if}}
     {{#if this.tradingTimesDataString}}
-    - Trading Hours Data: {{{this.tradingTimesDataString}}}
+    - Trading Hours Data (for detailed checks if OPEN): {{{this.tradingTimesDataString}}}
     {{else}}
     - Trading Hours: Data explicitly not available or not processed.
     {{/if}}
@@ -100,12 +122,20 @@ Available Trade Offerings by Instrument (IMPORTANT!):
 (Detailed instrument-specific offerings not provided. You will have to rely on general knowledge for durations, but this is less reliable.)
 {{/if}}
 
-Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each instrument.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them.
-    **Crucially, before proposing a trade for an instrument, you MUST check its 'Trading Hours Data' (provided in 'Available Trade Offerings by Instrument'). If this data indicates the market for the instrument is likely closed at the current time (assume current time is UTC and within a few minutes of the 'Recent Price Ticks' timestamps), or if no trading hours data is available or shows an error, DO NOT propose a trade for that instrument.**
-    Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration. **You MUST select a duration from the 'Available Durations' listed for the chosen instrument and 'Rise/Fall' trade type in the 'Available Trade Offerings by Instrument' section.** If no durations are listed for Rise/Fall or the type itself is not available for an instrument, DO NOT propose a Rise/Fall trade for it. Durations are strings like '15m', '1h', '300s'. You must output the chosen duration string exactly as provided in the 'Available Durations' list. The system will parse this string. Do not convert it to seconds yourself. Instead, use the output field named durationString (this is a new field that replaces durationSeconds).
-    *   The system will set a {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss. Your reasoning should reflect an understanding of this.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
+Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each instrument.\r\n2.  **Primary Rule: For each instrument, a flag 'isMarketCurrentlyOpen' is provided under 'Available Trade Offerings by Instrument'. If 'isMarketCurrentlyOpen' is explicitly 'false', YOU MUST NOT propose a trade for that instrument, regardless of any other indicators. If 'isMarketCurrentlyOpen' is explicitly 'true', you should then verify with the 'Trading Hours Data' that your intended trade duration falls within active sessions and avoid proposing trades near market closing times unless specifically justified by the strategy. If the 'isMarketCurrentlyOpen' flag is not provided or is unknown for an instrument, you must then carefully check its 'Trading Hours Data'. If this data indicates the market for the instrument is likely closed at the current time (assume current time is UTC and within a few minutes of the 'Recent Price Ticks' timestamps), or if no trading hours data is available or shows an error, DO NOT propose a trade for that instrument.**
+    Based on the '{{{tradingMode}}}', decide which instruments to trade (respecting the market status rules above). You do not have to trade all of them.
+    Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade (after confirming its market is open based on the 'isMarketCurrentlyOpen' flag and detailed 'Trading Hours Data'):
+        *   Select an appropriate 'tradeType' from its 'Available Contract Types' list. Crucially: for Rise/Fall contracts, set 'tradeType' to 'CALL' (if expecting price to rise) or 'PUT' (if expecting price to fall). For Multiplier contracts, set 'tradeType' to 'MULTUP' (if expecting price to rise) or 'MULTDOWN' (if expecting price to fall).
+        *   If the chosen 'tradeType' requires a fixed duration (like 'CALL'/'PUT'), you MUST provide a 'durationString' selected exactly from its 'Available Durations' (e.g., "15m", "60s").
+        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable (as these are often 'no_expiry'). Instead, you MUST specify a 'multiplier' value (e.g., 100, 200, 300) from within its allowed range if provided (Min/Max Multiplier). You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
+        *   Provide 'stake' (monetary value).
+        *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall if not overridden by a specific stop-loss parameter for other contract types. For Multiplier trades, your proposed 'stopLoss' (if any) will be used.
+4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
 5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
-Each trade's 'durationString' must be the exact string from the available offerings (e.g., "15m", "60s").
+Each trade's 'tradeType' must be a string representing the chosen contract type (e.g., "CALL", "PUT" for Rise/Fall contracts; "MULTUP", "MULTDOWN" for Multiplier contracts).
+If 'durationString' is applicable for the 'tradeType', it must be the exact string from the available offerings (e.g., "15m", "60s").
+If 'multiplier' is applicable, it must be a number.
+'takeProfit' and 'stopLoss' amounts are optional and are monetary values.
 \r\n\r\nBegin your response with the JSON object.\r\n`,
 });
 
@@ -183,9 +213,14 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     output.tradesToExecute = output.tradesToExecute.filter(trade => {
       const isStakeValid = typeof trade.stake === 'number' && trade.stake >= 0.01;
       // Validate durationString: ensuring it's a non-empty string. More specific validation (matching a pattern) can be added if necessary.
-      const isDurationStringValid = typeof trade.durationString === 'string' && trade.durationString.length > 0;
+      // Duration string is now optional, so only validate if present.
+      let isDurationStringValid = true;
+      if (trade.durationString !== undefined && trade.durationString !== null) { // Check if it's provided
+        isDurationStringValid = typeof trade.durationString === 'string' && trade.durationString.length > 0;
+        if(!isDurationStringValid) console.warn(`AI proposed invalid duration string '${trade.durationString}' for ${trade.instrument}. Filtering out trade.`);
+      }
+
       if (!isStakeValid) console.warn(`AI proposed invalid stake ${trade.stake} for ${trade.instrument}. Filtering out trade.`);
-      if (!isDurationStringValid) console.warn(`AI proposed invalid duration string '${trade.durationString}' for ${trade.instrument}. Filtering out trade.`);
       return isStakeValid && isDurationStringValid;
     });
     
@@ -207,4 +242,3 @@ const automatedTradingStrategyFlow = ai.defineFlow(
 );
 
 export const generateAutomatedTradingStrategy = automatedTradingStrategyFlow;
-

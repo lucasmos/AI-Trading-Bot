@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useSession } from 'next-auth/react';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { TradeControls } from '@/components/dashboard/trade-controls';
 import { AiRecommendationCard } from '@/components/dashboard/ai-recommendation-card';
@@ -32,6 +33,7 @@ import {
 } from "@/config/instruments";
 // Old getMarketStatus will be removed, new ones imported
 import {
+  getMarketStatus,
   getCurrentMarketStatus,
   formatTradingHoursForDisplay,
   type DerivSymbolSpecificTradingData
@@ -112,6 +114,7 @@ export default function DashboardPage() {
     derivLiveBalance,
     updateSelectedDerivAccountType,
   } = useAuth();
+  const { data: session, update: updateNextAuthSession } = useSession();
   
   const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
@@ -337,6 +340,39 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         setFreshRealBalance(data.balance);
         console.log(`[DashboardPage] Fetched real balance: ${data.balance}`);
       }
+
+      if (session && session.user) {
+        const updatedUserFields: Record<string, any> = {};
+        if (type === 'demo') {
+          updatedUserFields.derivDemoBalance = data.balance;
+        } else if (type === 'real') {
+          updatedUserFields.derivRealBalance = data.balance;
+        }
+
+        // Also update the main derivAccessToken and derivAccountId if the balance being updated
+        // corresponds to the currently selected account type.
+        // This ensures that if AuthContext re-derives its userInfo from session, these are consistent.
+        if (type === selectedDerivAccountType) {
+           if (type === 'demo' && userInfo?.derivDemoApiToken) {
+              updatedUserFields.derivAccessToken = userInfo.derivDemoApiToken;
+              updatedUserFields.derivAccountId = derivDemoAccountId;
+           } else if (type === 'real' && userInfo?.derivRealApiToken) {
+              updatedUserFields.derivAccessToken = userInfo.derivRealApiToken;
+              updatedUserFields.derivAccountId = derivRealAccountId;
+           }
+        }
+
+        console.log(`[DashboardPage] Updating NextAuth session with new ${type} balance: ${data.balance}`);
+        await updateNextAuthSession({
+          ...session,
+          user: {
+            ...session.user,
+            ...updatedUserFields,
+          },
+        });
+      } else {
+        console.warn("[DashboardPage] Cannot update session balance: session or session.user is null.");
+      }
     } catch (error) {
       console.error(`[DashboardPage] Error fetching ${type} balance for ${accountId}:`, error);
       toast({ title: `Balance Error (${type})`, description: (error as Error).message, variant: "destructive" });
@@ -346,7 +382,19 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       if (type === 'demo') setIsLoadingDemoBalance(false);
       if (type === 'real') setIsLoadingRealBalance(false);
     }
-  }, [userInfo?.derivAccessToken, toast, setIsLoadingDemoBalance, setIsLoadingRealBalance, setFreshDemoBalance, setFreshRealBalance]); // Keep state setters in useCallback deps
+  }, [
+    userInfo,
+    session,
+    updateNextAuthSession,
+    selectedDerivAccountType,
+    derivDemoAccountId,
+    derivRealAccountId,
+    toast,
+    setIsLoadingDemoBalance,
+    setIsLoadingRealBalance,
+    setFreshDemoBalance,
+    setFreshRealBalance
+]);
 
   // Effect to load and initialize profitsClaimable from localStorage based on the selected account type.
   // This ensures that profit/loss tracking persists across sessions for each account type (demo/real).
@@ -453,20 +501,42 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, logAutomatedTradingEvent, toast]); // isLoadingGlobalOfferings and isLoadingAllTradingTimes removed from deps
 
   const currentBalance = useMemo(() => {
-    if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
+    // If AuthContext is still pending, or no user info yet, balance is not determined.
+    if (authStatus === 'pending' || !userInfo) {
+      return null;
+    }
+
+    if (authStatus === 'authenticated' && userInfo.derivAccessToken) {
       if (selectedDerivAccountType === 'demo') {
-        // Prioritize freshly fetched balance if available and not loading, else use context's value or default
-        return isLoadingDemoBalance ? (derivDemoBalance ?? DEFAULT_PAPER_BALANCE) : (freshDemoBalance ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+        // If listener is actively loading (isLoadingDemoBalance is true) AND freshDemoBalance hasn't received a value yet
+        if (isLoadingDemoBalance && freshDemoBalance === null) return null;
+        // Prioritize live balance from listener if available
+        if (freshDemoBalance !== null) return freshDemoBalance;
+        // Fallback to context's balance (now fresher post-AuthContext init)
+        if (derivDemoBalance !== null) return derivDemoBalance;
+        // If all are null but authenticated for demo, implies loading or initial state.
+        return null;
       } else if (selectedDerivAccountType === 'real') {
-        return isLoadingRealBalance ? (derivLiveBalance ?? DEFAULT_LIVE_BALANCE) : (freshRealBalance ?? derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+        if (isLoadingRealBalance && freshRealBalance === null) return null;
+        if (freshRealBalance !== null) return freshRealBalance;
+        if (derivLiveBalance !== null) return derivLiveBalance;
+        return null;
       }
     }
-    return DEFAULT_PAPER_BALANCE; // Default for guests or before anything loads
+
+    // Default for any other unhandled cases (e.g. guest, non-Deriv user if applicable)
+    // Returning null prompts BalanceDisplay to show its loading/unavailable message.
+    return null;
   }, [
-    authStatus, userInfo, selectedDerivAccountType,
-    derivDemoBalance, derivLiveBalance,
-    freshDemoBalance, freshRealBalance,
-    isLoadingDemoBalance, isLoadingRealBalance
+    authStatus,
+    userInfo,
+    selectedDerivAccountType,
+    derivDemoBalance,
+    derivLiveBalance,
+    freshDemoBalance,
+    freshRealBalance,
+    isLoadingDemoBalance,
+    isLoadingRealBalance
   ]);
 
   // Effect to update market status (open/closed) for the currently selected instrument.
@@ -959,7 +1029,55 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     setAutomatedTradingLog([]);
     logAutomatedTradingEvent(`Initializing AI Auto-Trading with $${autoTradeTotalStake} for ${selectedDerivAccountType} account (${currentTargetAccountId}) using strategy ${selectedAiStrategyId}.`);
 
-    const instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+    let instrumentsToTrade: ForexCryptoCommodityInstrumentType[];
+
+    if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
+      logAutomatedTradingEvent("Using detailed trading times for pre-filtering instruments for AI session.");
+      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(instrument => {
+        if (['BTC/USD', 'ETH/USD'].includes(instrument as string)) {
+          return true; // Always include these crypto as 24/7
+        }
+        const derivSymbol = instrumentToDerivSymbol(instrument);
+        let specificSymbolTimesData: DerivSymbolSpecificTradingData | null = null;
+
+        // Logic to extract specificSymbolTimesData for derivSymbol from allTradingTimesData
+        // This is similar to the extraction logic used later for instrumentOfferingsDataForAI
+        for (const market of allTradingTimesData.markets) {
+          if (market && Array.isArray(market.submarkets)) {
+            for (const submarket of market.submarkets) {
+              if (submarket && Array.isArray(submarket.symbols)) {
+                const symbolData = submarket.symbols.find((s: any) => s && s.symbol === derivSymbol);
+                if (symbolData) {
+                  specificSymbolTimesData = {
+                    times: symbolData.times,
+                    events: symbolData.events,
+                    feed_license: symbolData.feed_license,
+                    trading_days: symbolData.trading_days
+                  };
+                  break;
+                }
+              }
+            }
+          }
+          if (specificSymbolTimesData) break;
+        }
+
+        if (specificSymbolTimesData) {
+          const marketStatus = getCurrentMarketStatus(specificSymbolTimesData, new Date());
+          return marketStatus.isOpen;
+        }
+        // Fallback if specific data not found in allTradingTimesData (should be rare if allTradingTimesData is comprehensive)
+        logAutomatedTradingEvent(`Specific trading times not found for ${instrument} in global data for pre-filter. Falling back to general status.`);
+        return getMarketStatus(instrument).isOpen;
+      });
+    } else {
+      logAutomatedTradingEvent("Global trading times not available or error during fetch. Using general market status for pre-filtering instruments for AI session.");
+      if (allTradingTimesData && 'error' in allTradingTimesData) {
+        logAutomatedTradingEvent(`Error in global trading times data: ${allTradingTimesData.error}`);
+      }
+      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+    }
+
     if (instrumentsToTrade.length === 0) {
       logAutomatedTradingEvent("No markets open for auto-trading.");
       toast({ title: "Markets Closed", description: "No suitable markets currently open.", variant: "default" });
@@ -999,51 +1117,98 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
     // Inside startAutomatedTradingSession, before const strategyInput = { ... };
     const instrumentOfferingsDataForAI: {
-      [key: string]: { rise_fall?: string[], tradingTimesData?: any }
+      [key: string]: {
+        availableContracts?: any[], // Will be populated according to new schema
+        tradingTimesData?: any,
+        isMarketCurrentlyOpen?: boolean
+      }
     } = {};
 
     if (globalOfferingsData) {
       for (const userFriendlyInstrumentName of instrumentsToTrade) {
         const derivSymbol = instrumentToDerivSymbol(userFriendlyInstrumentName as InstrumentType);
-        instrumentOfferingsDataForAI[derivSymbol] = { rise_fall: [] }; // Initialize
+
+        // Initialize for the current symbol
+        instrumentOfferingsDataForAI[derivSymbol] = {
+          availableContracts: [],
+          // tradingTimesData and isMarketCurrentlyOpen will be populated later in this loop
+        };
 
         let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
-        for (const market of globalOfferingsData) {
-          for (const symGroup of market.data) {
-            if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
-              symbolMarketOfferings = symGroup;
-              break;
-            } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
-              symbolMarketOfferings = symGroup;
-              break;
-            }
-          }
-          if (symbolMarketOfferings) break;
-        }
-
-        if (symbolMarketOfferings) {
-          const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
-          if (riseFallTradeType && riseFallTradeType.durations && riseFallTradeType.durations.length > 0) {
-            const newDurationsSet = new Set<string>();
-            riseFallTradeType.durations.forEach(detail => {
-              if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
-                if (detail.min > 0) newDurationsSet.add(`${detail.min}${detail.name}`);
-                if (detail.name !== 't' && detail.max > 0 && detail.max !== detail.min) newDurationsSet.add(`${detail.max}${detail.name}`);
-                else if (detail.name === 't' && detail.max > detail.min) {
-                  if ((detail.max - detail.min) <= 10) {
-                    for (let i = detail.min + 1; i <= detail.max; i++) newDurationsSet.add(`${i}${detail.name}`);
-                  }
-                  else if (detail.max !== detail.min) newDurationsSet.add(`${detail.max}${detail.name}`);
+        if (globalOfferingsData) {
+          for (const market of globalOfferingsData) {
+            for (const symGroup of market.data) {
+              if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
+                symbolMarketOfferings = symGroup;
+                break;
+              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
+                // Handle cases where symGroup.symbol is a single object, not an array (based on API snippet for Cryptos)
+                if((symGroup.symbol as any).name === derivSymbol) {
+                    symbolMarketOfferings = symGroup;
+                    break;
                 }
               }
-            });
-            instrumentOfferingsDataForAI[derivSymbol].rise_fall = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
+            }
+            if (symbolMarketOfferings) break;
           }
-        } else {
-          logAutomatedTradingEvent(`No symbol market offerings found for ${derivSymbol} to extract rise/fall durations.`);
         }
 
-        // Fetch trading times - This individual fetch is removed.
+        if (symbolMarketOfferings && symbolMarketOfferings.trade_durations) {
+          symbolMarketOfferings.trade_durations.forEach(tradeTypeOffering => {
+            const contractDetails: any = { // Build according to new Zod schema for availableContracts
+              tradeTypeName: tradeTypeOffering.trade_type.name,
+              displayName: tradeTypeOffering.trade_type.display_name,
+              availableDurations: [],
+            };
+
+            if (tradeTypeOffering.durations && tradeTypeOffering.durations.length > 0) {
+              const durationsSet = new Set<string>();
+              tradeTypeOffering.durations.forEach(detail => {
+                if (detail.name === 'no_expiry') {
+                  durationsSet.add('no_expiry');
+                } else if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
+                  if (detail.min > 0) {
+                    durationsSet.add(`${detail.min}${detail.name}`);
+                  }
+                  // For non-tick, non-no_expiry, if max is different and positive, add it.
+                  if (detail.name !== 't' && detail.name !== 'no_expiry' && detail.max > 0 && detail.max !== detail.min) {
+                    durationsSet.add(`${detail.max}${detail.name}`);
+                  }
+                  // For tick units, handle range if small, or just min/max if large
+                  else if (detail.name === 't' && detail.max > detail.min) {
+                    if ((detail.max - detail.min) <= 10) { // Small range
+                      for (let i = detail.min + 1; i <= detail.max; i++) { // Include min (already added) and max
+                        durationsSet.add(`${i}${detail.name}`);
+                      }
+                    } else { // Large range
+                       if (detail.max !== detail.min) durationsSet.add(`${detail.max}${detail.name}`);
+                    }
+                  }
+                }
+              });
+              contractDetails.availableDurations = Array.from(durationsSet).sort((a, b) => {
+                if (a === 'no_expiry') return -1; // Keep 'no_expiry' first if present
+                if (b === 'no_expiry') return 1;
+                return parseDurationToSeconds(a) - parseDurationToSeconds(b);
+              });
+            }
+
+            // Add min/max multiplier if applicable (example for 'multiplier' trade type)
+            if (tradeTypeOffering.trade_type.name === 'multiplier') {
+              // Assuming min/max multiplier might be directly on tradeTypeOffering or its durations for multipliers
+              // This part needs to align with how Deriv provides min/max for multipliers in trading_durations API
+              // For now, we'll leave it empty and AI can use general knowledge or it can be added if structure known
+              // Example: contractDetails.minMultiplier = tradeTypeOffering.min_multiplier;
+              // Example: contractDetails.maxMultiplier = tradeTypeOffering.max_multiplier;
+            }
+            instrumentOfferingsDataForAI[derivSymbol].availableContracts!.push(contractDetails);
+          });
+        } else {
+          logAutomatedTradingEvent(`No trade durations found for ${derivSymbol} in global offerings, or symbol not found.`);
+        }
+
+        // The existing logic for populating tradingTimesData and isMarketCurrentlyOpen should follow AFTER this block.
+        // Ensure that instrumentOfferingsDataForAI[derivSymbol] is initialized before trying to push to availableContracts.
         // Instead, use data from allTradingTimesData
         let specificSymbolTimesData: DerivSymbolSpecificTradingData | { error: string } | undefined;
         if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
@@ -1084,6 +1249,33 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             instrumentOfferingsDataForAI[derivSymbol] = {}; // Initialize if it wasn't (e.g. if no rise/fall)
         }
         instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = specificSymbolTimesData;
+
+        // Determine and add isMarketCurrentlyOpen
+        let marketCurrentlyOpen = false; // Default to false
+        if (specificSymbolTimesData && !('error'in specificSymbolTimesData)) {
+          const marketStatus = getCurrentMarketStatus(specificSymbolTimesData as DerivSymbolSpecificTradingData, new Date());
+          marketCurrentlyOpen = marketStatus.isOpen;
+          logAutomatedTradingEvent(`Market status for ${derivSymbol}: ${marketStatus.isOpen ? 'OPEN' : 'CLOSED'}. Message: ${marketStatus.message}`);
+        } else {
+          logAutomatedTradingEvent(`Market status for ${derivSymbol}: UNKNOWN (no trading times data). Assuming closed for AI.`);
+        }
+        instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = marketCurrentlyOpen;
+
+        // Override for known 24/7 instruments like BTC/USD, ETH/USD
+        const knownTwentyFourSevenSymbols = ['cryBTCUSD', 'cryETHUSD'];
+        // Potentially add Deriv's synthetic Volatility Index symbols here if they are part of instrumentsToTrade
+        // and if their tradingTimesData is also sparse leading to incorrect 'CLOSED' status.
+        // For now, focusing on the explicitly mentioned cryBTCUSD and cryETHUSD.
+
+        if (knownTwentyFourSevenSymbols.includes(derivSymbol)) {
+          if (instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen === false) {
+            logAutomatedTradingEvent(`OVERRIDE: Forcing market status to OPEN for 24/7 instrument ${derivSymbol} as ` +
+                                     `getCurrentMarketStatus initially reported it closed (likely due to sparse trading_times data for 24/7 markets).`);
+          } else {
+            logAutomatedTradingEvent(`INFO: Market status for 24/7 instrument ${derivSymbol} correctly determined as OPEN or was already true.`);
+          }
+          instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = true;
+        }
         logAutomatedTradingEvent(specificSymbolTimesData && !('error' in specificSymbolTimesData) ? `Using cached trading times for ${derivSymbol}.` : `Trading times for ${derivSymbol}: ${(specificSymbolTimesData as {error: string}).error}`);
       }
     }
@@ -1116,85 +1308,70 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       const newActiveTradesBatch: ActiveAutomatedTrade[] = [];
 
       for (const proposedTrade of strategyResult.tradesToExecute) {
-        // This code block goes inside the loop: for (const proposedTrade of strategyResult.tradesToExecute) {
-        // It replaces the previous complex validation logic for duration.
-
         const derivSymbol = instrumentToDerivSymbol(proposedTrade.instrument as InstrumentType);
         let isValidProposal = false;
-        // validationMessage is now set by the new validation logic below, so initializing to empty.
-        let validationMessage = '';
-        let instrumentSpecificAvailableDurations: string[] = [];
+        let validationMessage = `Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.tradeType}, Stake: $${proposedTrade.stake}, Duration: ${proposedTrade.durationString || 'N/A'}, Multiplier: ${proposedTrade.multiplier || 'N/A'}`;
+        logAutomatedTradingEvent(validationMessage);
 
-        // The AI now returns durationString, so the log needs to reflect that.
-        // The actual durationSeconds is parsed later if the proposal is valid.
-        logAutomatedTradingEvent(`Validating proposal for ${proposedTrade.instrument} (${derivSymbol}): ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Proposed Duration String: ${proposedTrade.durationString}`);
+        const offeringsForSymbol = instrumentOfferingsDataForAI[derivSymbol];
+        let matchedContractTypeOffering = null;
 
-        // 1. Find symbolMarketOfferings for proposedTrade.instrument from globalOfferingsData
-        let symbolMarketOfferings: import('@/services/deriv').SymbolTradeDurations | undefined;
-        if (globalOfferingsData) { // Ensure globalOfferingsData is loaded and available in scope
-          for (const market of globalOfferingsData) {
-            for (const symGroup of market.data) {
-              // Ensure s and symGroup.symbol are not null before accessing properties
-              if (symGroup.symbol && Array.isArray(symGroup.symbol) && symGroup.symbol.find(s => s && s.name === derivSymbol)) {
-                symbolMarketOfferings = symGroup;
-                break;
-              } else if (symGroup.symbol && !Array.isArray(symGroup.symbol) && (symGroup.symbol as any).name === derivSymbol) {
-                symbolMarketOfferings = symGroup;
-                break;
+        if (offeringsForSymbol && offeringsForSymbol.availableContracts) {
+          // Try to find a direct match or a related match (e.g. CALL/PUT map to a rise_fall offering)
+          matchedContractTypeOffering = offeringsForSymbol.availableContracts.find(c =>
+            c.tradeTypeName === proposedTrade.tradeType ||
+            ( (proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'PUT') && c.tradeTypeName === 'rise_fall' ) ||
+            ( (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'MULTDOWN') && c.tradeTypeName === 'multiplier' )
+          );
+        }
+
+        if (!matchedContractTypeOffering) {
+          isValidProposal = false;
+          validationMessage = `Trade type '${proposedTrade.tradeType}' not found or not available for ${derivSymbol}.`;
+        } else {
+          const tradeTypeForValidation = matchedContractTypeOffering.tradeTypeName; // Use the name from offerings
+
+          if (tradeTypeForValidation === 'rise_fall' || proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'PUT') {
+            if (!proposedTrade.durationString) {
+              isValidProposal = false;
+              validationMessage = `Duration string is required for ${proposedTrade.tradeType} on ${derivSymbol}.`;
+            } else if (!matchedContractTypeOffering.availableDurations || !matchedContractTypeOffering.availableDurations.includes(proposedTrade.durationString)) {
+              isValidProposal = false;
+              validationMessage = `Proposed duration '${proposedTrade.durationString}' for ${derivSymbol} (${proposedTrade.tradeType}) is NOT in its available durations: [${matchedContractTypeOffering.availableDurations?.join(', ') ?? 'None'}].`;
+            } else {
+              isValidProposal = true;
+              validationMessage = `Proposal for ${derivSymbol} (${proposedTrade.tradeType}) with duration '${proposedTrade.durationString}' is valid.`;
+            }
+          } else if (tradeTypeForValidation === 'multiplier' || proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'MULTDOWN') {
+            if (typeof proposedTrade.multiplier !== 'number' || proposedTrade.multiplier <= 0) {
+              isValidProposal = false;
+              validationMessage = `A valid positive multiplier value is required for '${proposedTrade.tradeType}' on ${derivSymbol}. Received: ${proposedTrade.multiplier}`;
+            } else if (matchedContractTypeOffering.minMultiplier && proposedTrade.multiplier < matchedContractTypeOffering.minMultiplier) {
+              isValidProposal = false;
+              validationMessage = `Proposed multiplier ${proposedTrade.multiplier} for ${derivSymbol} is less than minimum ${matchedContractTypeOffering.minMultiplier}.`;
+            } else if (matchedContractTypeOffering.maxMultiplier && proposedTrade.multiplier > matchedContractTypeOffering.maxMultiplier) {
+              isValidProposal = false;
+              validationMessage = `Proposed multiplier ${proposedTrade.multiplier} for ${derivSymbol} is greater than maximum ${matchedContractTypeOffering.maxMultiplier}.`;
+            } else {
+              // Check if duration is 'no_expiry' or not provided, as expected for multipliers
+              const hasNoExpiryDuration = matchedContractTypeOffering.availableDurations?.includes('no_expiry');
+              if (proposedTrade.durationString && proposedTrade.durationString !== 'no_expiry' && hasNoExpiryDuration) {
+                 validationMessage = `Warning: Duration string '${proposedTrade.durationString}' provided for multiplier on ${derivSymbol}, but 'no_expiry' is typical. Proceeding as duration is often ignored for multipliers by API.`;
+                 isValidProposal = true; // Still valid, duration might be ignored by API
+              } else if (!proposedTrade.durationString && !hasNoExpiryDuration) {
+                 // This case is tricky: if no_expiry is NOT listed, but AI didn't provide a duration.
+                 // For now, assume valid if multiplier params are okay, as "no_expiry" is the Deriv default for multipliers.
+                 validationMessage = `Proposal for ${derivSymbol} (multiplier) is valid with multiplier ${proposedTrade.multiplier}. Duration is assumed 'no_expiry'.`;
+                 isValidProposal = true;
+              } else {
+                isValidProposal = true;
+                validationMessage = `Proposal for ${derivSymbol} (multiplier) with multiplier ${proposedTrade.multiplier} and duration '${proposedTrade.durationString || 'no_expiry'}' is valid.`;
               }
             }
-            if (symbolMarketOfferings) break;
-          }
-        }
-
-        // 2. If symbol offerings found, extract its specific durations for 'rise_fall' trade type
-        if (symbolMarketOfferings) {
-          const riseFallTradeType = symbolMarketOfferings.trade_durations.find(td => td.trade_type.name === 'rise_fall');
-          if (riseFallTradeType && riseFallTradeType.durations && riseFallTradeType.durations.length > 0) {
-            const newDurationsSet = new Set<string>();
-            riseFallTradeType.durations.forEach(detail => {
-              if (['s', 'm', 'h', 'd', 't'].includes(detail.name)) {
-                if (detail.min > 0) {
-                  newDurationsSet.add(`${detail.min}${detail.name}`);
-                }
-                if (detail.name !== 't' && detail.max > 0 && detail.max !== detail.min) {
-                  newDurationsSet.add(`${detail.max}${detail.name}`);
-                }
-                // For tick units ('t'), if max is greater than min (min already added if >0)
-                else if (detail.name === 't' && detail.max > detail.min) {
-                  if ((detail.max - detail.min) <= 10) { // Small range: add intermediate ticks
-                    for (let i = detail.min + 1; i <= detail.max; i++) {
-                      newDurationsSet.add(`${i}${detail.name}`);
-                    }
-                  } else { // Large range: add max if different from min (min already added)
-                    newDurationsSet.add(`${detail.max}${detail.name}`);
-                  }
-                }
-              }
-            });
-            instrumentSpecificAvailableDurations = Array.from(newDurationsSet).sort((a, b) => parseDurationToSeconds(a) - parseDurationToSeconds(b));
           } else {
-            validationMessage = `No 'rise_fall' durations found for ${derivSymbol} in its specific offerings.`;
-            // instrumentSpecificAvailableDurations remains empty
+            isValidProposal = false; // Unhandled trade type from AI
+            validationMessage = `Unhandled trade type '${proposedTrade.tradeType}' proposed by AI for ${derivSymbol}.`;
           }
-        } else {
-          validationMessage = `Symbol ${derivSymbol} not found in global offerings data.`;
-          // instrumentSpecificAvailableDurations remains empty
-        }
-
-        // 3. Perform the validation using instrumentSpecificAvailableDurations
-        // AI now returns durationString directly.
-        const proposedDurationString = proposedTrade.durationString;
-
-        if (instrumentSpecificAvailableDurations.length === 0) {
-          isValidProposal = false;
-          validationMessage = validationMessage ? `${validationMessage} Cannot validate proposal.` : `Could not determine available durations for ${derivSymbol}. Cannot validate proposal.`;
-        } else if (instrumentSpecificAvailableDurations.includes(proposedDurationString)) {
-          isValidProposal = true;
-          validationMessage = `Proposal for ${derivSymbol} with duration ${proposedDurationString} is valid.`;
-        } else {
-          isValidProposal = false;
-          validationMessage = `Proposed duration ${proposedDurationString} for ${derivSymbol} is NOT in its specific list of available durations: [${instrumentSpecificAvailableDurations.join(', ')}].`;
         }
         logAutomatedTradingEvent(validationMessage);
 
@@ -1203,16 +1380,22 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             newActiveTradesBatch.push({
               id: `error_validation_${uuidv4()}`,
               instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
-              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: 0,
+              derivSymbol,
+              action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
+              tradeType: proposedTrade.tradeType,
+              stake: proposedTrade.stake,
+              durationSeconds: proposedTrade.durationString ? parseDurationToSeconds(proposedTrade.durationString) : 0,
               durationString: proposedTrade.durationString,
+              multiplier: proposedTrade.multiplier,
+              takeProfit: proposedTrade.takeProfit,
+              stopLoss: proposedTrade.stopLoss,
               reasoning: proposedTrade.reasoning,
               entrySpot: 0,
               buyPrice: 0,
               startTime: Date.now(),
               status: 'error_validation',
               validationError: validationMessage,
-              stopLossPrice: 0, // For error entries
+              stopLossPrice: 0,
               currentPrice: undefined,
               currentProfitLoss: undefined,
               sellPrice: undefined,
@@ -1220,50 +1403,35 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             } as ActiveAutomatedTrade);
             continue;
           }
-
-          // If validation passes, parse durationString for placeTrade
-          const durationMatch = proposedTrade.durationString.match(/^(\d+)([smhdt])$/);
-          if (!durationMatch) {
-            logAutomatedTradingEvent(`Invalid duration string from AI: ${proposedTrade.durationString} for ${proposedTrade.instrument}. Skipping trade.`);
-            newActiveTradesBatch.push({
-              id: `error_parsing_duration_${uuidv4()}`,
-              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
-              derivSymbol, action: proposedTrade.action, stake: proposedTrade.stake,
-              durationSeconds: 0,
-              durationString: proposedTrade.durationString,
-              reasoning: proposedTrade.reasoning + ` (Error: Invalid duration string format from AI: ${proposedTrade.durationString})`,
-              entrySpot: 0,
-              buyPrice: 0,
-              startTime: Date.now(),
-              status: 'error_validation',
-              validationError: `Invalid duration string format from AI: ${proposedTrade.durationString}`,
-              stopLossPrice: 0, // For error entries
-              currentPrice: undefined,
-              currentProfitLoss: undefined,
-              sellPrice: undefined,
-              finalProfitLoss: undefined,
-            } as ActiveAutomatedTrade);
-            continue;
-          }
-          const durationValue = parseInt(durationMatch[1], 10);
-          const durationUnit = durationMatch[2] as 's' | 'm' | 'h' | 'd' | 't';
 
           const tradeDetails: any = {
             symbol: derivSymbol,
-            contract_type: proposedTrade.action,
-            duration: durationValue, // Use parsed value
-            duration_unit: durationUnit, // Use parsed unit
+            contract_type: proposedTrade.tradeType, // Use the AI's proposed tradeType
             amount: proposedTrade.stake,
             currency: "USD",
             basis: "stake",
             token: currentToken!,
           };
 
-          // Log with the parsed duration for clarity of what's being sent to placeTrade
-          logAutomatedTradingEvent(`Placing ${proposedTrade.action} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Duration: ${durationValue}${durationUnit}`);
+          if (proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'PUT') {
+            const durationMatch = proposedTrade.durationString!.match(/^(\d+)([smhdt])$/); // Assert non-null as it's validated for these types
+            if (!durationMatch) { // Should not happen due to prior validation
+              logAutomatedTradingEvent(`Critical Error: Invalid duration string '${proposedTrade.durationString}' for ${proposedTrade.tradeType} despite validation. Skipping.`);
+              continue;
+            }
+            tradeDetails.duration = parseInt(durationMatch[1], 10);
+            tradeDetails.duration_unit = durationMatch[2] as 's' | 'm' | 'h' | 'd' | 't';
+          } else if (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'MULTDOWN') {
+            tradeDetails.multiplier = proposedTrade.multiplier;
+            if (proposedTrade.takeProfit) tradeDetails.take_profit = proposedTrade.takeProfit;
+            if (proposedTrade.stopLoss) tradeDetails.stop_loss = proposedTrade.stopLoss;
+            // Duration and duration_unit are typically not sent for multipliers, or API ignores them.
+            // If API requires "no_expiry" or similar, that would need to be handled.
+          }
+
+          logAutomatedTradingEvent(`Placing ${tradeDetails.contract_type} on ${proposedTrade.instrument} for $${proposedTrade.stake}, Multiplier: ${tradeDetails.multiplier || 'N/A'}, Duration: ${tradeDetails.duration || 'N/A'}${tradeDetails.duration_unit || ''}`);
           const tradeResult = await placeTrade(tradeDetails, currentTargetAccountId!);
-          // Log with the original durationString for consistency with AI output if needed, or keep parsed
-          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${proposedTrade.action}, Stake: $${proposedTrade.stake}, Deriv ID: ${tradeResult.contract_id}, Duration: ${proposedTrade.durationString}`);
+          logAutomatedTradingEvent(`Trade placed for ${proposedTrade.instrument}: ${tradeDetails.contract_type}, Deriv ID: ${tradeResult.contract_id}`);
 
           if (selectedDerivAccountType && currentTargetAccountId) {
             fetchBalanceForAccount(currentTargetAccountId, selectedDerivAccountType);
@@ -1273,46 +1441,48 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             id: String(tradeResult.contract_id),
             instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
             derivSymbol: tradeDetails.symbol,
-            action: proposedTrade.action,
+            action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
+            tradeType: proposedTrade.tradeType,
             stake: proposedTrade.stake,
-            durationSeconds: parseDurationToSeconds(proposedTrade.durationString),
+            durationSeconds: proposedTrade.durationString ? parseDurationToSeconds(proposedTrade.durationString) : 0, // Default 0 if no duration string (e.g. multipliers)
             durationString: proposedTrade.durationString,
+            multiplier: proposedTrade.multiplier,
+            takeProfit: proposedTrade.takeProfit,
+            stopLoss: proposedTrade.stopLoss,
             reasoning: proposedTrade.reasoning,
-            entrySpot: tradeResult.entry_spot, // Assigned from tradeResult
+            entrySpot: tradeResult.entry_spot,
             buyPrice: tradeResult.buy_price,
-            stopLossPrice: proposedTrade.action === 'CALL' ? tradeResult.entry_spot * (1 - (selectedStopLossPercentage / 100)) : tradeResult.entry_spot * (1 + (selectedStopLossPercentage / 100)),
+            stopLossPrice: (proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'MULTUP')
+                           ? tradeResult.entry_spot * (1 - (selectedStopLossPercentage / 100))
+                           : tradeResult.entry_spot * (1 + (selectedStopLossPercentage / 100)), // Simplified SL for now
             startTime: Date.now(),
             longcode: tradeResult.longcode,
             status: 'open',
             monitoringRetryCount: 0,
-            currentPrice: undefined,
-            currentProfitLoss: undefined,
-            sellPrice: undefined,
-            finalProfitLoss: undefined,
           } as ActiveAutomatedTrade);
 
-        } catch (error: any) { // This catch now handles errors from getContractOfferings and placeTrade
-          logAutomatedTradingEvent(`Error processing or placing trade for ${proposedTrade.instrument} ${proposedTrade.action}: ${error.message}`);
+        } catch (error: any) {
+          logAutomatedTradingEvent(`Error processing or placing trade for ${proposedTrade.instrument} ${proposedTrade.tradeType}: ${error.message}`);
           toast({ title: `Trade Processing Error (${proposedTrade.instrument})`, description: error.message, variant: "destructive" });
           newActiveTradesBatch.push({
             id: `error_processing_${uuidv4()}`,
             instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
             derivSymbol,
-            action: proposedTrade.action,
+            action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
+            tradeType: proposedTrade.tradeType,
             stake: proposedTrade.stake,
-            durationSeconds: parseDurationToSeconds(proposedTrade.durationString),
+            durationSeconds: proposedTrade.durationString ? parseDurationToSeconds(proposedTrade.durationString) : 0,
             durationString: proposedTrade.durationString,
+            multiplier: proposedTrade.multiplier,
+            takeProfit: proposedTrade.takeProfit,
+            stopLoss: proposedTrade.stopLoss,
             reasoning: proposedTrade.reasoning + ` (Processing/Placement Error: ${error.message})`,
-            entrySpot: 0, // Error entry
+            entrySpot: 0,
             buyPrice: 0,
             startTime: Date.now(),
             status: 'error_placement',
             validationError: error.message,
-            stopLossPrice: 0, // Error entry
-            currentPrice: undefined,
-            currentProfitLoss: undefined,
-            sellPrice: undefined,
-            finalProfitLoss: undefined,
+            stopLossPrice: 0,
           } as ActiveAutomatedTrade);
         }
       }
@@ -1519,6 +1689,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       // Check if all trades are settled to stop the session
       const allSettled = updatedTrades.every(t => t.isSettled || t.id.startsWith('error_'));
       if (allSettled && updatedTrades.length > 0) {
+        logAutomatedTradingEvent(`Monitoring: Checking for session completion. Trades in list: ${updatedTrades.length}. All settled: ${allSettled}.`);
         logAutomatedTradingEvent("All active trades have been settled. Stopping AI session.");
         setIsAutoTradingActive(false); // Stop the session
         toast({ title: "AI Session Complete", description: "All trades are settled." });
