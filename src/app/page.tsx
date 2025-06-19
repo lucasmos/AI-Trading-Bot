@@ -32,6 +32,7 @@ import {
 } from "@/config/instruments";
 // Old getMarketStatus will be removed, new ones imported
 import {
+  getMarketStatus,
   getCurrentMarketStatus,
   formatTradingHoursForDisplay,
   type DerivSymbolSpecificTradingData
