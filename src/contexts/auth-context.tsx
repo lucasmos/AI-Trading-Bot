@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { auth, isFirebaseInitialized } from '@/lib/firebase/firebase';
 import { signOut as firebaseSignOutIfStillNeeded } from 'firebase/auth';
 import { useSession, signOut as nextAuthSignOut } from 'next-auth/react';
+import { getUpdatedUserBalances } from '@/app/actions/balance-actions';
 
 interface AuthContextType {
   authStatus: AuthStatus;
@@ -55,6 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Ref to track the last user ID processed by NextAuth session to prevent infinite loops
   const lastProcessedNextAuthUserId = useRef<string | undefined | null>(undefined);
   const userJustSwitchedAccountTypeRef = useRef(false);
+  const [initialBalanceFetchAttempted, setInitialBalanceFetchAttempted] = useState(false);
 
   const clearAuthData = useCallback(() => {
     console.log('[AuthContext] clearAuthData called.');
@@ -165,6 +167,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // console.log('[AuthContext] userJustSwitchedAccountTypeRef.current at start of effect:', userJustSwitchedAccountTypeRef.current);
 
     if (nextAuthStatus === 'authenticated' && nextSession?.user) {
+      // ---- START: New logic to refresh session balance on load ----
+      if (!initialBalanceFetchAttempted && !userJustSwitchedAccountTypeRef.current) {
+        const currentUser = nextSession.user as any; // Use current session data for credentials
+        console.log('[AuthContext] Attempting initial balance refresh for session...');
+
+        // Set flag immediately to prevent re-entry for this session load
+        setInitialBalanceFetchAttempted(true);
+
+        getUpdatedUserBalances({
+          userId: currentUser.id,
+          demoAccountId: currentUser.derivDemoAccountId,
+          demoApiToken: currentUser.derivDemoApiToken,
+          realAccountId: currentUser.derivRealAccountId,
+          realApiToken: currentUser.derivRealApiToken,
+        }).then(async (freshBalances) => {
+          if (freshBalances && !freshBalances.error) {
+            const updatedSessionUser = { ...currentUser };
+            let changed = false;
+            if (freshBalances.derivDemoBalance !== undefined &&
+                freshBalances.derivDemoBalance !== null &&
+                freshBalances.derivDemoBalance !== updatedSessionUser.derivDemoBalance) {
+              updatedSessionUser.derivDemoBalance = freshBalances.derivDemoBalance;
+              changed = true;
+            }
+            if (freshBalances.derivRealBalance !== undefined &&
+                freshBalances.derivRealBalance !== null &&
+                freshBalances.derivRealBalance !== updatedSessionUser.derivRealBalance) {
+              updatedSessionUser.derivRealBalance = freshBalances.derivRealBalance;
+              changed = true;
+            }
+
+            if (changed) {
+              console.log('[AuthContext] Fresh balances received. Updating NextAuth session:', updatedSessionUser);
+              // Note: updateNextAuthSession might not reflect in `nextSession` immediately in this same render.
+              // The useEffect will re-run with the updated `nextSession`.
+              await updateNextAuthSession({ user: updatedSessionUser });
+              // No need to directly use updatedSessionUser for login in this cycle,
+              // as the session update will trigger a re-run of this useEffect.
+            } else {
+              console.log('[AuthContext] Fresh balances are the same as in session, no session update needed.');
+            }
+          } else if (freshBalances?.error) {
+            console.warn('[AuthContext] Failed to fetch fresh balances for session on load:', freshBalances.error);
+          }
+        }).catch(e => {
+          console.error('[AuthContext] Error calling getUpdatedUserBalances on load:', e);
+        });
+      }
+      // ---- END: New logic to refresh session balance on load ----
       const nextAuthUser = nextSession.user as any; // Use 'any' for flexibility with session structure
 
       const authMethodFromProvider = nextAuthUser.provider === 'google' ? 'google' : (nextAuthUser.provider || 'nextauth') as AuthMethod;
@@ -249,6 +300,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (nextAuthStatus === 'loading') {
       if (authStatus !== 'pending') setAuthStatus('pending');
       lastProcessedNextAuthUserId.current = null;
+      setInitialBalanceFetchAttempted(false);
       return;
     }
 
@@ -256,10 +308,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (authStatus !== 'unauthenticated') {
       console.log('[AuthContext] No active NextAuth session or loading. Clearing auth data.');
       clearAuthData();
+      setInitialBalanceFetchAttempted(false);
     }
     lastProcessedNextAuthUserId.current = null;
 
-  }, [nextAuthStatus, nextSession, login, clearAuthData, userInfo, authStatus]); // Added userInfo and authStatus to dep array for more robust sync checks
+  }, [nextAuthStatus, nextSession, login, clearAuthData, userInfo, authStatus, updateNextAuthSession, initialBalanceFetchAttempted]);
 
 
   const logout = useCallback(async () => {
