@@ -960,7 +960,55 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     setAutomatedTradingLog([]);
     logAutomatedTradingEvent(`Initializing AI Auto-Trading with $${autoTradeTotalStake} for ${selectedDerivAccountType} account (${currentTargetAccountId}) using strategy ${selectedAiStrategyId}.`);
 
-    const instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+    let instrumentsToTrade: ForexCryptoCommodityInstrumentType[];
+
+    if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
+      logAutomatedTradingEvent("Using detailed trading times for pre-filtering instruments for AI session.");
+      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(instrument => {
+        if (['BTC/USD', 'ETH/USD'].includes(instrument as string)) {
+          return true; // Always include these crypto as 24/7
+        }
+        const derivSymbol = instrumentToDerivSymbol(instrument);
+        let specificSymbolTimesData: DerivSymbolSpecificTradingData | null = null;
+
+        // Logic to extract specificSymbolTimesData for derivSymbol from allTradingTimesData
+        // This is similar to the extraction logic used later for instrumentOfferingsDataForAI
+        for (const market of allTradingTimesData.markets) {
+          if (market && Array.isArray(market.submarkets)) {
+            for (const submarket of market.submarkets) {
+              if (submarket && Array.isArray(submarket.symbols)) {
+                const symbolData = submarket.symbols.find((s: any) => s && s.symbol === derivSymbol);
+                if (symbolData) {
+                  specificSymbolTimesData = {
+                    times: symbolData.times,
+                    events: symbolData.events,
+                    feed_license: symbolData.feed_license,
+                    trading_days: symbolData.trading_days
+                  };
+                  break;
+                }
+              }
+            }
+          }
+          if (specificSymbolTimesData) break;
+        }
+
+        if (specificSymbolTimesData) {
+          const marketStatus = getCurrentMarketStatus(specificSymbolTimesData, new Date());
+          return marketStatus.isOpen;
+        }
+        // Fallback if specific data not found in allTradingTimesData (should be rare if allTradingTimesData is comprehensive)
+        logAutomatedTradingEvent(`Specific trading times not found for ${instrument} in global data for pre-filter. Falling back to general status.`);
+        return getMarketStatus(instrument).isOpen;
+      });
+    } else {
+      logAutomatedTradingEvent("Global trading times not available or error during fetch. Using general market status for pre-filtering instruments for AI session.");
+      if (allTradingTimesData && 'error' in allTradingTimesData) {
+        logAutomatedTradingEvent(`Error in global trading times data: ${allTradingTimesData.error}`);
+      }
+      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+    }
+
     if (instrumentsToTrade.length === 0) {
       logAutomatedTradingEvent("No markets open for auto-trading.");
       toast({ title: "Markets Closed", description: "No suitable markets currently open.", variant: "default" });
@@ -1085,6 +1133,17 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             instrumentOfferingsDataForAI[derivSymbol] = {}; // Initialize if it wasn't (e.g. if no rise/fall)
         }
         instrumentOfferingsDataForAI[derivSymbol].tradingTimesData = specificSymbolTimesData;
+
+        // Determine and add isMarketCurrentlyOpen
+        let marketCurrentlyOpen = false; // Default to false
+        if (specificSymbolTimesData && !('error'in specificSymbolTimesData)) {
+          const marketStatus = getCurrentMarketStatus(specificSymbolTimesData as DerivSymbolSpecificTradingData, new Date());
+          marketCurrentlyOpen = marketStatus.isOpen;
+          logAutomatedTradingEvent(`Market status for ${derivSymbol}: ${marketStatus.isOpen ? 'OPEN' : 'CLOSED'}. Message: ${marketStatus.message}`);
+        } else {
+          logAutomatedTradingEvent(`Market status for ${derivSymbol}: UNKNOWN (no trading times data). Assuming closed for AI.`);
+        }
+        instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = marketCurrentlyOpen;
         logAutomatedTradingEvent(specificSymbolTimesData && !('error' in specificSymbolTimesData) ? `Using cached trading times for ${derivSymbol}.` : `Trading times for ${derivSymbol}: ${(specificSymbolTimesData as {error: string}).error}`);
       }
     }
