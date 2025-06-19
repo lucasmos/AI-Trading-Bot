@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Ref to track the last user ID processed by NextAuth session to prevent infinite loops
   const lastProcessedNextAuthUserId = useRef<string | undefined | null>(undefined);
   const userJustSwitchedAccountTypeRef = useRef(false);
-  const [hasAttemptedInitialSessionBalanceSync, setHasAttemptedInitialSessionBalanceSync] = useState(false);
+  const initialSyncPerformedForCurrentSessionRef = useRef(false); // Changed from useState to useRef
 
   const clearAuthData = useCallback(() => {
     console.log('[AuthContext] clearAuthData called.');
@@ -164,18 +164,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const processSessionLogic = async () => {
-      console.log(`[AuthContext] Main effect. Status: ${nextAuthStatus}. Initial Sync Attempted: ${hasAttemptedInitialSessionBalanceSync}. User Just Switched: ${userJustSwitchedAccountTypeRef.current}`);
+      console.log(`[AuthContext] Main effect. Status: ${nextAuthStatus}. Initial Sync Ref: ${initialSyncPerformedForCurrentSessionRef.current}. User Just Switched: ${userJustSwitchedAccountTypeRef.current}`);
 
       if (nextAuthStatus === 'authenticated' && nextSession?.user) {
-        const currentSessionUser = nextSession.user as any;
+        const currentSessionUser = nextSession.user as any; // Cast for easier access to custom fields
 
         if (userJustSwitchedAccountTypeRef.current) {
-          console.log('[AuthContext] Account type switch detected. Proceeding to adapt user from current session.');
-          userJustSwitchedAccountTypeRef.current = false; // Reset flag
-          // Fall through to adapt and login logic with currentSessionUser
-        } else if (!hasAttemptedInitialSessionBalanceSync) {
-          console.log('[AuthContext] New authenticated session. Attempting initial balance refresh...');
-          setHasAttemptedInitialSessionBalanceSync(true); // Set flag: attempt will be made
+          console.log('[AuthContext] Account type switch detected. Proceeding to process current session data.');
+          userJustSwitchedAccountTypeRef.current = false; // Reset flag for next cycle
+          // Fall through to the main user adaptation and login logic using currentSessionUser
+        } else if (!initialSyncPerformedForCurrentSessionRef.current) {
+          console.log('[AuthContext] New authenticated session. Attempting initial balance refresh via server action...');
+          initialSyncPerformedForCurrentSessionRef.current = true; // Set flag: attempt will be made for this session instance
 
           try {
             const freshBalances = await getUpdatedUserBalances({
@@ -187,13 +187,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             });
 
             let sessionNeedsUpdate = false;
+            // Create a mutable copy for potential updates
             const updatedUserPayload = { ...currentSessionUser };
 
-            if (freshBalances.derivDemoBalance !== undefined && freshBalances.derivDemoBalance !== null && freshBalances.derivDemoBalance !== updatedUserPayload.derivDemoBalance) {
+            if (freshBalances.derivDemoBalance !== undefined && freshBalances.derivDemoBalance !== null &&
+                freshBalances.derivDemoBalance !== updatedUserPayload.derivDemoBalance) {
               updatedUserPayload.derivDemoBalance = freshBalances.derivDemoBalance;
               sessionNeedsUpdate = true;
             }
-            if (freshBalances.derivRealBalance !== undefined && freshBalances.derivRealBalance !== null && freshBalances.derivRealBalance !== updatedUserPayload.derivRealBalance) {
+            if (freshBalances.derivRealBalance !== undefined && freshBalances.derivRealBalance !== null &&
+                freshBalances.derivRealBalance !== updatedUserPayload.derivRealBalance) {
               updatedUserPayload.derivRealBalance = freshBalances.derivRealBalance;
               sessionNeedsUpdate = true;
             }
@@ -201,24 +204,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (sessionNeedsUpdate) {
               console.log('[AuthContext] Fresh balances retrieved and differ. Updating NextAuth session.');
               await updateNextAuthSession({ user: updatedUserPayload });
-              // IMPORTANT: Return here. The useEffect will re-run with the updated nextSession.
-              // The rest of the logic (adapt user, login) will execute in that subsequent run.
+              // IMPORTANT: Return here. The useEffect will re-run with the updated nextSession
+              // from useSession(), and then the logic below will process it.
               return;
             } else {
-              console.log('[AuthContext] Fresh balances same as session or not fetched; no session update needed from initial sync. Proceeding with current session data.');
-              // Fall through to adapt and login logic with currentSessionUser
+              console.log('[AuthContext] Fresh balances same as session, or no update needed from initial sync. Proceeding with current session data.');
+              // Fall through to process currentSessionUser in this cycle
             }
           } catch (e) {
-            console.error('[AuthContext] Error during initial balance refresh:', e);
-            // Fall through to adapt and login logic with currentSessionUser (potentially stale)
+            console.error('[AuthContext] Error during initial balance refresh server action:', e);
+            // Fall through to process currentSessionUser (potentially stale) in this cycle
           }
         }
 
         // This block is reached if:
-        // 1. Initial sync was already attempted for this session instance (`hasAttemptedInitialSessionBalanceSync` is true).
-        // 2. User just switched account type (flag was true, now reset, initial sync skipped for this run).
-        // 3. Initial sync was attempted, but no session update was needed (balances same or error).
-        console.log('[AuthContext] Proceeding to adapt and potentially login with current/updated session data.');
+        // 1. Initial sync was already performed for this session instance (initialSyncPerformedForCurrentSessionRef.current is true).
+        // 2. OR User just switched account type (userJustSwitchedAccountTypeRef was true and now reset).
+        // 3. OR Initial sync was attempted, but no session update was needed (balances same or error during fetch).
+        // We use currentSessionUser which is nextSession.user from the current render.
+        // If an updateNextAuthSession occurred and we returned, this useEffect re-runs, and currentSessionUser will be the new one.
+
+        console.log('[AuthContext] Proceeding to adapt and potentially login with session data.');
 
         const authMethodFromProvider = currentSessionUser.provider === 'google' ? 'google' : (currentSessionUser.provider || 'nextauth') as AuthMethod;
 
@@ -259,8 +265,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           derivApiToken: activeDerivToken ? { access_token: activeDerivToken } : undefined,
           derivDemoAccountId: currentSessionUser.derivDemoAccountId || null,
           derivRealAccountId: currentSessionUser.derivRealAccountId || null,
-          derivDemoBalance: currentSessionUser.derivDemoBalance,
-          derivRealBalance: currentSessionUser.derivRealBalance,
+          derivDemoBalance: currentSessionUser.derivDemoBalance, // This will be from the (potentially) updated session
+          derivRealBalance: currentSessionUser.derivRealBalance, // This will be from the (potentially) updated session
           derivDemoApiToken: currentSessionUser.derivDemoApiToken || null,
           derivRealApiToken: currentSessionUser.derivRealApiToken || null,
         };
@@ -269,29 +275,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (lastProcessedNextAuthUserId.current !== adaptedUser.id ||
             authStatus !== 'authenticated' ||
-            (userInfo && ( // Only compare if userInfo already exists
+            (userInfo && (
               userInfo.selectedDerivAccountType !== adaptedUser.selectedDerivAccountType ||
               userInfo.derivDemoBalance !== adaptedUser.derivDemoBalance ||
               userInfo.derivRealBalance !== adaptedUser.derivRealBalance ||
               userInfo.derivAccessToken !== adaptedUser.derivAccessToken
             ))) {
-          console.log('[AuthContext] Syncing AuthContext state with session data.');
+          console.log('[AuthContext] Syncing AuthContext state with (potentially refreshed) session data.');
           login(adaptedUser, adaptedUser.authMethod, { redirect: false });
           lastProcessedNextAuthUserId.current = adaptedUser.id;
         } else {
-          console.log('[AuthContext] AuthContext already in sync with session data.');
+          console.log('[AuthContext] AuthContext already in sync with current session data.');
         }
 
       } else if (nextAuthStatus === 'loading') {
-        if (authStatus !== 'pending') setAuthStatus('pending');
-        // DO NOT reset hasAttemptedInitialSessionBalanceSync here
-        // lastProcessedNextAuthUserId.current = null; // Keep this if it helps prevent re-processing same user after loading
+        if (authStatus !== 'pending') {
+          setAuthStatus('pending');
+        }
+        // Do NOT reset initialSyncPerformedForCurrentSessionRef.current here
+        // Resetting lastProcessedNextAuthUserId.current if a new user might be loading
+        if (!nextSession?.user) { // If session is truly gone while loading
+           lastProcessedNextAuthUserId.current = null;
+           initialSyncPerformedForCurrentSessionRef.current = false; // New user will need sync
+        }
       } else { // Unauthenticated
         if (authStatus !== 'unauthenticated') {
           console.log('[AuthContext] Session ended or unauthenticated. Clearing auth data.');
           clearAuthData();
         }
-        setHasAttemptedInitialSessionBalanceSync(false); // Reset for next new session
+        initialSyncPerformedForCurrentSessionRef.current = false; // Reset for next new session
         lastProcessedNextAuthUserId.current = null;
       }
     };
@@ -304,8 +316,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       clearAuthData, // Keep clearAuthData from useCallback
       userInfo, // current context userInfo
       authStatus, // current context authStatus
-      updateNextAuthSession, // from useSession
-      hasAttemptedInitialSessionBalanceSync // local state
+      updateNextAuthSession // from useSession
+      // initialSyncPerformedForCurrentSessionRef is a ref, not needed in deps
+      // userJustSwitchedAccountTypeRef is a ref, not needed in deps
   ]);
 
 

@@ -501,20 +501,42 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, logAutomatedTradingEvent, toast]); // isLoadingGlobalOfferings and isLoadingAllTradingTimes removed from deps
 
   const currentBalance = useMemo(() => {
-    if (authStatus === 'authenticated' && userInfo?.derivAccessToken) {
+    // If AuthContext is still pending, or no user info yet, balance is not determined.
+    if (authStatus === 'pending' || !userInfo) {
+      return null;
+    }
+
+    if (authStatus === 'authenticated' && userInfo.derivAccessToken) {
       if (selectedDerivAccountType === 'demo') {
-        // Prioritize freshly fetched balance if available and not loading, else use context's value or default
-        return isLoadingDemoBalance ? (derivDemoBalance ?? DEFAULT_PAPER_BALANCE) : (freshDemoBalance ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+        // If listener is actively loading (isLoadingDemoBalance is true) AND freshDemoBalance hasn't received a value yet
+        if (isLoadingDemoBalance && freshDemoBalance === null) return null;
+        // Prioritize live balance from listener if available
+        if (freshDemoBalance !== null) return freshDemoBalance;
+        // Fallback to context's balance (now fresher post-AuthContext init)
+        if (derivDemoBalance !== null) return derivDemoBalance;
+        // If all are null but authenticated for demo, implies loading or initial state.
+        return null;
       } else if (selectedDerivAccountType === 'real') {
-        return isLoadingRealBalance ? (derivLiveBalance ?? DEFAULT_LIVE_BALANCE) : (freshRealBalance ?? derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+        if (isLoadingRealBalance && freshRealBalance === null) return null;
+        if (freshRealBalance !== null) return freshRealBalance;
+        if (derivLiveBalance !== null) return derivLiveBalance;
+        return null;
       }
     }
-    return DEFAULT_PAPER_BALANCE; // Default for guests or before anything loads
+
+    // Default for any other unhandled cases (e.g. guest, non-Deriv user if applicable)
+    // Returning null prompts BalanceDisplay to show its loading/unavailable message.
+    return null;
   }, [
-    authStatus, userInfo, selectedDerivAccountType,
-    derivDemoBalance, derivLiveBalance,
-    freshDemoBalance, freshRealBalance,
-    isLoadingDemoBalance, isLoadingRealBalance
+    authStatus,
+    userInfo,
+    selectedDerivAccountType,
+    derivDemoBalance,
+    derivLiveBalance,
+    freshDemoBalance,
+    freshRealBalance,
+    isLoadingDemoBalance,
+    isLoadingRealBalance
   ]);
 
   // Effect to update market status (open/closed) for the currently selected instrument.

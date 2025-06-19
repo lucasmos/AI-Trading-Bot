@@ -23,16 +23,18 @@ export function BalanceDisplay({
   const [formattedBalance, setFormattedBalance] = useState<string | null>(null);
 
   useEffect(() => {
-    // Only format if balance is a valid number.
-    // If syncStatus indicates issues, balance might be stale or default.
-    setFormattedBalance(
-      Number(balance).toLocaleString(undefined, { // Ensure balance is treated as number
-        style: 'currency', 
-        currency: currency, 
-        minimumFractionDigits: 2, 
-        maximumFractionDigits: 2 
-      })
-    );
+    if (balance === null) {
+      setFormattedBalance(null);
+    } else {
+      setFormattedBalance(
+        Number(balance).toLocaleString(undefined, {
+          style: 'currency',
+          currency: currency,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })
+      );
+    }
   }, [balance, currency]);
 
   const isValidDerivAccount = selectedAccountType === 'demo' || selectedAccountType === 'real';
@@ -59,11 +61,11 @@ export function BalanceDisplay({
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold text-foreground">
-          {formattedBalance !== null
-            ? formattedBalance
-            : (syncStatus === 'connecting' || syncStatus === 'reconnecting')
-              ? 'Syncing...'
-              : `${currency === 'USD' ? '$' : currency}0.00 (Unavailable)`}
+          { balance === null
+            ? 'Syncing...'
+            : formattedBalance !== null
+              ? formattedBalance
+              : `${currency === 'USD' ? '$' : currency}0.00 (Unavailable)` }
         </div>
         <p className="text-xs text-muted-foreground mt-1">
           {isValidDerivAccount
