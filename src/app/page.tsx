@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useSession } from 'next-auth/react';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { TradeControls } from '@/components/dashboard/trade-controls';
 import { AiRecommendationCard } from '@/components/dashboard/ai-recommendation-card';
@@ -113,6 +114,7 @@ export default function DashboardPage() {
     derivLiveBalance,
     updateSelectedDerivAccountType,
   } = useAuth();
+  const { data: session, update: updateNextAuthSession } = useSession();
   
   const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
@@ -338,6 +340,39 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         setFreshRealBalance(data.balance);
         console.log(`[DashboardPage] Fetched real balance: ${data.balance}`);
       }
+
+      if (session && session.user) {
+        const updatedUserFields: Record<string, any> = {};
+        if (type === 'demo') {
+          updatedUserFields.derivDemoBalance = data.balance;
+        } else if (type === 'real') {
+          updatedUserFields.derivRealBalance = data.balance;
+        }
+
+        // Also update the main derivAccessToken and derivAccountId if the balance being updated
+        // corresponds to the currently selected account type.
+        // This ensures that if AuthContext re-derives its userInfo from session, these are consistent.
+        if (type === selectedDerivAccountType) {
+           if (type === 'demo' && userInfo?.derivDemoApiToken) {
+              updatedUserFields.derivAccessToken = userInfo.derivDemoApiToken;
+              updatedUserFields.derivAccountId = derivDemoAccountId;
+           } else if (type === 'real' && userInfo?.derivRealApiToken) {
+              updatedUserFields.derivAccessToken = userInfo.derivRealApiToken;
+              updatedUserFields.derivAccountId = derivRealAccountId;
+           }
+        }
+
+        console.log(`[DashboardPage] Updating NextAuth session with new ${type} balance: ${data.balance}`);
+        await updateNextAuthSession({
+          ...session,
+          user: {
+            ...session.user,
+            ...updatedUserFields,
+          },
+        });
+      } else {
+        console.warn("[DashboardPage] Cannot update session balance: session or session.user is null.");
+      }
     } catch (error) {
       console.error(`[DashboardPage] Error fetching ${type} balance for ${accountId}:`, error);
       toast({ title: `Balance Error (${type})`, description: (error as Error).message, variant: "destructive" });
@@ -347,7 +382,19 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       if (type === 'demo') setIsLoadingDemoBalance(false);
       if (type === 'real') setIsLoadingRealBalance(false);
     }
-  }, [userInfo?.derivAccessToken, toast, setIsLoadingDemoBalance, setIsLoadingRealBalance, setFreshDemoBalance, setFreshRealBalance]); // Keep state setters in useCallback deps
+  }, [
+    userInfo,
+    session,
+    updateNextAuthSession,
+    selectedDerivAccountType,
+    derivDemoAccountId,
+    derivRealAccountId,
+    toast,
+    setIsLoadingDemoBalance,
+    setIsLoadingRealBalance,
+    setFreshDemoBalance,
+    setFreshRealBalance
+]);
 
   // Effect to load and initialize profitsClaimable from localStorage based on the selected account type.
   // This ensures that profit/loss tracking persists across sessions for each account type (demo/real).
