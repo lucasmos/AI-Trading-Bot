@@ -59,14 +59,11 @@ export type InstrumentIndicatorData = {
 
 export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Crypto/Commodity)
   instrument: ForexCryptoCommodityInstrumentType;
-  action: string; // Changed to allow 'MULTUP', 'MULTDOWN', etc.
+  action: 'CALL' | 'PUT';
   stake: number;
-  durationString?: string; // Made optional
+  durationString: string;
   reasoning: string;
   avatarUrl?: string;
-  multiplier?: number; // Added for Multiplier contracts
-  take_profit?: number; // Added for TP/SL features
-  stop_loss?: number; // Added for TP/SL features
 }
 
 export interface ActiveAutomatedTrade { // For binary options auto-trading

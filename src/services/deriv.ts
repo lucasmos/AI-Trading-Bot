@@ -1463,16 +1463,16 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 
 export interface TradeDetails {
   symbol: string;
-  contract_type: string; // Changed to string
-  duration?: number; // Made optional
-  duration_unit?: "s" | "m" | "h" | "d" | "t"; // Made optional
+  contract_type: string;
+  duration?: number;
+  duration_unit?: "s" | "m" | "h" | "d" | "t";
   amount: number;
   currency: string;
   stop_loss?: number;
   take_profit?: number;
   basis: string;
   token: string;
-  multiplier?: number; // Ensured optional
+  multiplier?: number;
 }
 
 export interface DerivContractStatusData {
@@ -1589,6 +1589,7 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // Construct and send proposal request
             const apiContractType = tradeDetails.contract_type;
 
+            // Base proposal request
             const proposalRequest: any = {
               proposal: 1,
               subscribe: 1,
@@ -1599,26 +1600,28 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
               symbol: tradeDetails.symbol,
             };
 
+            // Type-specific parameter handling
             if (apiContractType === 'MULTUP' || apiContractType === 'MULTDOWN') {
+              // Multiplier is mandatory for these types
               if (typeof tradeDetails.multiplier === 'number') {
                 proposalRequest.multiplier = tradeDetails.multiplier;
               } else {
-                const errorMsg = `Multiplier is required for ${apiContractType} contract but was not provided. Symbol: ${tradeDetails.symbol}`;
-                console.error(`[DerivService/placeTrade] ${errorMsg}`);
-                cleanupAndLog(errorMsg, true);
-                reject(new Error(errorMsg));
-                return;
+                // This will be caught by the main try...catch in onmessage,
+                // which calls cleanupAndLog and reject.
+                throw new Error(`Multiplier is required for ${apiContractType} contract but was not provided. Symbol: ${tradeDetails.symbol}`);
               }
-              // Explicitly do not add duration, duration_unit, or product_type for multipliers
+              // Duration, duration_unit, and product_type are explicitly NOT added for Multipliers.
             } else {
-              // For non-multiplier contracts, add duration and duration_unit if provided
+              // For non-multiplier contracts (e.g., CALL/PUT)
               if (tradeDetails.duration && tradeDetails.duration_unit) {
                 proposalRequest.duration = tradeDetails.duration;
                 proposalRequest.duration_unit = tradeDetails.duration_unit;
               }
+              // Add product_type: "basic" for non-multiplier contracts based on observed API logs for CALL.
+              proposalRequest.product_type = "basic";
             }
 
-            // Add limit_order if take_profit or stop_loss are present
+            // limit_order handling (common for contracts that support it)
             if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
               const limitOrderDetails: any = {};
               if (typeof tradeDetails.take_profit === 'number') {
