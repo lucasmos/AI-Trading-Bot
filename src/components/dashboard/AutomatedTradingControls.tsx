@@ -21,7 +21,7 @@ import {
 import { generateAutomatedTradingStrategy } from '@/ai/flows/automated-trading-strategy-flow';
 import { executeAiTradingStrategy, TradeExecutionResult } from '@/app/actions/trade-execution-actions';
 import { useToast } from '@/hooks/use-toast';
-import { getCandles } from '@/services/deriv';
+import { getCandles, getTradingTimes, getFullContractDetails, DerivFullContractDetails } from '@/services/deriv'; // Replaced getContractOfferings with getFullContractDetails
 import { calculateAllIndicators } from '@/lib/technical-analysis';
 import { getMarketStatus } from '@/lib/market-hours';
 
@@ -208,33 +208,132 @@ export function AutomatedTradingControls() {
           instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
         }
       } else {
-        // This is a fallback/warning for an unlikely scenario where an instrument marked 'successful'
-        // might still have missing data. This could indicate an issue in data handling upstream.
         console.warn(`Data integrity issue: Instrument ${instrument} was marked successful but has no valid data for AI input.`);
         toast({ title: 'Internal Warning', description: `Could not prepare AI data for supposedly successful instrument: ${instrument}. It will be skipped.`, variant: 'warning'});
       }
     }
 
-    // If, after attempting to prepare data, no instruments have valid data for the AI, halt.
     if (Object.keys(instrumentTicksForAi).length === 0) {
         toast({ title: 'AI Strategy Halted', description: 'Failed to prepare any valid market data for the AI strategy generation.', variant: 'destructive' });
         return;
     }
 
+    // Step 2b: Fetch Trading Times and Full Contract Details for each active instrument
+    const instrumentOfferingsData: Record<string, any> = {};
+    toast({ title: 'Fetching Market Details...', description: `Fetching trading times and contract details for ${activeInstruments.join(', ')}.`});
+
+    for (const instrumentSymbol of activeInstruments) {
+      let tradingTimesData: any = null;
+      let tradingTimesDataString: string = 'Trading times data not fetched or error.';
+      let isMarketOpen = false;
+      let processedAvailableContracts: any[] = [];
+      let errorFetchingContracts: string | undefined = undefined;
+
+      try {
+        // Fetch Trading Times
+        try {
+          tradingTimesData = await getTradingTimes(instrumentSymbol, apiToken);
+          tradingTimesDataString = JSON.stringify(tradingTimesData);
+        } catch (ttError: any) {
+          console.error(`Error fetching trading times for ${instrumentSymbol}:`, ttError);
+          tradingTimesDataString = `Error fetching trading times: ${ttError.message || 'Unknown error'}`;
+          tradingTimesData = { error: ttError.message || 'Unknown error' }; // Store error for getMarketStatus
+        }
+
+        // Determine Market Status
+        if (instrumentSymbol.toLowerCase().startsWith('cry')) {
+          isMarketOpen = true;
+        } else if (tradingTimesData && !tradingTimesData.error) {
+          try {
+            const marketStatus = getMarketStatus(tradingTimesData); // Ensure getMarketStatus handles the actual data object
+            isMarketOpen = marketStatus.isOpen;
+            if (!isMarketOpen && marketStatus.reason) {
+              tradingTimesDataString += ` (Market determined closed: ${marketStatus.reason})`;
+            } else if (!isMarketOpen) {
+              tradingTimesDataString += ` (Market determined closed)`;
+            }
+          } catch (statusError: any) {
+            console.error(`Error determining market status for ${instrumentSymbol}:`, statusError);
+            tradingTimesDataString += ` (Error determining market status: ${statusError.message})`;
+            isMarketOpen = false;
+          }
+        } else {
+          isMarketOpen = false;
+        }
+
+        // Fetch Full Contract Details
+        let rawAvailableContracts: DerivFullContractDetails[] = [];
+        try {
+          rawAvailableContracts = await getFullContractDetails(instrumentSymbol, apiToken);
+        } catch (e: any) {
+          console.error(`Failed to get full contract details for ${instrumentSymbol}`, e);
+          errorFetchingContracts = (e as Error).message || 'Unknown error fetching contracts';
+        }
+
+        if (rawAvailableContracts.length > 0) {
+          processedAvailableContracts = rawAvailableContracts.map(detail => {
+            const mappedContract: any = {
+              tradeTypeName: detail.contract_type,
+              displayName: detail.contract_display,
+            };
+            if (detail.multiplier_range && detail.multiplier_range.length > 0) {
+              mappedContract.multiplier_range = detail.multiplier_range;
+            }
+
+            let durations: string[] = [];
+            if (detail.expiry_type === 'no_expiry') {
+              durations = ['no_expiry'];
+            } else if (detail.min_contract_duration && detail.max_contract_duration) {
+              // Simplified approach: Use min and max. A more complex approach could generate steps.
+              // TODO: Consider using a utility like generateDurationSteps (from deriv.ts or a shared util)
+              // if a richer list of durations is needed by the AI.
+              durations.push(detail.min_contract_duration);
+              if (detail.min_contract_duration !== detail.max_contract_duration) {
+                durations.push(detail.max_contract_duration);
+              }
+            } else if (detail.min_contract_duration) {
+              durations.push(detail.min_contract_duration);
+            }
+            // Add more specific duration parsing here if Deriv provides structured lists for other expiry types
+
+            if (durations.length > 0) {
+              mappedContract.availableDurations = durations;
+            }
+            return mappedContract;
+          }).filter(c => c.tradeTypeName); // Ensure tradeTypeName is present
+        }
+
+        instrumentOfferingsData[instrumentSymbol] = {
+          tradingTimesDataString,
+          isMarketCurrentlyOpen: isMarketOpen,
+          availableContracts: processedAvailableContracts,
+          errorFetchingContracts: errorFetchingContracts, // Store error if any
+        };
+
+      } catch (instrumentError: any) { // Catch errors from processing this specific instrument
+        console.error(`Failed to process all details for instrument ${instrumentSymbol}:`, instrumentError);
+        instrumentOfferingsData[instrumentSymbol] = {
+          tradingTimesDataString: tradingTimesDataString, // Store whatever was fetched
+          isMarketCurrentlyOpen: isMarketOpen, // Store determined status
+          availableContracts: [], // Default to empty
+          errorFetchingContracts: instrumentError.message || 'Overall error processing instrument details',
+        };
+      }
+    }
     // Step 3: Call AI to generate trading strategy.
-    // `isProcessingAi` will be true during this phase.
     setIsProcessingAi(true);
     try {
       toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${activeInstruments.join(', ')}...` });
 
       const strategyInput = {
         totalStake,
-        instruments: activeInstruments, // Pass only successfully processed instruments
+        instruments: activeInstruments,
         tradingMode,
         stopLossPercentage: stopLossPercentage || undefined,
         instrumentTicks: instrumentTicksForAi,
         instrumentIndicators: instrumentIndicatorsForAi,
-        aiStrategyId: aiStrategyId, // Optional custom strategy ID
+        aiStrategyId: aiStrategyId,
+        instrumentOfferings: instrumentOfferingsData, // <<<< NEWLY ADDED
       };
 
       // Call the AI flow. This is an async operation.
