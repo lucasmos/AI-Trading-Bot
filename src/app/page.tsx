@@ -48,7 +48,14 @@ interface TradeRecord {
   isDbFallback?: boolean;
 }
 
-// Helper function to validate trade parameters
+/**
+ * Validates whether the specified stake is positive and does not exceed the available balance for the given account type.
+ *
+ * @param stake - The amount to be staked in the trade.
+ * @param balance - The available balance in the selected account.
+ * @param accountType - The type of account ('demo' or 'real').
+ * @returns An error message string if the stake is invalid; otherwise, null.
+ */
 function validateTradeParameters(stake: number, balance: number, accountType: 'demo' | 'real' | null): string | null {
   if (stake > balance) {
     return `Insufficient ${accountType === 'demo' ? 'Demo' : 'Real'} Balance: Stake $${stake.toFixed(2)} exceeds available balance.`;
@@ -59,6 +66,11 @@ function validateTradeParameters(stake: number, balance: number, accountType: 'd
   return null;
 }
 
+/**
+ * Renders the main trading dashboard page, providing manual and AI-assisted trading for Forex, Crypto, and Commodity instruments.
+ *
+ * This component manages trading state, integrates with Deriv API for trade execution, and orchestrates AI flows for market sentiment analysis and automated trading strategies. It supports account switching, trade parameter selection, AI recommendations, and automated trading sessions, displaying relevant UI components and feedback for user interaction.
+ */
 export default function DashboardPage() {
   const { 
     authStatus, 

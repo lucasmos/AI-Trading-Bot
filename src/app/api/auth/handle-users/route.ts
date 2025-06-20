@@ -24,6 +24,19 @@ type UserWithBaseSettings = Prisma.UserGetPayload<{
   }
 }>;
 
+/**
+ * Handles user creation, update, and reconciliation for POST requests to the user API endpoint.
+ *
+ * Processes incoming user data, ensuring user existence and consistency by checking for users by ID and email, resolving conflicts, updating fields as needed, and creating new users with default settings if necessary. Handles unique constraint violations and race conditions gracefully. Returns a JSON response with the processed user data or an error message.
+ *
+ * @param request - The incoming HTTP request containing user data in JSON format.
+ * @returns A JSON response indicating success and the user object, or an error message with appropriate HTTP status code.
+ *
+ * @remark
+ * - Returns HTTP 400 for missing or invalid request body or userId.
+ * - Handles Prisma unique constraint errors (P2002) during user creation and ID updates.
+ * - Returns HTTP 500 for unexpected errors or if user processing fails.
+ */
 export async function POST(request: Request) {
   try {
     const rawBody = await request.text();

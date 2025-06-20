@@ -5,7 +5,9 @@ import { prisma } from '@/lib/db';
 import { getDerivAccountBalance } from '@/services/deriv';
 
 /**
- * GET handler to fetch user's Deriv settings.
+ * Handles GET requests to retrieve the authenticated user's Deriv account settings.
+ *
+ * Returns the user's Deriv settings as JSON if found. Responds with 401 if the user is not authenticated, 404 if settings are missing, or 500 for server errors.
  */
 export async function GET(request: Request) {
   console.log('[API UserSettings GET] Request received.');
@@ -38,7 +40,20 @@ export async function GET(request: Request) {
 }
 
 /**
- * POST handler to update user's selected Deriv account type and refresh balance.
+ * Handles POST requests to update the user's selected Deriv account type and refresh the corresponding account balance.
+ *
+ * Validates the authenticated user, updates the selected Deriv account type (`demo` or `real`), and attempts to fetch and update the latest balance for the selected account type. Returns the updated user settings as JSON.
+ *
+ * @param request - The HTTP request containing the new `selectedDerivAccountType` in the JSON body.
+ * @returns The updated user settings as a JSON response, or an error response with appropriate status code if validation or update fails.
+ *
+ * @throws {Unauthorized} If the user is not authenticated.
+ * @throws {BadRequest} If the request body is missing or contains an invalid `selectedDerivAccountType`, or if the Deriv API token is not found.
+ * @throws {NotFound} If user settings do not exist for the authenticated user.
+ * @throws {InternalServerError} For unexpected errors during processing.
+ *
+ * @remark
+ * If the selected Deriv account type does not have an associated account ID, the balance will not be updated but the account type will still be changed.
  */
 export async function POST(request: Request) {
   console.log('[API UserSettings POST] Request received.');
