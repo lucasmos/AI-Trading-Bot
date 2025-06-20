@@ -498,7 +498,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     if (userInfo) { // Only run if userInfo is available
       fetchInitialGlobalData();
     }
-  }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, logAutomatedTradingEvent, toast]); // isLoadingGlobalOfferings and isLoadingAllTradingTimes removed from deps
+  }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, isLoadingGlobalOfferings, logAutomatedTradingEvent, toast]); // isLoadingAllTradingTimes removed from deps
 
   const currentBalance = useMemo(() => {
     // If AuthContext is still pending, or no user info yet, balance is not determined.
@@ -692,13 +692,20 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         return;
       }
 
-      if (globalOfferingsError || !globalOfferingsData) {
+      if (globalOfferingsError || (!globalOfferingsData && !isLoadingGlobalOfferings)) {
+        // Only log an error if we're not currently loading the data
         logAutomatedTradingEvent(`Error or no global offerings data available for ${currentInstrument}. Error: ${globalOfferingsError}`);
         toast({ title: "Offerings Error", description: `Could not load duration data: ${globalOfferingsError || 'No offerings data'}.`, variant: "destructive" });
         setAvailableDurations([]);
         setIsTradeable(false);
         setTradeDuration('');
         setIsLoadingDurations(false);
+        return;
+      }
+
+      // If we're still loading the data, just wait
+      if (!globalOfferingsData) {
+        setIsLoadingDurations(true);
         return;
       }
 
