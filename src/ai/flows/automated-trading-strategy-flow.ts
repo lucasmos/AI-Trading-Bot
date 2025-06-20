@@ -130,12 +130,40 @@ Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLos
         *   Provide 'stake' (monetary value).
         *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall. For Multiplier trades, 'stop_loss' is system-calculated as 5% of stake as mentioned above.
 4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
-5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
-Each trade's 'action' must be a string representing the chosen contract type (e.g., "CALL", "PUT" for Rise/Fall contracts; "MULTUP", "MULTDOWN" for Multiplier contracts).
-If 'durationString' is applicable for the 'action', it must be the exact string from the available offerings (e.g., "15m", "60s").
-If 'multiplier' is applicable, it must be a number.
-'takeProfit' and 'stopLoss' amounts are optional and are monetary values.
-\r\n\r\nBegin your response with the JSON object.\r\n`,
+5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss rule.\r\n\r\nOutput Format:
+Return a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.
+
+Each trade object in the 'tradesToExecute' array MUST contain a key named "action". The value for "action" must be a string representing the chosen contract type (e.g., "MULTUP", "MULTDOWN", "CALL", "PUT").
+
+Also ensure each trade includes 'instrument', 'stake', and 'reasoning' as required.
+
+If 'durationString' is applicable for the 'action', it must be the exact string from the available offerings (e.g., "15m", "60s"). This field is optional overall.
+
+If 'multiplier' is applicable for the 'action' (like 'MULTUP' or 'MULTDOWN'), it must be a number chosen from the 'Valid Multipliers' list provided for the instrument.
+
+'takeProfit' and 'stopLoss' are NOT needed for 'MULTUP' or 'MULTDOWN' as they are system-calculated. For other contract types, they are optional monetary values if you have a strong reason to suggest them.
+
+Each trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
+
+Example of a single trade object within the 'tradesToExecute' array:
+{
+  "instrument": "cryBTCUSD",
+  "action": "MULTUP",
+  "stake": 10,
+  "multiplier": 50, // Example, chosen from valid range
+  "reasoning": "Strong bullish signals observed."
+  // No durationString, takeProfit, or stopLoss for this MULTUP example
+}
+{
+  "instrument": "frxEURUSD",
+  "action": "CALL",
+  "stake": 20,
+  "durationString": "5m", // Example
+  "reasoning": "Expecting short-term rise."
+}
+
+
+Begin your response with the JSON object: {"overallReasoning": "...", "tradesToExecute": [/* your trade objects here */]}\r\n`,
 });
 
 const automatedTradingStrategyFlow = ai.defineFlow(
