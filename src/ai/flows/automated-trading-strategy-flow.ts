@@ -237,7 +237,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
       throw new Error("AI failed to generate an automated trading strategy for Forex/Crypto/Commodities.");
     }
     const output = result.output;
-    
+
     output.tradesToExecute = output.tradesToExecute.filter(trade => {
       const isStakeValid = typeof trade.stake === 'number' && trade.stake >= 0.01;
       // Validate durationString: ensuring it's a non-empty string. More specific validation (matching a pattern) can be added if necessary.
@@ -251,7 +251,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
       if (!isStakeValid) console.warn(`AI proposed invalid stake ${trade.stake} for ${trade.instrument}. Filtering out trade.`);
       return isStakeValid && isDurationStringValid;
     });
-    
+
     let totalProposedStake = output.tradesToExecute.reduce((sum, trade: ImportedAutomatedTradeProposal) => sum + (trade.stake || 0), 0);
     totalProposedStake = parseFloat(totalProposedStake.toFixed(2));
 
@@ -268,9 +268,10 @@ const automatedTradingStrategyFlow = ai.defineFlow(
         // aiProposedTrade is an object matching AutomatedTradeProposalZodSchema
 
         // Map to the final AutomatedTradeProposal structure (from src/types/index.ts)
-        const finalTradeProposal: ImportedAutomatedTradeProposal = {
+        const finalTradeProposal: ImportedAutomatedTradeProposal & { tradeType?: string } = {
           instrument: aiProposedTrade.instrument as ForexCryptoCommodityInstrumentType,
           action: aiProposedTrade.action, // Changed to source from aiProposedTrade.action
+          tradeType: aiProposedTrade.action, // Add tradeType property with same value as action for validation in page.tsx
           stake: aiProposedTrade.stake,
           durationString: aiProposedTrade.durationString,
           reasoning: aiProposedTrade.reasoning,
