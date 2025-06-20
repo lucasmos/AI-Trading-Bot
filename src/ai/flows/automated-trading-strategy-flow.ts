@@ -54,8 +54,9 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
         tradeTypeName: zod.string().describe("The API name of the trade type, e.g., 'CALL', 'PUT', 'MULTUP', 'MULTDOWN', 'multiplier', 'touchnotouch' etc. For Rise/Fall, AI should propose 'CALL' or 'PUT' as tradeType based on direction."),
         displayName: zod.string().optional().describe("User-friendly display name of the trade type."),
         availableDurations: zod.array(zod.string()).optional().describe("Specific duration strings like '15m', '60s', or 'no_expiry' if applicable."),
-        minMultiplier: zod.number().optional().describe("Minimum multiplier value, if type is multiplier."),
-        maxMultiplier: zod.number().optional().describe("Maximum multiplier value, if type is multiplier."),
+        // minMultiplier: zod.number().optional(), // Removed in favor of multiplier_range
+        // maxMultiplier: zod.number().optional(), // Removed in favor of multiplier_range
+        multiplier_range: zod.array(zod.number()).optional().describe("Array of valid multiplier values, e.g., [10, 20, 50, 100]. Provided for MULTUP/MULTDOWN.")
         // Potentially add min/max stake, min/max payout etc. later if needed
       })).optional().describe("List of available contract types and their specific parameters for this instrument.")
     })
@@ -104,10 +105,8 @@ Available Trade Offerings by Instrument (IMPORTANT!):
       Available Contract Types:
       {{#each this.availableContracts}}
       - Type Name: '{{{this.tradeTypeName}}}' (Display: '{{this.displayName}}')
-        {{#if this.availableDurations}}
-        Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
-        {{/if}}
-        {{#if this.minMultiplier}}Min Multiplier: {{this.minMultiplier}}{{/if}} {{#if this.maxMultiplier}}Max Multiplier: {{this.maxMultiplier}}{{/if}}
+        {{#if this.availableDurations}}Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+        {{#if this.multiplier_range}} Valid Multipliers: {{#each this.multiplier_range}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
       {{/each}}
     {{else}}
     - No specific contract types or durations listed for this instrument.
@@ -127,7 +126,7 @@ Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLos
     Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade (after confirming its market is open based on the 'isMarketCurrentlyOpen' flag and detailed 'Trading Hours Data'):
         *   Select an appropriate 'tradeType' from its 'Available Contract Types' list. Crucially: for Rise/Fall contracts, set 'tradeType' to 'CALL' (if expecting price to rise) or 'PUT' (if expecting price to fall). For Multiplier contracts, set 'tradeType' to 'MULTUP' (if expecting price to rise) or 'MULTDOWN' (if expecting price to fall).
         *   If the chosen 'tradeType' requires a fixed duration (like 'CALL'/'PUT'), you MUST provide a 'durationString' selected exactly from its 'Available Durations' (e.g., "15m", "60s").
-        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable (as these are often 'no_expiry'). Instead, you MUST specify a 'multiplier' value (e.g., 100, 200, 300) from within its allowed range if provided (Min/Max Multiplier). You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
+        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable. Instead, you MUST specify a 'multiplier' value. If a 'Valid Multipliers' list (multiplier_range) is provided for this trade type, you MUST choose a value EXACTLY from that list. If no such list is provided but multipliers are applicable, use a common, safe default (e.g., 30 or 50) or do not propose the trade if unsure. You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
         *   Provide 'stake' (monetary value).
         *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall if not overridden by a specific stop-loss parameter for other contract types. For Multiplier trades, your proposed 'stopLoss' (if any) will be used.
 4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
