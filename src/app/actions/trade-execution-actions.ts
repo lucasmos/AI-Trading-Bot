@@ -12,6 +12,26 @@ import {
 } from '@/services/deriv';
 import { prisma } from '@/lib/db'; // Import Prisma client
 
+// Helper function to parse duration string
+function parseDurationString(durationString: string): { value: number; unit: string } | null {
+  if (!durationString) return null;
+  const match = durationString.match(/^(\d+)([smhd])$/); // s: seconds, m: minutes, h: hours, d: days
+  if (match) {
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    // Deriv API uses 't' for ticks, but our AI gives s,m,h.
+    // 'd' for days is also possible in Deriv but less common for these proposals.
+    // We will stick to s, m, h as per common AI outputs.
+    if (['s', 'm', 'h'].includes(unit)) {
+        // For Deriv, duration_unit for hour is 'h', minute is 'm', second is 's'.
+        // This matches our regex output.
+        return { value, unit };
+    }
+  }
+  console.error(`[parseDurationString] Invalid duration string format: ${durationString}`);
+  return null;
+}
+
 export interface TradeExecutionResult {
   success: boolean;
   instrument: ForexCryptoCommodityInstrumentType;
@@ -72,17 +92,62 @@ export async function executeAiTradingStrategy(
   for (const tradeProposal of strategy.tradesToExecute) {
     try {
       const derivSymbol = instrumentToDerivSymbol(tradeProposal.instrument as ForexCryptoCommodityInstrumentType);
+      let tradeDetails: TradeDetails;
 
-      const tradeDetails: TradeDetails = {
-        symbol: derivSymbol,
-        contract_type: tradeProposal.action,
-        duration: tradeProposal.durationSeconds,
-        duration_unit: 's',
-        amount: tradeProposal.stake,
-        currency: 'USD',
-        basis: 'stake',
-        token: userDerivApiToken,
-      };
+      if (tradeProposal.action === 'MULTUP' || tradeProposal.action === 'MULTDOWN') {
+        tradeDetails = {
+          symbol: derivSymbol,
+          contract_type: tradeProposal.action,
+          amount: tradeProposal.stake,
+          currency: 'USD',
+          basis: 'stake',
+          token: userDerivApiToken,
+          // Multiplier specific fields
+          ...(tradeProposal.multiplier !== undefined && { multiplier: tradeProposal.multiplier }),
+          ...(tradeProposal.takeProfit !== undefined && { take_profit: tradeProposal.takeProfit }),
+          ...(tradeProposal.stopLoss !== undefined && { stop_loss: tradeProposal.stopLoss }),
+        };
+      } else if (tradeProposal.action === 'CALL' || tradeProposal.action === 'PUT') {
+        if (!tradeProposal.durationString) {
+          // This check is important because the AI is expected to provide durationString for CALL/PUT
+          console.error(`[executeAiTradingStrategy] Duration string is missing for CALL/PUT trade on ${tradeProposal.instrument}. Trade will be skipped.`);
+          results.push({
+            success: false,
+            instrument: tradeProposal.instrument,
+            error: `Duration string is missing for CALL/PUT trade on ${tradeProposal.instrument}.`,
+          });
+          continue; // Skip this trade
+        }
+        const parsedDuration = parseDurationString(tradeProposal.durationString);
+        if (!parsedDuration) {
+          console.error(`[executeAiTradingStrategy] Invalid duration string format: "${tradeProposal.durationString}" for ${tradeProposal.instrument}. Trade will be skipped.`);
+          results.push({
+            success: false,
+            instrument: tradeProposal.instrument,
+            error: `Invalid duration string format: "${tradeProposal.durationString}" for ${tradeProposal.instrument}.`,
+          });
+          continue; // Skip this trade
+        }
+        tradeDetails = {
+          symbol: derivSymbol,
+          contract_type: tradeProposal.action,
+          duration: parsedDuration.value,
+          duration_unit: parsedDuration.unit as 's' | 'm' | 'h' | 'd' | 't', // Cast needed
+          amount: tradeProposal.stake,
+          currency: 'USD',
+          basis: 'stake',
+          token: userDerivApiToken,
+        };
+      } else {
+        // Should not happen if types are correct and comprehensive
+        console.error(`[executeAiTradingStrategy] Unsupported trade action: ${tradeProposal.action} for ${tradeProposal.instrument}. Trade will be skipped.`);
+        results.push({
+          success: false,
+          instrument: tradeProposal.instrument,
+          error: `Unsupported trade action: ${tradeProposal.action} for ${tradeProposal.instrument}.`,
+        });
+        continue; // Skip this trade
+      }
 
       console.log(`[executeAiTradingStrategy] Attempting to place trade for ${tradeProposal.instrument} on account ${targetAccountId}:`, {
         ...tradeDetails,
@@ -112,6 +177,10 @@ export async function executeAiTradingStrategy(
           metadata: { // Store additional info if needed
             reasoning: tradeProposal.reasoning,
             derivLongcode: derivTradeResponse.longcode,
+            ...(tradeProposal.durationString && { durationString: tradeProposal.durationString }),
+            ...(tradeProposal.multiplier !== undefined && { multiplier: tradeProposal.multiplier }),
+            ...(tradeProposal.takeProfit !== undefined && { aiTakeProfit: tradeProposal.takeProfit }),
+            ...(tradeProposal.stopLoss !== undefined && { aiStopLoss: tradeProposal.stopLoss }),
           }
         },
       });

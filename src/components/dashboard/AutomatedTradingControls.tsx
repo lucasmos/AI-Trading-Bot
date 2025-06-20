@@ -418,7 +418,7 @@ export function AutomatedTradingControls() {
                     <TableHead>Instrument</TableHead>
                     <TableHead>Action</TableHead>
                     <TableHead>Stake</TableHead>
-                    <TableHead>Duration</TableHead>
+                    <TableHead>Parameters</TableHead>
                     <TableHead>Reason</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -428,7 +428,19 @@ export function AutomatedTradingControls() {
                       <TableCell>{trade.instrument}</TableCell>
                       <TableCell>{trade.action}</TableCell>
                       <TableCell>${trade.stake.toFixed(2)}</TableCell>
-                      <TableCell>{trade.durationSeconds}s</TableCell>
+                      <TableCell>
+                        {trade.action === 'CALL' || trade.action === 'PUT' ? (
+                          `Duration: ${trade.durationString || 'N/A'}`
+                        ) : trade.action === 'MULTUP' || trade.action === 'MULTDOWN' ? (
+                          `Multiplier: ${trade.multiplier || 'N/A'}${
+                            trade.takeProfit ? ` TP: ${trade.takeProfit}` : ''
+                          }${
+                            trade.stopLoss ? ` SL: ${trade.stopLoss}` : ''
+                          }`
+                        ) : (
+                          'N/A' // Should not happen with current types
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs max-w-xs truncate" title={trade.reasoning}>{trade.reasoning}</TableCell>
                     </TableRow>
                   ))}
