@@ -1462,16 +1462,17 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 }
 
 export interface TradeDetails {
-  symbol: string; // Deriv API symbol e.g. "R_100", "frxEURUSD"
-  contract_type: "CALL" | "PUT";
-  duration: number;
-  duration_unit: "s" | "m" | "h" | "d" | "t"; // seconds, minutes, hours, days, ticks
-  amount: number; // Stake amount
-  currency: string; // e.g., "USD"
-  stop_loss?: number; // Optional stop loss
-  take_profit?: number; // Optional take profit
-  basis: string; // e.g., "stake" or "payout"
-  token: string; // Deriv API token for authorization
+  symbol: string;
+  contract_type: string; // Changed to string to support MULTUP/MULTDOWN etc.
+  duration?: number; // Made optional as not used by Multipliers
+  duration_unit?: "s" | "m" | "h" | "d" | "t"; // Made optional
+  amount: number;
+  currency: string;
+  stop_loss?: number;
+  take_profit?: number;
+  basis: string;
+  token: string;
+  multiplier?: number; // Added for Multiplier contracts
 }
 
 export interface DerivContractStatusData {
@@ -1585,32 +1586,52 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // If we reach here, currentLoginId === accountId, so we are on the correct account.
             console.log(`[DerivService/placeTrade] Session already active on target account ${accountId}. Proceeding to proposal...`);
 
-            // Construct and send proposal request (this part of the logic can be moved here from the old 'account_switch' success path)
+            // Construct and send proposal request
             const apiContractType = tradeDetails.contract_type;
+
             const proposalRequest: any = {
               proposal: 1,
               subscribe: 1,
               amount: tradeDetails.amount,
-              basis: tradeDetails.basis,
+              basis: tradeDetails.basis, // Should be 'stake' for multipliers
               contract_type: apiContractType,
               currency: tradeDetails.currency,
-              duration: tradeDetails.duration,
-              duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
-              // Removed top-level stop_loss and take_profit
             };
 
-            // Add limit_order if stop_loss or take_profit is present
-            const limitOrder: { take_profit?: number; stop_loss?: number } = {};
-            if (tradeDetails.take_profit !== undefined) {
-              limitOrder.take_profit = tradeDetails.take_profit;
-            }
-            if (tradeDetails.stop_loss !== undefined) {
-              limitOrder.stop_loss = tradeDetails.stop_loss;
+            if (apiContractType === 'MULTUP' || apiContractType === 'MULTDOWN') {
+              if (tradeDetails.multiplier) {
+                proposalRequest.multiplier = tradeDetails.multiplier;
+              } else {
+                // This is a critical error for multiplier contracts.
+                // Rejecting the promise or throwing an error is appropriate.
+                const missingMultiplierMsg = 'Multiplier is required for MULTUP/MULTDOWN contracts but was not provided in tradeDetails.';
+                console.error(`[DerivService/placeTrade] ${missingMultiplierMsg}`);
+                cleanupAndLog(missingMultiplierMsg, true); // Ensure WebSocket is closed
+                reject(new Error(missingMultiplierMsg));
+                return; // Important to exit to prevent sending a malformed request
+              }
+              // Duration, duration_unit, and product_type: "basic" are explicitly NOT added for MULTUP/MULTDOWN
+            } else {
+              // Logic for other contract types (e.g., CALL/PUT)
+              if (tradeDetails.duration && tradeDetails.duration_unit) {
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+              }
             }
 
-            if (Object.keys(limitOrder).length > 0) {
-              proposalRequest.limit_order = limitOrder;
+            // Add limit_order if take_profit or stop_loss are present in tradeDetails
+            // This logic should apply to all contract types that support it, including Multipliers.
+            const limitOrderDetails: { take_profit?: number; stop_loss?: number } = {};
+            if (tradeDetails.take_profit !== undefined) {
+              limitOrderDetails.take_profit = tradeDetails.take_profit;
+            }
+            if (tradeDetails.stop_loss !== undefined) {
+              limitOrderDetails.stop_loss = tradeDetails.stop_loss;
+            }
+
+            if (Object.keys(limitOrderDetails).length > 0) {
+              proposalRequest.limit_order = limitOrderDetails;
             }
 
             console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
