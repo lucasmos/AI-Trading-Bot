@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { TradeControls } from '@/components/dashboard/trade-controls';
@@ -115,7 +115,7 @@ export default function DashboardPage() {
     updateSelectedDerivAccountType,
   } = useAuth();
   const { data: session, update: updateNextAuthSession } = useSession();
-  
+
   const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
@@ -954,7 +954,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       } else {
         console.warn("[DashboardPage] Not enough candle data for AI recommendation.");
       }
-      
+
       const sentimentResult = await analyzeMarketSentiment(marketSentimentParams);
       if (sentimentResult) {
         setAiRecommendation({ action: sentimentResult.action, reasoning: sentimentResult.reasoning, confidence: sentimentResult.confidence });
@@ -1156,6 +1156,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         if (symbolMarketOfferings && symbolMarketOfferings.trade_durations) {
           symbolMarketOfferings.trade_durations.forEach(tradeTypeOffering => {
             const contractDetails: any = { // Build according to new Zod schema for availableContracts
+              contract_type: tradeTypeOffering.trade_type.name, // Required property for schema validation
               tradeTypeName: tradeTypeOffering.trade_type.name,
               displayName: tradeTypeOffering.trade_type.display_name,
               availableDurations: [],
@@ -1592,7 +1593,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     logAutomatedTradingEvent("AI Auto-Trading session stopped.");
     toast({ title: "AI Auto-Trading Stopped", description: `Session for ${selectedDerivAccountType} account stopped.` });
   }, [activeAutomatedTrades, userInfo, selectedDerivAccountType, derivDemoAccountId, derivRealAccountId, toast, logAutomatedTradingEvent, setActiveAutomatedTrades, fetchBalanceForAccount, setIsAutoTradingActive]);
-  
+
   // Real-time monitoring useEffect
   useEffect(() => {
     if (!isAutoTradingActive || activeAutomatedTrades.length === 0) {
