@@ -244,7 +244,31 @@ export function AutomatedTradingControls() {
         try {
             const contractsForData: DerivContractsForResponse | null = await getContractOfferings(derivSymbol, apiToken);
             if (contractsForData && contractsForData.available && contractsForData.available.length > 0) {
-                availableContractsForInstrument = contractsForData.available;
+                // Explicit mapping to ensure correct field names, especially contract_type
+                availableContractsForInstrument = contractsForData.available.map((apiContract: any) => {
+                    // The 'apiContract' is expected to be DetailedDerivContractItem from deriv.ts
+                    // but we use 'any' here to safely access potentially missing fields or tradeTypeName.
+                    const mappedContract: DetailedDerivContractItem = {
+                        // Prioritize contract_type, fallback to tradeTypeName, ensure it's named contract_type
+                        contract_type: apiContract.contract_type || apiContract.tradeTypeName || 'UNKNOWN',
+                        contract_category: apiContract.contract_category,
+                        contract_display: apiContract.contract_display,
+                        market: apiContract.market,
+                        submarket: apiContract.submarket,
+                        underlying_symbol: apiContract.underlying_symbol,
+                        expiry_type: apiContract.expiry_type,
+                        min_contract_duration: apiContract.min_contract_duration,
+                        max_contract_duration: apiContract.max_contract_duration,
+                        multiplier_range: apiContract.multiplier_range,
+                        min_multiplier: apiContract.min_multiplier,
+                        max_multiplier: apiContract.max_multiplier,
+                        barriers: apiContract.barriers,
+                        barrier_category: apiContract.barrier_category,
+                        sentiment: apiContract.sentiment,
+                        start_type: apiContract.start_type,
+                    };
+                    return mappedContract;
+                });
             } else {
                 console.warn(`[AI Input Prep] No contract offerings found for ${derivSymbol}.`);
                 toast({ title: `Offerings Note: ${instrumentLabel}`, description: `No contract offerings returned for ${derivSymbol}.`, variant: 'warning', duration: 3000 });
