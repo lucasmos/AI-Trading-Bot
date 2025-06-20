@@ -460,11 +460,27 @@ export async function getTradingTimes(date: string = 'today', token?: string): P
 }
 
 export async function getContractOfferings(instrumentSymbol: string, token?: string): Promise<DerivContractOffering[]> {
+  if (!instrumentSymbol || typeof instrumentSymbol !== 'string' || instrumentSymbol.trim() === '') {
+    const errorMsg = '[DerivService/getContractOfferings] Invalid instrumentSymbol: must be a non-empty string.';
+    console.error(errorMsg);
+    return Promise.reject(new Error(errorMsg.substring(errorMsg.indexOf("Invalid instrumentSymbol")))); // Keep error message concise for UI
+  }
+
   const ws = new WebSocket(DERIV_API_URL);
   const timeoutDuration = 10000; // 10 seconds for the operation
   let operationTimeout: ReturnType<typeof setTimeout> | null = null;
 
   return new Promise((resolve, reject) => {
+    // Note on token for contracts_for:
+    // The 'contracts_for' API request generally provides public information about contract
+    // specifications for a given symbol and does not strictly require an authorization token
+    // for many common instruments.
+    // However, providing a token can be necessary if:
+    //   a) Account-specific contract variations are expected.
+    //   b) The symbol itself is restricted and requires user authentication.
+    // The current logic sends the request without a token if none is provided,
+    // or authorizes first if a token is available. This handles both public and potentially
+    // account-contextualized offerings.
     operationTimeout = setTimeout(() => {
       console.error('[DerivService/getContractOfferings] Operation timed out for symbol:', instrumentSymbol);
       if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {

@@ -16,8 +16,10 @@ import {
   AutomatedTradingStrategyOutput,
   CandleData,
   InstrumentIndicatorData,
-  PriceTick
+  PriceTick,
+  InstrumentType
 } from '@/types';
+import { getSupportedInstrument } from '@/config/instruments';
 import { generateAutomatedTradingStrategy } from '@/ai/flows/automated-trading-strategy-flow';
 import { executeAiTradingStrategy, TradeExecutionResult } from '@/app/actions/trade-execution-actions';
 import { useToast } from '@/hooks/use-toast';
