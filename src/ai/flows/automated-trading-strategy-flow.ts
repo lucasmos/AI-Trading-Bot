@@ -232,6 +232,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     // stopLossPercentage will be passed through via ...input if present
 
     const result = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
+    console.log('[AI_FLOW_DEBUG] Raw AI Output:', JSON.stringify(result?.output, null, 2));
     if (!result || !result.output) {
       throw new Error("AI failed to generate an automated trading strategy for Forex/Crypto/Commodities.");
     }
@@ -262,6 +263,8 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     return {
       ...output,
       tradesToExecute: output.tradesToExecute.map(aiProposedTrade => {
+        console.log('[AI_FLOW_DEBUG] Processing aiProposedTrade (raw from AI, after Zod parse):', JSON.stringify(aiProposedTrade, null, 2));
+        console.log('[AI_FLOW_DEBUG] Value of aiProposedTrade.action:', aiProposedTrade.action);
         // aiProposedTrade is an object matching AutomatedTradeProposalZodSchema
 
         // Map to the final AutomatedTradeProposal structure (from src/types/index.ts)
