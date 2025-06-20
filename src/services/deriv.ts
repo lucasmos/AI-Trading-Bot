@@ -562,13 +562,45 @@ export async function getContractOfferings(instrumentSymbol: string, token?: str
           if (operationTimeout) clearTimeout(operationTimeout);
 
           if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
-            // Directly resolve with the contracts_for object
-            console.log(`[DerivService/getContractOfferings] Received contracts_for response for ${instrumentSymbol}. Contains ${response.contracts_for.available.length} available items.`);
-            resolve(response.contracts_for as DerivContractsForResponse);
+            const mappedAvailableContracts: DetailedDerivContractItem[] = response.contracts_for.available.map((rawApiContract: any) => {
+              const newItem: DetailedDerivContractItem = {
+                contract_type: String(rawApiContract.contract_type || rawApiContract.tradeTypeName || 'UNKNOWN'),
+                contract_category: rawApiContract.contract_category,
+                contract_display: rawApiContract.contract_display,
+                market: rawApiContract.market,
+                submarket: rawApiContract.submarket,
+                underlying_symbol: rawApiContract.underlying_symbol,
+                expiry_type: rawApiContract.expiry_type,
+                min_contract_duration: rawApiContract.min_contract_duration,
+                max_contract_duration: rawApiContract.max_contract_duration,
+                multiplier_range: rawApiContract.multiplier_range,
+                min_multiplier: rawApiContract.min_multiplier,
+                max_multiplier: rawApiContract.max_multiplier,
+                barriers: rawApiContract.barriers,
+                barrier_category: rawApiContract.barrier_category,
+                sentiment: rawApiContract.sentiment,
+                start_type: rawApiContract.start_type,
+                available_barriers: rawApiContract.available_barriers,
+                low_barrier: rawApiContract.low_barrier,
+                high_barrier: rawApiContract.high_barrier,
+                barrier: rawApiContract.barrier
+              };
+              return newItem;
+            });
+
+            const mappedResponse: DerivContractsForResponse = {
+              available: mappedAvailableContracts,
+              close: response.contracts_for.close,
+              feed_license: response.contracts_for.feed_license,
+              hit_count: response.contracts_for.hit_count,
+              open: response.contracts_for.open,
+              spot: response.contracts_for.spot
+            };
+            console.log(`[DerivService/getContractOfferings] Mapped and resolved contracts_for response for ${instrumentSymbol}. Contains ${mappedAvailableContracts.length} items.`);
+            resolve(mappedResponse);
           } else {
-            // Invalid or empty contracts_for structure
             console.warn(`[DerivService/getContractOfferings] No 'contracts_for.available' array found or response.contracts_for is missing for ${instrumentSymbol}. Response:`, response);
-            resolve(null); // Resolve with null if data is not as expected
+            resolve(null);
           }
           ws.close();
         }
