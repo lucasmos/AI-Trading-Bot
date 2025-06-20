@@ -54,8 +54,9 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
         tradeTypeName: zod.string().describe("The API name of the trade type, e.g., 'CALL', 'PUT', 'MULTUP', 'MULTDOWN', 'multiplier', 'touchnotouch' etc. For Rise/Fall, AI should propose 'CALL' or 'PUT' as tradeType based on direction."),
         displayName: zod.string().optional().describe("User-friendly display name of the trade type."),
         availableDurations: zod.array(zod.string()).optional().describe("Specific duration strings like '15m', '60s', or 'no_expiry' if applicable."),
-        minMultiplier: zod.number().optional().describe("Minimum multiplier value, if type is multiplier."),
-        maxMultiplier: zod.number().optional().describe("Maximum multiplier value, if type is multiplier."),
+        // minMultiplier: zod.number().optional(), // Removed as per subtask
+        // maxMultiplier: zod.number().optional(), // Removed as per subtask
+        multiplier_range: zod.array(zod.number()).optional().describe("Array of valid multiplier values, e.g., [10, 20, 50, 100]. Required if tradeTypeName is MULTUP/MULTDOWN and supports multipliers.")
         // Potentially add min/max stake, min/max payout etc. later if needed
       })).optional().describe("List of available contract types and their specific parameters for this instrument.")
     })
@@ -104,10 +105,8 @@ Available Trade Offerings by Instrument (IMPORTANT!):
       Available Contract Types:
       {{#each this.availableContracts}}
       - Type Name: '{{{this.tradeTypeName}}}' (Display: '{{this.displayName}}')
-        {{#if this.availableDurations}}
-        Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
-        {{/if}}
-        {{#if this.minMultiplier}}Min Multiplier: {{this.minMultiplier}}{{/if}} {{#if this.maxMultiplier}}Max Multiplier: {{this.maxMultiplier}}{{/if}}
+        {{#if this.availableDurations}}Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+        {{#if this.multiplier_range}} Valid Multipliers: {{#each this.multiplier_range}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
       {{/each}}
     {{else}}
     - No specific contract types or durations listed for this instrument.
@@ -127,9 +126,9 @@ Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLos
     Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade (after confirming its market is open based on the 'isMarketCurrentlyOpen' flag and detailed 'Trading Hours Data'):
         *   Select an appropriate 'tradeType' from its 'Available Contract Types' list. Crucially: for Rise/Fall contracts, set 'tradeType' to 'CALL' (if expecting price to rise) or 'PUT' (if expecting price to fall). For Multiplier contracts, set 'tradeType' to 'MULTUP' (if expecting price to rise) or 'MULTDOWN' (if expecting price to fall).
         *   If the chosen 'tradeType' requires a fixed duration (like 'CALL'/'PUT'), you MUST provide a 'durationString' selected exactly from its 'Available Durations' (e.g., "15m", "60s").
-        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable (as these are often 'no_expiry'). Instead, you MUST specify a 'multiplier' value (e.g., 100, 200, 300) from within its allowed range if provided (Min/Max Multiplier). You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
+        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable. Instead, you MUST specify a 'multiplier' value. If a 'Valid Multipliers' list (multiplier_range) is provided for this trade type, you MUST choose a value EXACTLY from that list. For Multiplier trades ('MULTUP'/'MULTDOWN'), `take_profit` will be system-calculated as 15% of your proposed `stake`, and `stop_loss` will be system-calculated as 5% of your proposed `stake`. You do not need to propose these `take_profit` and `stop_loss` values. Focus on proposing the `instrument`, `tradeType`, `stake`, and a valid `multiplier` from the 'Valid Multipliers' list.
         *   Provide 'stake' (monetary value).
-        *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall if not overridden by a specific stop-loss parameter for other contract types. For Multiplier trades, your proposed 'stopLoss' (if any) will be used.
+        *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall. For Multiplier trades, `stop_loss` is system-calculated as 5% of stake as mentioned above.
 4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
 5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 70% win rate target and the {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} stop-loss rule.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
 Each trade's 'tradeType' must be a string representing the chosen contract type (e.g., "CALL", "PUT" for Rise/Fall contracts; "MULTUP", "MULTDOWN" for Multiplier contracts).
@@ -231,12 +230,49 @@ const automatedTradingStrategyFlow = ai.defineFlow(
       console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${input.totalStake} (Forex/Crypto/Commodities). Trades may be capped or rejected by execution logic.`);
     }
 
+    // Map AI output to final structure and apply system-calculated TP/SL for Multipliers
     return {
       ...output,
-      tradesToExecute: output.tradesToExecute.map(trade => ({
-        ...trade,
-        instrument: trade.instrument as ForexCryptoCommodityInstrumentType,
-      })),
+      tradesToExecute: output.tradesToExecute.map(aiProposedTrade => {
+        // aiProposedTrade is an object matching AutomatedTradeProposalZodSchema
+
+        // Map to the final AutomatedTradeProposal structure (from src/types/index.ts)
+        const finalTradeProposal: ImportedAutomatedTradeProposal = {
+          instrument: aiProposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+          action: aiProposedTrade.tradeType, // Map tradeType to action
+          stake: aiProposedTrade.stake,
+          durationString: aiProposedTrade.durationString,
+          reasoning: aiProposedTrade.reasoning,
+          // avatarUrl can be added if it's part of Zod schema and ImportedAutomatedTradeProposal
+        };
+
+        if (typeof aiProposedTrade.multiplier === 'number') {
+          finalTradeProposal.multiplier = aiProposedTrade.multiplier;
+        }
+
+        // System-calculated TP/SL for Multipliers
+        if (finalTradeProposal.action === 'MULTUP' || finalTradeProposal.action === 'MULTDOWN') {
+          if (typeof finalTradeProposal.stake === 'number' && finalTradeProposal.stake > 0) {
+            const calculatedStopLoss = parseFloat((finalTradeProposal.stake * 0.05).toFixed(2));
+            const calculatedTakeProfit = parseFloat((finalTradeProposal.stake * 0.15).toFixed(2));
+            finalTradeProposal.stop_loss = calculatedStopLoss;
+            finalTradeProposal.take_profit = calculatedTakeProfit;
+            // console.log(`System calculated TP/SL for ${finalTradeProposal.instrument} ${finalTradeProposal.action}: Stake=${finalTradeProposal.stake}, TP=${finalTradeProposal.take_profit}, SL=${finalTradeProposal.stop_loss}`);
+          } else {
+            // console.warn(`Stake not valid for ${finalTradeProposal.instrument} ${finalTradeProposal.action}, cannot calculate TP/SL.`);
+          }
+        } else {
+          // For non-multiplier trades, if AI suggests TP/SL (and Zod schema allows it), pass them through.
+          // This part assumes that AutomatedTradeProposalZodSchema might still have optional takeProfit/stopLoss.
+          if (typeof aiProposedTrade.takeProfit === 'number') {
+            finalTradeProposal.take_profit = aiProposedTrade.takeProfit;
+          }
+          if (typeof aiProposedTrade.stopLoss === 'number') {
+            finalTradeProposal.stop_loss = aiProposedTrade.stopLoss;
+          }
+        }
+        return finalTradeProposal;
+      }),
     };
   }
 );
