@@ -1597,7 +1597,22 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
               duration: tradeDetails.duration,
               duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
+              // Removed top-level stop_loss and take_profit
             };
+
+            // Add limit_order if stop_loss or take_profit is present
+            const limitOrder: { take_profit?: number; stop_loss?: number } = {};
+            if (tradeDetails.take_profit !== undefined) {
+              limitOrder.take_profit = tradeDetails.take_profit;
+            }
+            if (tradeDetails.stop_loss !== undefined) {
+              limitOrder.stop_loss = tradeDetails.stop_loss;
+            }
+
+            if (Object.keys(limitOrder).length > 0) {
+              proposalRequest.limit_order = limitOrder;
+            }
+
             console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
             ws!.send(JSON.stringify(proposalRequest));
 
