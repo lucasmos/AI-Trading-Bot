@@ -69,18 +69,40 @@ export interface Tick {
   time: string;
 }
 
-export interface DerivContractOffering {
-  contract_type?: string;
-  contract_category?: string;
-  market?: string;
-  submarket?: string;
-  underlying_symbol?: string;
-  min_contract_duration?: string;
-  max_contract_duration?: string;
-  expiry_type?: string;
-  start_type?: string;
-  // Add any other fields you might need for validation
+// New interfaces for detailed contract offerings
+export interface DetailedDerivContractItem {
+  contract_type: string; // e.g., "MULTUP", "CALL"
+  contract_category: string; // e.g., "multipliers", "callput"
+  contract_display: string; // e.g., "Higher", "Lower"
+  market: string; // e.g., "synthetic_index"
+  submarket: string; // e.g., "continuous_index"
+  underlying_symbol: string; // e.g., "R_100"
+  expiry_type?: string; // e.g., "intraday", "daily"
+  min_contract_duration?: string; // e.g., "1m", "15s"
+  max_contract_duration?: string; // e.g., "365d"
+  multiplier_range?: number[]; // e.g., [10, 20, 30, 50, 100] for MULTUP
+  min_multiplier?: number;
+  max_multiplier?: number;
+  barriers?: number; // For rise/fall, typically 1 (relative) or 0 (absolute)
+  barrier_category?: string; // e.g., "euro_atm"
+  sentiment?: string; // e.g., "up", "down"
+  start_type?: string; // e.g., "spot"
+  // Add other relevant fields based on typical Deriv API responses
+  available_barriers?: any[]; // Can be complex
+  low_barrier?: string; // Stringified number
+  high_barrier?: string; // Stringified number
+  barrier?: string; // Stringified number for single barrier contracts
 }
+
+export interface DerivContractsForResponse {
+  available: DetailedDerivContractItem[];
+  close?: number; // e.g., 1678886399
+  feed_license?: string; // e.g., "realtime"
+  hit_count?: number; // e.g., 7
+  open?: number; // e.g., 1678800000
+  spot?: number; // e.g., 123.45
+}
+
 
 // --- Start of Corrected Global Trading Durations Interfaces ---
 export interface TradingDurationDetail {
@@ -459,7 +481,7 @@ export async function getTradingTimes(date: string = 'today', token?: string): P
   ]);
 }
 
-export async function getContractOfferings(instrumentSymbol: string, token?: string): Promise<DerivContractOffering[]> {
+export async function getContractOfferings(instrumentSymbol: string, token?: string): Promise<DerivContractsForResponse | null> {
   if (!instrumentSymbol || typeof instrumentSymbol !== 'string' || instrumentSymbol.trim() === '') {
     const errorMsg = '[DerivService/getContractOfferings] Invalid instrumentSymbol: must be a non-empty string.';
     console.error(errorMsg);
@@ -538,32 +560,16 @@ export async function getContractOfferings(instrumentSymbol: string, token?: str
           }
         } else if (response.msg_type === 'contracts_for') {
           if (operationTimeout) clearTimeout(operationTimeout);
-          const offerings: DerivContractOffering[] = [];
+
           if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
-            response.contracts_for.available.forEach((contract: any) => {
-              if (contract.contract_category === 'callput' && contract.start_type === 'spot') {
-                offerings.push({
-                  contract_category: contract.contract_category,
-                  market: contract.market,
-                  submarket: contract.submarket,
-                  underlying_symbol: contract.underlying_symbol,
-                  min_contract_duration: contract.min_contract_duration,
-                  max_contract_duration: contract.max_contract_duration,
-                  expiry_type: contract.expiry_type,
-                  start_type: contract.start_type,
-                  // contract_type is often not at this level for general offerings,
-                  // but specific to a trade type within the category.
-                  // If Deriv includes it here, it can be mapped: contract_type: contract.contract_type
-                });
-              }
-            });
-          }
-          if (offerings.length === 0) {
-            console.warn(`[DerivService/getContractOfferings] No suitable 'callput/spot' offerings found for ${instrumentSymbol}.`);
+            // Directly resolve with the contracts_for object
+            console.log(`[DerivService/getContractOfferings] Received contracts_for response for ${instrumentSymbol}. Contains ${response.contracts_for.available.length} available items.`);
+            resolve(response.contracts_for as DerivContractsForResponse);
           } else {
-            console.log(`[DerivService/getContractOfferings] Found ${offerings.length} offerings for ${instrumentSymbol}.`);
+            // Invalid or empty contracts_for structure
+            console.warn(`[DerivService/getContractOfferings] No 'contracts_for.available' array found or response.contracts_for is missing for ${instrumentSymbol}. Response:`, response);
+            resolve(null); // Resolve with null if data is not as expected
           }
-          resolve(offerings);
           ws.close();
         }
       } catch (e: any) {

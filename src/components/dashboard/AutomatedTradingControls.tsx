@@ -17,15 +17,23 @@ import {
   CandleData,
   InstrumentIndicatorData,
   PriceTick,
-  InstrumentType
+  InstrumentType,
+  AutomatedTradingStrategyInput // For typing instrumentOfferingsForAi
 } from '@/types';
 import { getSupportedInstrument } from '@/config/instruments';
 import { generateAutomatedTradingStrategy } from '@/ai/flows/automated-trading-strategy-flow';
 import { executeAiTradingStrategy, TradeExecutionResult } from '@/app/actions/trade-execution-actions';
 import { useToast } from '@/hooks/use-toast';
-import { getCandles } from '@/services/deriv';
+import {
+  getCandles,
+  getContractOfferings,
+  instrumentToDerivSymbol,
+  getTradingTimes,
+  DetailedDerivContractItem,
+  DerivContractsForResponse
+} from '@/services/deriv';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
-import { getMarketStatus } from '@/lib/market-hours';
+import { getMarketStatus } from '@/lib/market-hours'; // This is likely getCurrentMarketStatus
 
 const AVAILABLE_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
   'EUR/USD', 'GBP/USD', 'BTC/USD', 'XAU/USD',
@@ -173,70 +181,155 @@ export function AutomatedTradingControls() {
       return;
     }
 
-    // Reset states from any previous session
-    setExecutionResults([]);
-    setAiReasoning('');
-    setAiStrategyForConfirmation(null);
-    setShowAiConfirmationDialog(false);
-
-    // Step 1: Fetch market data for selected instruments.
-    // `isFetchingData` will be true during this phase.
-    const fetchResult = await fetchMarketDataForSelectedInstruments(apiToken);
-
-    // If data fetching failed for all instruments or no instruments had successful data, halt.
-    if (!fetchResult.success || fetchResult.successfulInstruments.length === 0) {
-      toast({ title: 'AI Strategy Halted', description: 'No market data available for any selected instrument to proceed with strategy generation.', variant: 'destructive' });
-      return;
-    }
-
-    // Use only instruments for which data was successfully fetched.
-    const activeInstruments = fetchResult.successfulInstruments;
-
-    // Notify user if proceeding with partial data.
-    if (fetchResult.failedInstruments.length > 0) {
-      toast({ title: 'Proceeding with Partial Data', description: `Generating AI strategy using data for: ${activeInstruments.join(', ')}. Failed for: ${fetchResult.failedInstruments.join(', ')}.`, variant: 'info', duration: 7000});
-    }
-
-    // Step 2: Prepare data (ticks and indicators) for the AI.
-    const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
-    const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
-
-    for (const instrument of activeInstruments) {
-      const currentInstrumentData = marketData[instrument];
-      // Data for `activeInstruments` should be valid as per `fetchResult` logic.
-      if (currentInstrumentData && !currentInstrumentData.error && currentInstrumentData.candles.length > 0) {
-        instrumentTicksForAi[instrument] = currentInstrumentData.candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
-        if (currentInstrumentData.indicators) {
-          instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
-        }
-      } else {
-        // This is a fallback/warning for an unlikely scenario where an instrument marked 'successful'
-        // might still have missing data. This could indicate an issue in data handling upstream.
-        console.warn(`Data integrity issue: Instrument ${instrument} was marked successful but has no valid data for AI input.`);
-        toast({ title: 'Internal Warning', description: `Could not prepare AI data for supposedly successful instrument: ${instrument}. It will be skipped.`, variant: 'warning'});
-      }
-    }
-
-    // If, after attempting to prepare data, no instruments have valid data for the AI, halt.
-    if (Object.keys(instrumentTicksForAi).length === 0) {
-        toast({ title: 'AI Strategy Halted', description: 'Failed to prepare any valid market data for the AI strategy generation.', variant: 'destructive' });
-        return;
-    }
-
-    // Step 3: Call AI to generate trading strategy.
-    // `isProcessingAi` will be true during this phase.
-    setIsProcessingAi(true);
+    setIsProcessingAi(true); // Set processing state early for all subsequent async operations
     try {
-      toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${activeInstruments.join(', ')}...` });
+      // Reset states from any previous session
+      setExecutionResults([]);
+      setAiReasoning('');
+      setAiStrategyForConfirmation(null);
+      setShowAiConfirmationDialog(false);
+
+      // Step 1: Fetch market data (candles) for selected instruments.
+      const fetchResult = await fetchMarketDataForSelectedInstruments(apiToken);
+
+      if (!fetchResult.success || fetchResult.successfulInstruments.length === 0) {
+        toast({ title: 'AI Strategy Halted', description: 'No candle market data available for any selected instrument.', variant: 'destructive' });
+        setIsProcessingAi(false);
+        return;
+      }
+
+      const activeInstruments = fetchResult.successfulInstruments;
+      if (fetchResult.failedInstruments.length > 0) {
+        toast({ title: 'Proceeding with Partial Candle Data', description: `Using data for: ${activeInstruments.join(', ')}. Failed for: ${fetchResult.failedInstruments.join(', ')}.`, variant: 'info', duration: 4000});
+      }
+
+      // Step 2: Prepare ticks and indicators from candle data.
+      const instrumentTicksForAi: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {};
+      const instrumentIndicatorsForAi: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {};
+      for (const instrument of activeInstruments) {
+        const currentInstrumentData = marketData[instrument];
+        if (currentInstrumentData && !currentInstrumentData.error && currentInstrumentData.candles.length > 0) {
+          instrumentTicksForAi[instrument] = currentInstrumentData.candles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+          if (currentInstrumentData.indicators) {
+            instrumentIndicatorsForAi[instrument] = currentInstrumentData.indicators;
+          }
+        } else {
+          console.warn(`Data integrity issue: Instrument ${instrument} successful for candles but no valid data for AI ticks/indicators.`);
+          toast({ title: 'Internal Warning', description: `Could not prepare AI tick/indicator data for: ${instrument}. It might be skipped.`, variant: 'warning'});
+        }
+      }
+
+      if (Object.keys(instrumentTicksForAi).length === 0 && activeInstruments.length > 0) {
+          toast({ title: 'AI Strategy Halted', description: 'Failed to prepare tick/indicator data from candles for AI.', variant: 'destructive' });
+          setIsProcessingAi(false);
+          return;
+      }
+
+      // Step 2.5: Fetch Offerings, Trading Times, and Market Status for AI
+      const instrumentOfferingsForAi: AutomatedTradingStrategyInput['instrumentOfferings'] = {};
+      toast({ title: 'Gathering AI Inputs...', description: `Fetching contract offerings & market status for ${activeInstruments.length} instrument(s).`, duration: activeInstruments.length * 2000 });
+
+      let instrumentsWithFullDataCount = 0;
+      for (const instrument of activeInstruments) {
+        const instrumentLabel = instrument as ForexCryptoCommodityInstrumentType;
+        toast({ title: `Processing: ${instrumentLabel}`, description: `Fetching details for ${instrumentLabel}...`, duration: 3500 });
+        const derivSymbol = instrumentToDerivSymbol(instrumentLabel);
+
+        let availableContractsForInstrument: DetailedDerivContractItem[] = [];
+        let marketIsOpen = false;
+        let marketStatusMsg = `Status for ${instrumentLabel} unknown.`;
+        let tradingTimesDataForInstrument: any | null = null;
+        let tradingTimesDataStr = 'Trading times data not available or fetch failed.';
+
+        try {
+            const contractsForData: DerivContractsForResponse | null = await getContractOfferings(derivSymbol, apiToken);
+            if (contractsForData && contractsForData.available && contractsForData.available.length > 0) {
+                availableContractsForInstrument = contractsForData.available;
+            } else {
+                console.warn(`[AI Input Prep] No contract offerings found for ${derivSymbol}.`);
+                toast({ title: `Offerings Note: ${instrumentLabel}`, description: `No contract offerings returned for ${derivSymbol}.`, variant: 'warning', duration: 3000 });
+            }
+
+            const tradingTimesRaw = await getTradingTimes(derivSymbol, apiToken); // Using 'today' by default
+
+            const instrumentDetails = getSupportedInstrument(instrumentLabel);
+            if (instrumentDetails && instrumentDetails.type === 'Crypto') {
+                marketIsOpen = true;
+                marketStatusMsg = `${instrumentLabel} market is Open 24/7 (Crypto Override).`;
+                if (tradingTimesRaw && !tradingTimesRaw.error) {
+                    const detailedStatus = getMarketStatus(tradingTimesRaw, new Date()); // `getMarketStatus` is `getCurrentMarketStatus`
+                    if (!detailedStatus.isOpen) {
+                        console.log(`[AI Input Prep] OVERRIDE: Forcing market status to OPEN for 24/7 instrument ${derivSymbol} as detailed status reported: ${detailedStatus.message}`);
+                    }
+                } else {
+                    console.log(`[AI Input Prep] OVERRIDE: Forcing market status to OPEN for 24/7 instrument ${derivSymbol} (trading times data unavailable for detailed check).`);
+                }
+            } else if (tradingTimesRaw && !tradingTimesRaw.error) {
+                tradingTimesDataForInstrument = tradingTimesRaw;
+                tradingTimesDataStr = JSON.stringify(tradingTimesRaw);
+                const detailedStatus = getMarketStatus(tradingTimesRaw, new Date()); // `getMarketStatus` is `getCurrentMarketStatus`
+                marketIsOpen = detailedStatus.isOpen;
+                marketStatusMsg = detailedStatus.message;
+            } else {
+                console.warn(`[AI Input Prep] Failed to fetch detailed trading times for ${derivSymbol}. Assuming market closed.`);
+                toast({ title: `Trading Times Error: ${instrumentLabel}`, description: `Failed to get detailed trading times. Market status may be inaccurate.`, variant: 'warning', duration: 3000 });
+                marketIsOpen = false; // Fallback: assume closed if times are unavailable
+                marketStatusMsg = `Market status for ${instrumentLabel} is based on fallback (assumed closed) due to trading times fetch error.`;
+                if (tradingTimesRaw && tradingTimesRaw.error) {
+                    marketStatusMsg = `Market status for ${instrumentLabel}: ${tradingTimesRaw.error}. Assuming closed.`;
+                }
+            }
+            toast({ title: `Market Status: ${instrumentLabel}`, description: marketStatusMsg, duration: 2500 });
+
+            instrumentOfferingsForAi[derivSymbol] = {
+                availableContracts: availableContractsForInstrument,
+                isMarketCurrentlyOpen: marketIsOpen,
+                tradingTimesData: tradingTimesDataForInstrument,
+                tradingTimesDataString: tradingTimesDataStr,
+            };
+            if (availableContractsForInstrument.length > 0 && marketIsOpen) {
+                 instrumentsWithFullDataCount++;
+            }
+
+        } catch (err: any) {
+            console.error(`[AI Input Prep] Error processing instrument ${instrumentLabel} (${derivSymbol}):`, err);
+            toast({ title: `Error Processing: ${instrumentLabel}`, description: `Failed to get details for ${derivSymbol}. Error: ${err.message}`, variant: 'destructive', duration: 4000 });
+            instrumentOfferingsForAi[derivSymbol] = { // Still add a partial entry for AI to know it was attempted
+                availableContracts: [],
+                isMarketCurrentlyOpen: false,
+                tradingTimesData: null,
+                tradingTimesDataString: `Failed to fetch details: ${err.message}`,
+            };
+        }
+      }
+
+      if (instrumentsWithFullDataCount === 0 && activeInstruments.length > 0) {
+        toast({ title: 'AI Strategy Halted', description: 'No instruments have sufficient data (offerings & open market) for AI processing.', variant: 'destructive' });
+        setIsProcessingAi(false);
+        return;
+      }
+       if (instrumentsWithFullDataCount < activeInstruments.length) {
+        toast({ title: 'Partial AI Input', description: `Proceeding with ${instrumentsWithFullDataCount} of ${activeInstruments.length} selected instruments due to data/market limitations for others.`, variant: 'warning', duration: 5000 });
+      }
+
+      // Step 3: Call AI to generate trading strategy.
+      toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${instrumentsWithFullDataCount} instrument(s)... This may take a moment.` });
+
+      // Filter activeInstruments to only those with full data for the AI call, if the AI cannot handle partial data per instrument
+      const finalInstrumentsForAi = activeInstruments.filter(inst => {
+          const ds = instrumentToDerivSymbol(inst as ForexCryptoCommodityInstrumentType);
+          return instrumentOfferingsForAi[ds]?.availableContracts.length > 0 && instrumentOfferingsForAi[ds]?.isMarketCurrentlyOpen;
+      });
 
       const strategyInput = {
         totalStake,
-        instruments: activeInstruments, // Pass only successfully processed instruments
+        instruments: finalInstrumentsForAi,
         tradingMode,
         stopLossPercentage: stopLossPercentage || undefined,
-        instrumentTicks: instrumentTicksForAi,
-        instrumentIndicators: instrumentIndicatorsForAi,
-        aiStrategyId: aiStrategyId, // Optional custom strategy ID
+        instrumentTicks: instrumentTicksForAi, // Send all, AI should cross-reference with its `instruments` list
+        instrumentIndicators: instrumentIndicatorsForAi, // Send all
+        instrumentOfferings: instrumentOfferingsForAi, // Send all
+        aiStrategyId: aiStrategyId,
       };
 
       // Call the AI flow. This is an async operation.

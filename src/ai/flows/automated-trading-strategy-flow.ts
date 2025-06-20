@@ -27,6 +27,28 @@ const InstrumentIndicatorDataSchema = zod.object({
   atr: zod.number().optional(),
 });
 
+// Schema for detailed contract items from Deriv's contracts_for API
+const DetailedDerivContractItemSchema = zod.object({
+  contract_type: zod.string().describe("The specific API contract type name, e.g., 'MULTUP', 'CALL', 'PUT'."),
+  contract_category: zod.string().optional().describe("Category of the contract, e.g., 'multipliers', 'callput', 'digits'."),
+  contract_display: zod.string().optional().describe("User-friendly display name for the contract type, e.g., 'Higher', 'Lower', 'Matches'."),
+  market: zod.string().optional().describe("Market type, e.g., 'forex', 'synthetic_index'."),
+  submarket: zod.string().optional().describe("Submarket type, e.g., 'major_pairs', 'continuous_index'."),
+  underlying_symbol: zod.string().optional().describe("The symbol this contract is for, e.g., 'R_100', 'frxEURUSD'."),
+  expiry_type: zod.string().optional().describe("Type of expiry, e.g., 'intraday', 'daily', 'tick'."),
+  min_contract_duration: zod.string().optional().describe("Minimum duration for the contract, e.g., '15s', '1m', '2t' (ticks)."),
+  max_contract_duration: zod.string().optional().describe("Maximum duration for the contract, e.g., '365d', '24h'."),
+  multiplier_range: zod.array(zod.number()).optional().describe("Array of available multiplier values, e.g., [10, 20, 50, 100]."),
+  min_multiplier: zod.number().optional().describe("Minimum multiplier value if not specified in range."),
+  max_multiplier: zod.number().optional().describe("Maximum multiplier value if not specified in range."),
+  barriers: zod.number().optional().describe("Number of barriers, e.g., 0, 1, 2."),
+  barrier_category: zod.string().optional().describe("Category of barrier, e.g., 'euro_atm', 'asian'."),
+  sentiment: zod.string().optional().describe("Default sentiment if applicable, e.g., 'up', 'down'."),
+  start_type: zod.string().optional().describe("How the contract starts, e.g., 'spot', 'forward'."),
+  // Other potentially useful fields from contracts_for.available can be added here
+  // e.g., low_barrier, high_barrier, barrier (as strings or numbers if consistent)
+});
+
 const PriceTickSchema = zod.object({
   epoch: zod.number(),
   price: zod.number(),
@@ -47,17 +69,11 @@ const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid 
   instrumentOfferings: zod.record(
     zod.string(), // Instrument symbol (e.g., "frxEURUSD")
     zod.object({
+      availableContracts: zod.array(DetailedDerivContractItemSchema).optional().describe("Full list of available contract specifications from contracts_for API for this instrument."),
+      isMarketCurrentlyOpen: zod.boolean().optional().describe('Whether the market for this instrument is determined to be currently open based on its detailed trading hours.'),
       tradingTimesData: zod.any().optional().describe('Raw trading times data from API for the instrument.'),
       tradingTimesDataString: zod.string().optional().describe('JSON string representation of trading times data, or error message.'),
-      isMarketCurrentlyOpen: zod.boolean().optional().describe('Whether the market for this instrument is determined to be currently open based on its detailed trading hours.'),
-      availableContracts: zod.array(zod.object({
-        tradeTypeName: zod.string().describe("The API name of the trade type, e.g., 'CALL', 'PUT', 'MULTUP', 'MULTDOWN', 'multiplier', 'touchnotouch' etc. For Rise/Fall, AI should propose 'CALL' or 'PUT' as tradeType based on direction."),
-        displayName: zod.string().optional().describe("User-friendly display name of the trade type."),
-        availableDurations: zod.array(zod.string()).optional().describe("Specific duration strings like '15m', '60s', or 'no_expiry' if applicable."),
-        minMultiplier: zod.number().optional().describe("Minimum multiplier value, if type is multiplier."),
-        maxMultiplier: zod.number().optional().describe("Maximum multiplier value, if type is multiplier."),
-        // Potentially add min/max stake, min/max payout etc. later if needed
-      })).optional().describe("List of available contract types and their specific parameters for this instrument.")
+      // rise_fall: zod.array(zod.string()).optional() // This is removed as availableContracts provides more detail
     })
   ).optional().describe('Detailed offerings for each instrument, including available contract types, their durations, and market status.')
 });
@@ -100,17 +116,17 @@ Available Trade Offerings by Instrument (IMPORTANT!):
     {{! This covers isMarketCurrentlyOpen being false, null, or undefined }}
     - Current Market Status Flag: Potentially CLOSED or UNKNOWN (system determined market may be closed, or flag was not available). You MUST verify with 'Trading Hours Data' below. If 'Trading Hours Data' confirms closed or is unavailable, DO NOT TRADE.
     {{/if}}
-    {{#if this.availableContracts}}
-      Available Contract Types:
+    {{#if this.availableContracts.length}}
+      Available Contract Types (from contracts_for API):
       {{#each this.availableContracts}}
-      - Type Name: '{{{this.tradeTypeName}}}' (Display: '{{this.displayName}}')
-        {{#if this.availableDurations}}
-        Durations: {{#each this.availableDurations}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}
-        {{/if}}
-        {{#if this.minMultiplier}}Min Multiplier: {{this.minMultiplier}}{{/if}} {{#if this.maxMultiplier}}Max Multiplier: {{this.maxMultiplier}}{{/if}}
+      - Contract Type (API Name): '{{{this.contract_type}}}' (Display: '{{this.contract_display}}', Category: '{{this.contract_category}}')
+        Market: {{this.market}}, Submarket: {{this.submarket}}, Expiry Type: {{this.expiry_type}}, Start Type: {{this.start_type}}
+        {{#if this.min_contract_duration}}Min Duration: {{this.min_contract_duration}};{{/if}} {{#if this.max_contract_duration}}Max Duration: {{this.max_contract_duration}};{{/if}}
+        {{#if this.multiplier_range.length}}Multiplier Range: [{{#each this.multiplier_range}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}]{{/if}}
+        {{#if this.min_multiplier}}Min Multiplier: {{this.min_multiplier}};{{/if}} {{#if this.max_multiplier}}Max Multiplier: {{this.max_multiplier}};{{/if}}
       {{/each}}
     {{else}}
-    - No specific contract types or durations listed for this instrument.
+    - No specific contract types or parameters listed for this instrument from contracts_for API.
     {{/if}}
     {{#if this.tradingTimesDataString}}
     - Trading Hours Data (for detailed checks if OPEN): {{{this.tradingTimesDataString}}}
@@ -125,9 +141,9 @@ Available Trade Offerings by Instrument (IMPORTANT!):
 Important System Rule: A stop-loss based on {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (user-defined){{else}}a fixed 5% (system default){{/if}} of the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each instrument.\r\n2.  **Primary Rule: For each instrument, a flag 'isMarketCurrentlyOpen' is provided under 'Available Trade Offerings by Instrument'. If 'isMarketCurrentlyOpen' is explicitly 'false', YOU MUST NOT propose a trade for that instrument, regardless of any other indicators. If 'isMarketCurrentlyOpen' is explicitly 'true', you should then verify with the 'Trading Hours Data' that your intended trade duration falls within active sessions and avoid proposing trades near market closing times unless specifically justified by the strategy. If the 'isMarketCurrentlyOpen' flag is not provided or is unknown for an instrument, you must then carefully check its 'Trading Hours Data'. If this data indicates the market for the instrument is likely closed at the current time (assume current time is UTC and within a few minutes of the 'Recent Price Ticks' timestamps), or if no trading hours data is available or shows an error, DO NOT propose a trade for that instrument.**
     Based on the '{{{tradingMode}}}', decide which instruments to trade (respecting the market status rules above). You do not have to trade all of them.
     Prioritize instruments confirmed to be open. Prioritize instruments with higher profit potential aligned with the risk mode and the 70% win rate target, considering all available data.\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=70% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=70% win rate, even with higher risk.\r\n3.  For each instrument you choose to trade (after confirming its market is open based on the 'isMarketCurrentlyOpen' flag and detailed 'Trading Hours Data'):
-        *   Select an appropriate 'tradeType' from its 'Available Contract Types' list. Crucially: for Rise/Fall contracts, set 'tradeType' to 'CALL' (if expecting price to rise) or 'PUT' (if expecting price to fall). For Multiplier contracts, set 'tradeType' to 'MULTUP' (if expecting price to rise) or 'MULTDOWN' (if expecting price to fall).
-        *   If the chosen 'tradeType' requires a fixed duration (like 'CALL'/'PUT'), you MUST provide a 'durationString' selected exactly from its 'Available Durations' (e.g., "15m", "60s").
-        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN', 'durationString' is typically not applicable (as these are often 'no_expiry'). Instead, you MUST specify a 'multiplier' value (e.g., 100, 200, 300) from within its allowed range if provided (Min/Max Multiplier). You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
+        *   Select an appropriate 'tradeType' which MUST be one of the 'contract_type' values listed in its 'Available Contract Types' (e.g., 'CALL', 'PUT', 'MULTUP', 'MULTDOWN').
+        *   If the chosen 'tradeType' requires a fixed duration (e.g., 'CALL'/'PUT', or any type with 'expiry_type' like 'intraday' or 'tick'), you MUST provide a 'durationString'. This duration string (e.g., "60s", "5m", "2t") must respect the 'min_contract_duration' and 'max_contract_duration' specified for that contract_type. You need to generate a sensible duration string that fits these constraints if specific options are not listed.
+        *   If the chosen 'tradeType' is 'MULTUP' or 'MULTDOWN' (Category: 'multipliers'), 'durationString' is typically not applicable. Instead, you MUST specify a 'multiplier' value. This value should be chosen from the 'multiplier_range' array (e.g., pick one from [10, 50, 100]) or, if 'multiplier_range' is not available, pick a value between 'min_multiplier' and 'max_multiplier'. You may optionally suggest 'takeProfit' and 'stopLoss' amounts (monetary value, not pips/percentage).
         *   Provide 'stake' (monetary value).
         *   The system will apply a general stop-loss of {{#if stopLossPercentage}}{{{stopLossPercentage}}}%{{else}}5%{{/if}} of entry for Rise/Fall if not overridden by a specific stop-loss parameter for other contract types. For Multiplier trades, your proposed 'stopLoss' (if any) will be used.
 4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.
