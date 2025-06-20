@@ -273,7 +273,7 @@ export function AutomatedTradingControls() {
         if (rawAvailableContracts.length > 0) {
           processedAvailableContracts = rawAvailableContracts.map(detail => {
             const mappedContract: any = {
-              tradeTypeName: detail.contract_type,
+              action: detail.contract_type,
               displayName: detail.contract_display,
             };
             if (detail.multiplier_range && detail.multiplier_range.length > 0) {
@@ -300,7 +300,7 @@ export function AutomatedTradingControls() {
               mappedContract.availableDurations = durations;
             }
             return mappedContract;
-          }).filter(c => c.tradeTypeName); // Ensure tradeTypeName is present
+          }).filter(c => c.action); // Ensure action is present
         }
 
         instrumentOfferingsData[instrumentSymbol] = {
