@@ -616,6 +616,14 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   // Update Market Status Periodically based on derived currentInstrumentTradingTimes
   useEffect(() => {
     const updateStatus = () => {
+      // Special handling for cryptocurrencies - always treat them as 24/7 markets
+      const cryptoInstruments: InstrumentType[] = ['BTC/USD', 'ETH/USD'];
+      if (cryptoInstruments.includes(currentInstrument)) {
+        setIsCurrentInstrumentMarketOpen(true);
+        setMarketStatusDisplayMessage(`${currentInstrument} market is Open 24/7.`);
+        return;
+      }
+
       if (isLoadingTradingTimes || isLoadingAllTradingTimes) { // Check both loading flags
         setMarketStatusDisplayMessage(`Loading trading hours for ${currentInstrument}...`);
         setIsCurrentInstrumentMarketOpen(null);
