@@ -346,11 +346,25 @@ function isGenerallyForexMarketOpen(date: Date): boolean {
  */
 export function getMarketStatus(
   instrument: InstrumentType,
-  currentDate: Date = new Date() // Default to now
+  currentDate: Date = new Date(), // Default to now
+  tradingTimesData?: DerivSymbolSpecificTradingData | null
 ): { isOpen: boolean; statusMessage: string } {
   const forexCommodityInstruments: InstrumentType[] = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'Palladium/USD', 'Platinum/USD', 'Silver/USD'];
   const cryptoInstruments: InstrumentType[] = ['BTC/USD', 'ETH/USD'];
 
+  // If we have specific trading times data for the instrument, use it
+  if (tradingTimesData && tradingTimesData.times && tradingTimesData.times.opens && tradingTimesData.times.closes) {
+    const status = getCurrentMarketStatus(tradingTimesData, currentDate);
+    const formattedTimes = formatTradingHoursForDisplay(tradingTimesData, ['GMT', 'UTC', 'Africa/Nairobi']);
+    return {
+      isOpen: status.isOpen,
+      statusMessage: status.isOpen 
+        ? `${instrument} market is Open. ${status.message !== "Market Open (24/7)" ? `Details: ${formattedTimes}` : ""}`
+        : `${instrument} market is Closed. ${formattedTimes}`
+    };
+  }
+
+  // Fallback to general rules if no specific data is available
   if (forexCommodityInstruments.includes(instrument as ForexCryptoCommodityInstrumentType)) {
     const isOpen = isGenerallyForexMarketOpen(currentDate);
     return {
@@ -375,7 +389,7 @@ export function getMarketStatus(
         statusMessage: `${instrument} market is Open 24/7.`
         };
   }
-  
+
   // Fallback for any other unhandled but potentially valid InstrumentType
   // We'll assume they are Forex-like if not Volatility or known Crypto.
   const isForexLike = !(instrument.startsWith('Volatility') || instrument.startsWith('Boom') || instrument.startsWith('Crash') || instrument.startsWith('Jump')) && !cryptoInstruments.includes(instrument as ForexCryptoCommodityInstrumentType);
