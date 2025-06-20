@@ -98,6 +98,152 @@ export interface TradeTypeDurations {
   };
 }
 
+// Interface for the new getFullContractDetails function
+export interface DerivFullContractDetails {
+  contract_type: string;
+  contract_category: string;
+  contract_category_display: string;
+  contract_display: string;
+  market: string;
+  submarket: string;
+  underlying_symbol: string;
+  expiry_type?: string;
+  min_contract_duration?: string;
+  max_contract_duration?: string;
+  multiplier_range?: number[];
+  cancellation_range?: string[];
+  // Add other relevant fields as they become necessary for AI or UI
+}
+
+/**
+ * Fetches the full contract details for a given instrument symbol using Deriv's `contracts_for` API.
+ * @param instrumentSymbol The Deriv API symbol for the instrument (e.g., "R_100", "frxEURUSD").
+ * @param token Optional Deriv API token for authorization.
+ * @returns A promise that resolves to an array of DerivFullContractDetails.
+ */
+export async function getFullContractDetails(instrumentSymbol: string, token?: string): Promise<DerivFullContractDetails[]> {
+  let ws: WebSocket | null = null;
+  const operationTimeoutDuration = 15000; // 15 seconds
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  const req_id = Date.now(); // Unique req_id for this operation
+
+  const cleanupAndLog = (logMessage: string, isError: boolean = false, wsToClose: WebSocket | null = ws) => {
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer);
+      timeoutTimer = null;
+    }
+    const fullLogMessage = `[DerivService/getFullContractDetails] Symbol: ${instrumentSymbol}. ${logMessage}.`;
+    if (isError) console.error(fullLogMessage);
+    else console.log(fullLogMessage);
+
+    if (wsToClose && wsToClose.readyState !== WebSocket.CLOSED && wsToClose.readyState !== WebSocket.CLOSING) {
+      wsToClose.close(1000, logMessage.substring(0, 100));
+    }
+  };
+
+  const promiseLogic = new Promise<DerivFullContractDetails[]>((resolve, reject) => {
+    ws = new WebSocket(DERIV_API_URL);
+    console.log(`[DerivService/getFullContractDetails] Attempting to connect for symbol: ${instrumentSymbol}`);
+
+    const sendContractsForRequest = () => {
+      const contractsForPayload = {
+        contracts_for: instrumentSymbol,
+        currency: "USD",
+        product_type: "basic", // Ensures comprehensive details
+        req_id: req_id,
+      };
+      console.log(`[DerivService/getFullContractDetails] Sending contracts_for request (req_id: ${req_id}):`, JSON.stringify(contractsForPayload));
+      ws!.send(JSON.stringify(contractsForPayload));
+    };
+
+    ws.onopen = () => {
+      cleanupAndLog("WebSocket connection opened.", false, null);
+      if (token) {
+        const authReqId = req_id + 1; // Distinct req_id for authorization
+        console.log(`[DerivService/getFullContractDetails] Sending authorize request (authReqId: ${authReqId}) for symbol: ${instrumentSymbol}`);
+        ws!.send(JSON.stringify({ authorize: token, req_id: authReqId }));
+      } else {
+        // contracts_for typically requires authorization for most symbols or to get full details.
+        // Proceeding without token might result in limited or no data.
+        console.warn(`[DerivService/getFullContractDetails] No token provided for symbol ${instrumentSymbol}. Full contract details might require authorization.`);
+        sendContractsForRequest();
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+
+        if (response.error) {
+          const errorMessage = response.error.message || `Unknown API error for getFullContractDetails on ${instrumentSymbol}.`;
+          cleanupAndLog(`API Error: ${errorMessage}`, true);
+          reject(new Error(errorMessage));
+          return;
+        }
+
+        const authReqId = token ? req_id + 1 : null;
+
+        if (response.msg_type === 'authorize') {
+          if (authReqId && response.req_id === authReqId) {
+            if (response.authorize) {
+              console.log(`[DerivService/getFullContractDetails] Authorization successful (authReqId: ${authReqId}). Now sending contracts_for request.`);
+              sendContractsForRequest();
+            } else {
+              const authFailedMsg = `Authorization failed in getFullContractDetails (authReqId: ${authReqId}).`;
+              cleanupAndLog(authFailedMsg, true);
+              reject(new Error(authFailedMsg));
+            }
+          } else {
+            // Log other authorize messages if necessary, but don't fail the main request yet
+             console.warn(`[DerivService/getFullContractDetails] Received an authorize message with unexpected req_id: ${response.req_id}. Ignoring for main promise.`);
+          }
+        } else if (response.msg_type === 'contracts_for') {
+          if (response.req_id === req_id) {
+            if (response.contracts_for && Array.isArray(response.contracts_for.available)) {
+              cleanupAndLog(`Received contracts_for response for ${instrumentSymbol}.`);
+              resolve(response.contracts_for.available as DerivFullContractDetails[]);
+            } else {
+              const noDataMsg = `No 'contracts_for.available' data in response for ${instrumentSymbol}.`;
+              cleanupAndLog(noDataMsg, true); // Log as error because data is expected
+              reject(new Error(noDataMsg));
+            }
+          } else {
+            console.warn(`[DerivService/getFullContractDetails] Received contracts_for with mismatched req_id. Expected ${req_id}, got ${response.req_id}. Ignoring.`);
+          }
+        } else {
+          console.log(`[DerivService/getFullContractDetails] Received other message type: ${response.msg_type}. Waiting for contracts_for or error.`);
+        }
+      } catch (e: any) {
+        const processErrorMsg = `Error processing message for ${instrumentSymbol}: ${e?.message || String(e)}`;
+        cleanupAndLog(processErrorMsg, true);
+        reject(new Error(processErrorMsg));
+      }
+    };
+
+    ws.onerror = (event) => {
+      const errorMsg = `WebSocket error in getFullContractDetails for ${instrumentSymbol}. Type: ${(event as any)?.type}`;
+      cleanupAndLog(errorMsg, true);
+      reject(new Error(errorMsg));
+    };
+
+    ws.onclose = (event) => {
+      cleanupAndLog(`WebSocket connection closed for ${instrumentSymbol}. Code: ${event.code}, Reason: ${event.reason}`, !event.wasClean);
+      // If the promise hasn't settled and it wasn't a clean closure after data, consider it an error (handled by timeout).
+    };
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<DerivFullContractDetails[]>((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        const reason = `getFullContractDetails operation timed out for symbol ${instrumentSymbol}.`;
+        cleanupAndLog(reason, true);
+        reject(new Error(reason));
+      }, operationTimeoutDuration);
+    })
+  ]);
+}
+
 export interface SymbolInfo { // Represents one entry in the "symbol" array
     display_name: string;
     name: string;
@@ -1462,16 +1608,17 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 }
 
 export interface TradeDetails {
-  symbol: string; // Deriv API symbol e.g. "R_100", "frxEURUSD"
-  contract_type: "CALL" | "PUT";
-  duration: number;
-  duration_unit: "s" | "m" | "h" | "d" | "t"; // seconds, minutes, hours, days, ticks
-  amount: number; // Stake amount
-  currency: string; // e.g., "USD"
-  stop_loss?: number; // Optional stop loss
-  take_profit?: number; // Optional take profit
-  basis: string; // e.g., "stake" or "payout"
-  token: string; // Deriv API token for authorization
+  symbol: string;
+  contract_type: string;
+  duration?: number;
+  duration_unit?: "s" | "m" | "h" | "d" | "t";
+  amount: number;
+  currency: string;
+  stop_loss?: number;
+  take_profit?: number;
+  basis: string;
+  token: string;
+  multiplier?: number;
 }
 
 export interface DerivContractStatusData {
@@ -1585,8 +1732,10 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // If we reach here, currentLoginId === accountId, so we are on the correct account.
             console.log(`[DerivService/placeTrade] Session already active on target account ${accountId}. Proceeding to proposal...`);
 
-            // Construct and send proposal request (this part of the logic can be moved here from the old 'account_switch' success path)
+            // Construct and send proposal request
             const apiContractType = tradeDetails.contract_type;
+
+            // Base proposal request
             const proposalRequest: any = {
               proposal: 1,
               subscribe: 1,
@@ -1594,10 +1743,44 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
               basis: tradeDetails.basis,
               contract_type: apiContractType,
               currency: tradeDetails.currency,
-              duration: tradeDetails.duration,
-              duration_unit: tradeDetails.duration_unit,
               symbol: tradeDetails.symbol,
             };
+
+            // Type-specific parameter handling
+            if (apiContractType === 'MULTUP' || apiContractType === 'MULTDOWN') {
+              // Multiplier is mandatory for these types
+              if (typeof tradeDetails.multiplier === 'number') {
+                proposalRequest.multiplier = tradeDetails.multiplier;
+              } else {
+                // This will be caught by the main try...catch in onmessage,
+                // which calls cleanupAndLog and reject.
+                throw new Error(`Multiplier is required for ${apiContractType} contract but was not provided. Symbol: ${tradeDetails.symbol}`);
+              }
+              // Duration, duration_unit, and product_type are explicitly NOT added for Multipliers.
+            } else {
+              // For non-multiplier contracts (e.g., CALL/PUT)
+              if (tradeDetails.duration && tradeDetails.duration_unit) {
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+              }
+              // Add product_type: "basic" for non-multiplier contracts based on observed API logs for CALL.
+              proposalRequest.product_type = "basic";
+            }
+
+            // limit_order handling (common for contracts that support it)
+            if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
+              const limitOrderDetails: any = {};
+              if (typeof tradeDetails.take_profit === 'number') {
+                limitOrderDetails.take_profit = tradeDetails.take_profit;
+              }
+              if (typeof tradeDetails.stop_loss === 'number') {
+                limitOrderDetails.stop_loss = tradeDetails.stop_loss;
+              }
+              if (Object.keys(limitOrderDetails).length > 0) {
+                proposalRequest.limit_order = limitOrderDetails;
+              }
+            }
+
             console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
             ws!.send(JSON.stringify(proposalRequest));
 
