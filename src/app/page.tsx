@@ -651,24 +651,39 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         setIsCurrentInstrumentMarketOpen(status.isOpen);
 
         const formattedTimes = formatTradingHoursForDisplay(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, ['GMT', 'UTC', 'Africa/Nairobi']);
-        let displayMessage = `${status.isOpen ? 'Market Open' : 'Market Closed'}`;
+        let displayMessage = "";
 
-        if (status.eventDescription && !status.nextEventTimeGMT) { // E.g. "Market is Closed (Market event: Closed all day)"
-             displayMessage += ` (${status.eventDescription})`;
-        } else if (status.nextEventTimeGMT && status.nextEventType) {
-            displayMessage += `. Next ${status.nextEventType} at ${status.nextEventTimeGMT} GMT`;
-            if (status.eventDescription && status.eventDescription !== `Market session ${status.nextEventType}`) { // Avoid redundant session open/close
-                displayMessage += ` (${status.eventDescription})`;
-            }
-        }
-        // Always append detailed formatted times if available, unless it's a simple 24/7 message
-        if (status.message !== "Market Open (24/7)") {
-             displayMessage += ` Details: ${formattedTimes}`;
-        } else if (status.message === "Market Open (24/7)" && status.eventDescription) {
-            // For 24/7 markets that might have a specific event description (e.g. upcoming maintenance)
-             displayMessage = `${status.message} (${status.eventDescription})`;
-        } else {
+        if (!status.isOpen) {
+          displayMessage = `Market Closed. Details: ${formattedTimes}`;
+
+          if (status.nextEventTimeGMT && status.nextEventType === 'open') {
+            displayMessage += ` Next Open at ${status.nextEventTimeGMT} GMT`;
+          }
+          // Append eventDescription if it exists and is not simply repeating the "next open" event.
+          // This simplified check might need refinement if eventDescription can be varied for 'open' events.
+          if (status.eventDescription && (!status.nextEventTimeGMT || status.nextEventType !== 'open' || !status.eventDescription.toLowerCase().includes('session open'))) {
+            displayMessage += ` (${status.eventDescription})`;
+          }
+        } else { // Market is Open
+          displayMessage = `${currentInstrument} Market Open`; // Default open message
+
+          if (status.message === "Market Open (24/7)") {
             displayMessage = status.message; // Use the direct "Market Open (24/7)"
+            if (status.eventDescription) { // For 24/7 markets that might have a specific event description
+              displayMessage += ` (${status.eventDescription})`;
+            }
+          } else {
+            // For non-24/7 open markets, append next close details and full formatted times
+            if (status.nextEventTimeGMT && status.nextEventType === 'close') {
+              displayMessage += `. Next Close at ${status.nextEventTimeGMT} GMT`;
+              if (status.eventDescription && status.eventDescription !== `Market session ${status.nextEventType}`) {
+                displayMessage += ` (${status.eventDescription})`;
+              }
+            } else if (status.eventDescription) { // Other events when open
+              displayMessage += ` (${status.eventDescription})`;
+            }
+            displayMessage += ` Details: ${formattedTimes}`;
+          }
         }
 
         setMarketStatusDisplayMessage(displayMessage);
