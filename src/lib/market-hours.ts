@@ -406,4 +406,4 @@ export function getMarketStatus(
     isOpen: false, // Default to closed for unhandled to prevent unexpected live trading
     statusMessage: `${instrument} market status is undetermined, assumed Closed.`
   };
-} 
+}
