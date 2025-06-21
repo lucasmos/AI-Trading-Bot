@@ -55,8 +55,17 @@ export default function VolatilityTradingPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
-  const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
+  // Use actual Deriv balances from userInfo if available, otherwise fallback to context's local paper/live balance.
+  // This ensures the display reflects the most up-to-date info from Deriv via useAuth's userInfo.
+  const displayPaperBalance = userInfo?.derivDemoBalance ?? paperBalance ?? 0;
+  const displayLiveBalance = userInfo?.derivRealBalance ?? liveBalance ?? 0;
+
+  const currentBalance = paperTradingMode === 'paper' ? displayPaperBalance : displayLiveBalance;
+
+  // setCurrentBalance will continue to update the local optimistic balances in useAuth context.
+  // useAuth should handle reconciling these with actual API balance updates.
   const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
+
 
   // const router = useRouter(); // already added above
   const { toast } = useToast();
