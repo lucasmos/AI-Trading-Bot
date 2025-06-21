@@ -138,16 +138,47 @@ export interface VolatilityTradeProposal {
   stake: number;
   durationSeconds: number;
   reasoning: string;
+  // For Digits trades, AI might need to provide this
+  last_digit_prediction?: number;
 }
 
-export interface ActiveAutomatedVolatilityTrade extends VolatilityTradeProposal {
-  id: string;
-  entryPrice: number;
-  stopLossPrice: number;
-  startTime: number;
-  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual';
-  pnl?: number;
-  currentPrice?: number;
+export interface ActiveAutomatedVolatilityTrade {
+  // Fields from VolatilityTradeProposal (AI's suggestion)
+  instrument: InstrumentType; // User-friendly name like "Volatility 100 Index"
+  action: 'CALL' | 'PUT' | string; // Could be "DIGITMATCH", "DIGITDIFF" etc. from AI
+  stake: number;
+  durationSeconds: number; // Or a more general duration if AI provides units
+  durationUnit?: 's' | 'm' | 'h' | 'd' | 't'; // From AI or default
+  reasoning?: string;
+  last_digit_prediction?: number; // From AI for digit trades
+
+  // Fields from Deriv's placeTrade response & for monitoring
+  id: string; // Unique client-side ID for list keys, separate from derivContractId initially
+  derivContractId?: number; // Actual Deriv contract ID
+  derivSymbol: string; // Symbol used with Deriv API, e.g., "R_100"
+
+  entryPrice?: number;     // Actual entry spot from Deriv
+  buyPrice?: number;       // Actual buy price (cost) from Deriv
+
+  startTime: number;      // Timestamp when trade was initiated by client / AI proposal accepted
+
+  // Status & Monitoring - to be updated by getContractStatus
+  status: 'pending_placement' | 'open' | 'won' | 'lost' | 'sold' | 'cancelled' | 'error_placement' | 'error_monitoring';
+  currentPrice?: number;   // Current spot price of the underlying
+  currentProfitLoss?: number; // If available from Deriv or calculated
+  isValidToSell?: boolean; // From Deriv contract status
+  sellPrice?: number;      // Potential price if sold now, from Deriv
+
+  // Settlement Fields
+  exitTime?: number;       // Timestamp of contract expiry/settlement
+  finalProfitLoss?: number;
+  isSettled?: boolean;
+
+  // UI specific or internal tracking
+  stopLossPrice?: number;  // Conceptual SL for display, not necessarily on Deriv contract
+  monitoringRetryCount?: number;
+  placementError?: string; // Store error message if trade placement fails
+  pnl?: number; // Consolidate finalProfitLoss here for display simplicity if preferred
 }
 
 export interface VolatilityTradingStrategyInput {

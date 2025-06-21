@@ -827,6 +827,50 @@ export async function getGlobalTradingOfferings(token?: string): Promise<Trading
   ]);
 }
 
+/**
+ * Extracts the specific trading offerings (trade types and their durations) for a given
+ * volatility index symbol from the broader market offerings data.
+ * @param targetSymbol The Deriv API symbol for the volatility index (e.g., "R_100", "1HZ10V").
+ * @param allMarketOfferings The comprehensive `TradingDurationsData` fetched from `getGlobalTradingOfferings`.
+ * @returns An array of `TradeTypeDurations` applicable to the target symbol, or an empty array if not found.
+ */
+export function getVolatilityInstrumentOfferings(
+  targetSymbol: string,
+  allMarketOfferings: TradingDurationsData
+): TradeTypeDurations[] {
+  if (!targetSymbol || !allMarketOfferings) {
+    return [];
+  }
+
+  for (const market of allMarketOfferings) {
+    // Volatility indices are typically under 'synthetic_index' market and submarkets like 'random_index', 'step_index', etc.
+    if (market.market.name === 'synthetic_index') {
+      for (const symbolData of market.data) {
+        const foundSymbol = symbolData.symbol.find(s => s.name === targetSymbol);
+        if (foundSymbol) {
+          // Return the trade_durations for this specific symbol
+          // Ensure that the durations within each trade_type are correctly structured.
+          // The API explorer output shows `durations` as an array of `TradingDurationDetail`.
+          return symbolData.trade_durations.map(td => ({
+            ...td,
+            durations: td.durations.map(d => ({
+              display_name: d.display_name,
+              max: d.max,
+              min: d.min,
+              name: d.name,
+            }))
+          }));
+        }
+      }
+    }
+  }
+  // If the symbol is not found in synthetic_index, it might be elsewhere or not available.
+  // For now, this function is specific to volatility indices, which are synthetic.
+  console.warn(`[DerivService/getVolatilityInstrumentOfferings] No offerings found for symbol ${targetSymbol} within 'synthetic_index' market.`);
+  return [];
+}
+
+
 function parseDurationToMinutes(durationString: string): number {
   if (!durationString || typeof durationString !== 'string') {
     return 0;
@@ -1608,17 +1652,22 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 }
 
 export interface TradeDetails {
-  symbol: string;
-  contract_type: string;
+  symbol: string; // Deriv API symbol, e.g., R_100, frxEURUSD, 1HZ10V
+  contract_type: string; // Deriv contract type, e.g., CALL, PUT, MULTUP, MULTDOWN, DIGITMATCH, DIGITODD
   duration?: number;
-  duration_unit?: "s" | "m" | "h" | "d" | "t";
+  duration_unit?: "s" | "m" | "h" | "d" | "t"; // s=seconds, m=minutes, h=hours, d=days, t=ticks
   amount: number;
   currency: string;
-  stop_loss?: number;
-  take_profit?: number;
-  basis: string;
+  stop_loss?: number; // For CFD, Multipliers. For options, it's a contract parameter.
+  take_profit?: number; // For CFD, Multipliers. For options, it's a contract parameter.
+  basis: "stake" | "payout"; // Typically "stake" for options
   token: string;
-  multiplier?: number;
+  multiplier?: number; // For Multiplier contracts
+  barrier?: string | number; // For contracts like DIGITOVER, DIGITUNDER, HIGHER, LOWER
+  last_digit_prediction?: number; // For DIGITMATCH, DIGITDIFF (0-9)
+  // product_type is determined internally by placeTrade based on contract_type/symbol
+  // trade_category can be inferred from symbol or contract_type, or passed explicitly if ambiguous
+  trade_category?: 'options' | 'multiplier' | 'volatility_general' | 'volatility_digits';
 }
 
 export interface DerivContractStatusData {
@@ -1733,53 +1782,131 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             console.log(`[DerivService/placeTrade] Session already active on target account ${accountId}. Proceeding to proposal...`);
 
             // Construct and send proposal request
-            const apiContractType = tradeDetails.contract_type;
-
-            // Base proposal request
             const proposalRequest: any = {
               proposal: 1,
               subscribe: 1,
               amount: tradeDetails.amount,
-              basis: tradeDetails.basis,
-              contract_type: apiContractType,
+              basis: tradeDetails.basis, // "stake" or "payout"
+              contract_type: tradeDetails.contract_type, // e.g. CALL, PUT, DIGITMATCH, MULTUP
               currency: tradeDetails.currency,
-              symbol: tradeDetails.symbol,
+              symbol: tradeDetails.symbol, // Deriv symbol e.g. R_100, frxEURUSD
             };
 
-            // Type-specific parameter handling
-            if (apiContractType === 'MULTUP' || apiContractType === 'MULTDOWN') {
-              // Multiplier is mandatory for these types
-              if (typeof tradeDetails.multiplier === 'number') {
-                proposalRequest.multiplier = tradeDetails.multiplier;
+            // Determine trade category (can be explicitly passed or inferred)
+            let inferredCategory = tradeDetails.trade_category;
+            if (!inferredCategory) {
+              if (tradeDetails.contract_type.startsWith('MULT')) {
+                inferredCategory = 'multiplier';
+              } else if (tradeDetails.symbol.startsWith('R_') || tradeDetails.symbol.startsWith('1HZ') || tradeDetails.symbol.startsWith('stpRNG') || tradeDetails.symbol.startsWith('BOOM') || tradeDetails.symbol.startsWith('CRASH') || tradeDetails.symbol.startsWith('JD')) {
+                if (tradeDetails.contract_type.startsWith('DIGIT')) {
+                  inferredCategory = 'volatility_digits';
+                } else {
+                  inferredCategory = 'volatility_general'; // For CALL, PUT, CALLE, PUTE, etc. on Volatility Indices
+                }
               } else {
-                // This will be caught by the main try...catch in onmessage,
-                // which calls cleanupAndLog and reject.
-                throw new Error(`Multiplier is required for ${apiContractType} contract but was not provided. Symbol: ${tradeDetails.symbol}`);
+                inferredCategory = 'options'; // Default for Forex, Crypto, Commodities if not multiplier
               }
-              // Duration, duration_unit, and product_type are explicitly NOT added for Multipliers.
-            } else {
-              // For non-multiplier contracts (e.g., CALL/PUT)
-              if (tradeDetails.duration && tradeDetails.duration_unit) {
-                proposalRequest.duration = tradeDetails.duration;
-                proposalRequest.duration_unit = tradeDetails.duration_unit;
-              }
-              // Add product_type: "basic" for non-multiplier contracts based on observed API logs for CALL.
-              proposalRequest.product_type = "basic";
             }
 
-            // limit_order handling (common for contracts that support it)
-            if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
-              const limitOrderDetails: any = {};
-              if (typeof tradeDetails.take_profit === 'number') {
-                limitOrderDetails.take_profit = tradeDetails.take_profit;
-              }
-              if (typeof tradeDetails.stop_loss === 'number') {
-                limitOrderDetails.stop_loss = tradeDetails.stop_loss;
-              }
-              if (Object.keys(limitOrderDetails).length > 0) {
-                proposalRequest.limit_order = limitOrderDetails;
-              }
+            console.log(`[DerivService/placeTrade] Determined trade category: ${inferredCategory} for symbol ${tradeDetails.symbol} and contract_type ${tradeDetails.contract_type}`);
+
+            // Category-specific parameter handling
+            switch (inferredCategory) {
+              case 'multiplier':
+                if (typeof tradeDetails.multiplier === 'number') {
+                  proposalRequest.multiplier = tradeDetails.multiplier;
+                } else {
+                  throw new Error(`Multiplier value is required for ${tradeDetails.contract_type} contract (symbol: ${tradeDetails.symbol}) but was not provided.`);
+                }
+                // SL/TP for multipliers are set via limit_order
+                if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
+                  proposalRequest.limit_order = {};
+                  if (typeof tradeDetails.take_profit === 'number') {
+                    proposalRequest.limit_order.take_profit = tradeDetails.take_profit;
+                  }
+                  if (typeof tradeDetails.stop_loss === 'number') {
+                    proposalRequest.limit_order.stop_loss = tradeDetails.stop_loss;
+                  }
+                }
+                // Duration, duration_unit, product_type, barrier, last_digit_prediction are NOT used for Multipliers.
+                delete proposalRequest.duration;
+                delete proposalRequest.duration_unit;
+                delete proposalRequest.barrier; // ensure it's not passed
+                // product_type is not used
+                break;
+
+              case 'volatility_digits':
+                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit; // Usually 't' for ticks
+
+                if (tradeDetails.contract_type === 'DIGITMATCH' || tradeDetails.contract_type === 'DIGITDIFF') {
+                  if (tradeDetails.last_digit_prediction === undefined || typeof tradeDetails.last_digit_prediction !== 'number' || tradeDetails.last_digit_prediction < 0 || tradeDetails.last_digit_prediction > 9) {
+                    throw new Error(`A 'last_digit_prediction' (0-9) is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided or invalid.`);
+                  }
+                  proposalRequest.barrier = tradeDetails.last_digit_prediction; // For DIGITMATCH/DIFF, barrier is the predicted digit
+                } else if (tradeDetails.contract_type === 'DIGITOVER' || tradeDetails.contract_type === 'DIGITUNDER') {
+                  if (tradeDetails.barrier === undefined || typeof tradeDetails.barrier !== 'number' ) { // Barrier here is the digit 0-8 for OVER, 1-9 for UNDER
+                    throw new Error(`A numeric 'barrier' is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided or invalid.`);
+                  }
+                  proposalRequest.barrier = tradeDetails.barrier;
+                } else if (tradeDetails.contract_type === 'DIGITEVEN' || tradeDetails.contract_type === 'DIGITODD') {
+                  // No barrier needed for EVEN/ODD
+                  delete proposalRequest.barrier;
+                } else {
+                  // Should not happen if contract_type starts with DIGIT but isn't one of the above
+                  throw new Error(`Unsupported DIGIT contract type: ${tradeDetails.contract_type}`);
+                }
+                // product_type is not used for these volatility contracts.
+                break;
+
+              case 'volatility_general': // e.g., CALL/PUT on Volatility Indices
+                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+
+                // For CALL/PUT (Rise/Fall) that are ATM, no barrier is sent.
+                // If it's a non-ATM type like HIGHER/LOWER, a barrier is required.
+                if (tradeDetails.contract_type === 'HIGHER' || tradeDetails.contract_type === 'LOWER' || tradeDetails.contract_type === 'TOUCH' || tradeDetails.contract_type === 'NOTOUCH') {
+                  if (tradeDetails.barrier === undefined) {
+                    throw new Error(`A 'barrier' is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided.`);
+                  }
+                  proposalRequest.barrier = tradeDetails.barrier;
+                } else {
+                  // For standard CALL/PUT (ATM), ensure no barrier is accidentally passed.
+                  delete proposalRequest.barrier;
+                }
+                // product_type is generally NOT sent for simple CALL/PUT on Volatility Indices.
+                break;
+
+              case 'options': // Standard CALL/PUT on Forex/Crypto/Commodities
+                 if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+                proposalRequest.product_type = "basic"; // "basic" is typical for these options
+                // Barrier handling for standard options if non-ATM (similar to volatility_general)
+                if (tradeDetails.barrier !== undefined) { // e.g. for Higher/Lower on Forex if that's how it's structured
+                    proposalRequest.barrier = tradeDetails.barrier;
+                } else {
+                    delete proposalRequest.barrier; // Ensure no barrier for ATM CALL/PUT
+                }
+                break;
+              default:
+                throw new Error(`Unknown or unsupported trade category '${inferredCategory}' for symbol ${tradeDetails.symbol}.`);
             }
+
+            // Clean up any undefined optional parameters from proposalRequest to avoid sending them
+            Object.keys(proposalRequest).forEach(key => {
+              if (proposalRequest[key] === undefined) {
+                delete proposalRequest[key];
+              }
+            });
 
             console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
             ws!.send(JSON.stringify(proposalRequest));

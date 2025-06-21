@@ -13,8 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getCandles } from '@/services/deriv';
-import { v4 as uuidv4 } from 'uuid'; 
+import { getCandles, placeTrade, getContractStatus, instrumentToDerivSymbol, TradeDetails, DerivContractStatusData } from '@/services/deriv';
+import { v4 as uuidv4 } from 'uuid';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react'; 
@@ -133,57 +133,51 @@ export default function VolatilityTradingPage() {
       }
     }
 
-    setIsAiLoading(true); 
+    setIsAiLoading(true);
     setIsAutoTradingActive(true);
-    setActiveAutomatedTrades([]); 
+    setActiveAutomatedTrades([]);
     setProfitsClaimable({ totalNetProfit: 0, tradeCount: 0, winningTrades: 0, losingTrades: 0 });
 
+    const targetDerivAccountId = paperTradingMode === 'paper' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId;
+    const apiToken = paperTradingMode === 'paper' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken;
+
+    if (!targetDerivAccountId || !apiToken) {
+      toast({ title: "Account Error", description: `Deriv ${paperTradingMode} account ID or API token is missing. Please check your Deriv profile settings.`, variant: "destructive" });
+      setIsAutoTradingActive(false);
+      setIsAiLoading(false);
+      return;
+    }
 
     try {
+      // ... (instrumentTicksData and instrumentIndicatorsData fetching remains the same)
       const instrumentTicksData: Record<VolatilityInstrumentType, PriceTick[]> = {} as Record<VolatilityInstrumentType, PriceTick[]>;
-      const instrumentIndicatorsData: Record<VolatilityInstrumentType, any> = {} as Record<VolatilityInstrumentType, any>; // Adjust 'any' to a more specific type if available
+      const instrumentIndicatorsData: Record<VolatilityInstrumentType, any> = {} as Record<VolatilityInstrumentType, any>;
       
       for (const inst of VOLATILITY_INSTRUMENTS as VolatilityInstrumentType[]) {
         try {
-          const candles = await getCandles(inst, 60); // Fetch 60 candles for indicator calculation
+          const candles = await getCandles(inst, 60, 60, apiToken); // Pass token
           if (candles && candles.length > 0) {
-            instrumentTicksData[inst] = candles.map(candle => ({
-              epoch: candle.epoch,
-              price: candle.close,
-              time: candle.time,
-            }));
-
+            instrumentTicksData[inst] = candles.map(candle => ({ epoch: candle.epoch, price: candle.close, time: candle.time, }));
             const closePrices = candles.map(c => c.close);
             const highPrices = candles.map(c => c.high);
             const lowPrices = candles.map(c => c.low);
-
-            // Calculate latest values for each indicator
-            const rsi = calculateRSI(closePrices);
-            const macd = calculateMACD(closePrices);
-            const bb = calculateBollingerBands(closePrices);
-            const ema = calculateEMA(closePrices);
-            const atr = calculateATR(highPrices, lowPrices, closePrices);
-
             instrumentIndicatorsData[inst] = {
-              ...(rsi !== undefined && { rsi }),
-              ...(macd && { macd }), // macd itself is an object { macd, signal, histogram } or undefined
-              ...(bb && { bollingerBands: bb }), // bb itself is an object { upper, middle, lower } or undefined
-              ...(ema !== undefined && { ema }),
-              ...(atr !== undefined && { atr }),
+              ...(calculateRSI(closePrices) !== undefined && { rsi: calculateRSI(closePrices) }),
+              ...(calculateMACD(closePrices) && { macd: calculateMACD(closePrices) }),
+              ...(calculateBollingerBands(closePrices) && { bollingerBands: calculateBollingerBands(closePrices) }),
+              ...(calculateEMA(closePrices) !== undefined && { ema: calculateEMA(closePrices) }),
+              ...(calculateATR(highPrices, lowPrices, closePrices) !== undefined && { atr: calculateATR(highPrices, lowPrices, closePrices) }),
             };
-
           } else {
-            instrumentTicksData[inst] = [];
-            instrumentIndicatorsData[inst] = {}; // No data for indicators
-            toast({title: `Data Error ${inst}`, description: `Could not fetch sufficient candle data for ${inst}. AI may exclude it or work with limited info.`, variant: 'destructive', duration: 4000});
+            instrumentTicksData[inst] = []; instrumentIndicatorsData[inst] = {};
+            toast({title: `Data Error ${inst}`, description: `Could not fetch sufficient candle data for ${inst}. AI may exclude it.`, variant: 'destructive', duration: 4000});
           }
         } catch (err) {
-          instrumentTicksData[inst] = []; 
-          instrumentIndicatorsData[inst] = {}; // Error fetching data
-          toast({title: `Data Error ${inst}`, description: `Could not fetch price data for ${inst}. AI may exclude it.`, variant: 'destructive', duration: 4000});
+          instrumentTicksData[inst] = []; instrumentIndicatorsData[inst] = {};
+          toast({title: `Data Error ${inst}`, description: `Could not fetch price data for ${inst}: ${(err as Error).message}`, variant: 'destructive', duration: 4000});
         }
       }
-      
+
       const strategyInput: VolatilityTradingStrategyInput = {
         totalStake: autoTradeTotalStake,
         instruments: VOLATILITY_INSTRUMENTS as VolatilityInstrumentType[],
@@ -195,70 +189,103 @@ export default function VolatilityTradingPage() {
       const strategyResult = await generateVolatilityTradingStrategy(strategyInput);
 
       if (!strategyResult || strategyResult.tradesToExecute.length === 0) {
-        const reason = strategyResult?.overallReasoning || "AI determined no optimal trades at this moment for volatility indices.";
-        toast({ title: "AI Auto-Trade Update (Volatility)", description: `AI analysis complete. ${reason}`, duration: 7000 });
-        setIsAutoTradingActive(false); 
+        toast({ title: "AI Auto-Trade Update (Volatility)", description: strategyResult?.overallReasoning || "AI determined no optimal trades.", duration: 7000 });
+        setIsAutoTradingActive(false);
+        setIsAiLoading(false);
         return;
       }
-      
-      toast({ title: "AI Auto-Trade Strategy Initiated (Volatility)", description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingMode} account on volatility indices. ${strategyResult.overallReasoning}`, duration: 7000});
-      setConsecutiveAiCallCount(prev => prev + 1); // Increment AI call count
-      setLastAiCallTimestamp(Date.now()); // Update last AI call timestamp
 
-      const newTrades: ActiveAutomatedVolatilityTrade[] = [];
+      toast({ title: "AI Auto-Trade Strategy Initiated (Volatility)", description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s). ${strategyResult.overallReasoning}`, duration: 7000 });
+      setConsecutiveAiCallCount(prev => prev + 1);
+      setLastAiCallTimestamp(Date.now());
+
+      const tradesToAttempt: ActiveAutomatedVolatilityTrade[] = [];
       let currentAllocatedStake = 0;
 
       for (const proposal of strategyResult.tradesToExecute) {
-        if (currentAllocatedStake + proposal.stake > autoTradeTotalStake) continue; 
+        if (currentAllocatedStake + proposal.stake > autoTradeTotalStake) continue;
         currentAllocatedStake += proposal.stake;
-
-        const currentTicks = instrumentTicksData[proposal.instrument as VolatilityInstrumentType];
-        if (!currentTicks || currentTicks.length === 0) {
-          toast({ title: "Auto-Trade Skipped (Volatility)", description: `No price data for ${proposal.instrument} to initiate AI trade.`, variant: "destructive"});
-          continue;
-        }
-        const entryPrice = currentTicks[currentTicks.length - 1].price;
         
-        let stopLossPrice;
-        const stopLossPercentage = 0.05; 
-        if (proposal.action === 'CALL') stopLossPrice = entryPrice * (1 - stopLossPercentage);
-        else stopLossPrice = entryPrice * (1 + stopLossPercentage);
-        
-        stopLossPrice = parseFloat(stopLossPrice.toFixed(getInstrumentDecimalPlaces(proposal.instrument as InstrumentType)));
+        const clientTradeId = uuidv4(); // For UI key and tracking before Deriv ID is known
+        const derivApiSymbol = instrumentToDerivSymbol(proposal.instrument as InstrumentType);
 
-        const tradeId = uuidv4();
-        newTrades.push({
-          id: tradeId,
+        tradesToAttempt.push({
+          id: clientTradeId,
           instrument: proposal.instrument as VolatilityInstrumentType,
-          action: proposal.action,
+          derivSymbol: derivApiSymbol,
+          action: proposal.action, // This will be 'CALL' or 'PUT' from current AI
           stake: proposal.stake,
           durationSeconds: proposal.durationSeconds,
+          durationUnit: 's', // Assuming seconds from AI for now
           reasoning: proposal.reasoning,
-          entryPrice,
-          stopLossPrice, 
+          last_digit_prediction: proposal.last_digit_prediction, // If AI provides it
           startTime: Date.now(),
-          status: 'active',
-          currentPrice: entryPrice,
+          status: 'pending_placement',
         });
       }
 
-      if (newTrades.length === 0) {
-        toast({ title: "AI Auto-Trade Update (Volatility)", description: "No valid volatility trades could be initiated based on AI proposals and current data.", duration: 7000 });
-        setIsAutoTradingActive(false);
-      }
-      setActiveAutomatedTrades(newTrades);
+      setActiveAutomatedTrades(tradesToAttempt); // Show trades as pending
 
+      // Sequentially place trades and update their status
+      for (let i = 0; i < tradesToAttempt.length; i++) {
+        const tradeToPlace = tradesToAttempt[i];
+        try {
+          const tradeDetails: TradeDetails = {
+            symbol: tradeToPlace.derivSymbol,
+            // TODO: Map proposal.action to specific Deriv contract_type. For now, assuming CALL/PUT.
+            // This will require AI to output more specific contract_type or a mapping here.
+            contract_type: tradeToPlace.action.toUpperCase(), // e.g. "CALL", "PUT"
+            duration: tradeToPlace.durationSeconds,
+            duration_unit: tradeToPlace.durationUnit || 's',
+            amount: tradeToPlace.stake,
+            currency: 'USD',
+            basis: 'stake',
+            token: apiToken,
+            trade_category: 'volatility_general', // Or 'volatility_digits' if applicable
+            // last_digit_prediction: tradeToPlace.last_digit_prediction, // Pass if it's a digit trade
+          };
+
+          // Specific handling for digit trades based on current AI output structure
+          if (tradeToPlace.action.toUpperCase().startsWith("DIGIT") && tradeToPlace.last_digit_prediction !== undefined) {
+            tradeDetails.trade_category = 'volatility_digits';
+            tradeDetails.last_digit_prediction = tradeToPlace.last_digit_prediction;
+          }
+
+
+          const derivTradeResponse = await placeTrade(tradeDetails, targetDerivAccountId);
+
+          setActiveAutomatedTrades(prev => prev.map(t => t.id === tradeToPlace.id ? {
+            ...t,
+            derivContractId: derivTradeResponse.contract_id,
+            entryPrice: derivTradeResponse.entry_spot,
+            buyPrice: derivTradeResponse.buy_price,
+            status: 'open',
+            startTime: Date.now(), // Update startTime to when it was actually placed
+          } : t));
+
+          toast({ title: `Trade Placed: ${tradeToPlace.instrument}`, description: `Contract ID: ${derivTradeResponse.contract_id}`, variant: "default" });
+
+        } catch (placementError: any) {
+          console.error(`Error placing trade for ${tradeToPlace.instrument}:`, placementError);
+          toast({ title: `Trade Failed: ${tradeToPlace.instrument}`, description: placementError.message, variant: "destructive" });
+          setActiveAutomatedTrades(prev => prev.map(t => t.id === tradeToPlace.id ? { ...t, status: 'error_placement', placementError: placementError.message } : t));
+        }
+      }
 
     } catch (error) {
       toast({ title: "AI Auto-Trade Failed (Volatility)", description: `Could not execute volatility trading strategy: ${(error as Error).message}`, variant: "destructive" });
-      setIsAutoTradingActive(false);
+      setIsAutoTradingActive(false); // Ensure this is reset if the whole process fails early
     } finally {
-      setIsAiLoading(false); 
+      setIsAiLoading(false);
+      // isAutoTradingActive remains true if trades were initiated, will be set to false when all trades conclude.
+      // If no trades were initiated or all failed placement, it should be reset.
+      // Check activeAutomatedTrades for any 'open' or 'pending_placement' status. If none, set isAutoTradingActive to false.
+      // This part needs careful handling in the monitoring useEffect.
     }
-  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId]);
+  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId, router, AI_COOLDOWN_DURATION_MS, consecutiveAiCallCount, lastAiCallTimestamp]);
 
   const handleStopAiAutoTrade = () => {
-    setIsAutoTradingActive(false); 
+    setIsAutoTradingActive(false);
     tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
     tradeIntervals.current.clear();
 
@@ -346,151 +373,166 @@ export default function VolatilityTradingPage() {
   };
   
   useEffect(() => {
-    if (isAutoTradingActive && activeAutomatedTrades.length === 0 && !isAiLoading) {
-      setIsAutoTradingActive(false);
-    }
-
-    if (!isAutoTradingActive || activeAutomatedTrades.length === 0) { 
+    // Clear all intervals if auto trading is stopped or no active trades
+    if (!isAutoTradingActive) {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
-      return; 
+      // If there are no trades currently being monitored or pending placement, ensure AI loading is false.
+      if (activeAutomatedTrades.every(t => t.status !== 'open' && t.status !== 'pending_placement' && t.status !== 'error_monitoring')) {
+        setIsAiLoading(false);
+      }
+      return;
+    }
+
+    // If auto-trading is active but all trades have concluded or failed placement, stop the session.
+    if (isAutoTradingActive && activeAutomatedTrades.length > 0 &&
+        activeAutomatedTrades.every(t => t.status !== 'open' && t.status !== 'pending_placement' && t.status !== 'error_monitoring')) {
+      setIsAutoTradingActive(false);
+      toast({ title: "AI Volatility Trading Session Complete", description: `All volatility trades for ${paperTradingMode} account concluded or failed.`});
+      return;
     }
     
+    // Manage intervals for trades that are 'open'
     activeAutomatedTrades.forEach(trade => {
-      if (trade.status === 'active' && !tradeIntervals.current.has(trade.id)) {
-        const intervalId = setInterval(() => {
-          setActiveAutomatedTrades(prevTrades => {
-            let allTradesConcluded = true;
-            const updatedTrades = prevTrades.map(currentTrade => {
-              if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
-                if(currentTrade.status === 'active') allTradesConcluded = false;
-                return currentTrade;
+      if (trade.status === 'open' && trade.derivContractId && !tradeIntervals.current.has(trade.id)) {
+        const intervalId = setInterval(async () => {
+          const currentApiToken = paperTradingMode === 'paper' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken;
+          const currentDerivAccountId = paperTradingMode === 'paper' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId;
+
+          if (!currentApiToken || !currentDerivAccountId || !trade.derivContractId) {
+            // This should ideally not happen if trade status is 'open'
+            console.error("Missing token, account ID, or contract ID for monitoring trade:", trade.id);
+            setActiveAutomatedTrades(prev => prev.map(t => t.id === trade.id ? { ...t, status: 'error_monitoring', finalProfitLoss: -(t.stake) } : t));
+            clearInterval(tradeIntervals.current.get(trade.id)!);
+            tradeIntervals.current.delete(trade.id);
+            return;
+          }
+
+          try {
+            const contractStatus: DerivContractStatusData = await getContractStatus(trade.derivContractId, currentApiToken, currentDerivAccountId);
+
+            let newStatus: ActiveAutomatedVolatilityTrade['status'] = trade.status;
+            let pnl = trade.pnl ?? 0;
+            let currentPrice = trade.currentPrice;
+            let isSettled = false;
+
+            if (contractStatus) {
+              currentPrice = contractStatus.current_spot ?? currentPrice;
+              pnl = contractStatus.profit; // This is the actual P/L from Deriv
+
+              if (contractStatus.status === 'won' || contractStatus.status === 'lost' || contractStatus.status === 'sold') {
+                newStatus = contractStatus.status;
+                isSettled = true;
+              } else if (contractStatus.is_expired && contractStatus.is_settleable_now) {
+                // Contract might be expired but status not yet 'won'/'lost', re-check status or determine from P/L
+                newStatus = contractStatus.profit > 0 ? 'won' : 'lost';
+                isSettled = true;
+              } else {
+                newStatus = 'open'; // Still open
               }
+            }
 
-              let newStatus: ActiveAutomatedVolatilityTrade['status'] = currentTrade.status;
-              let pnl = currentTrade.pnl ?? 0;
-              let newCurrentPrice = currentTrade.currentPrice ?? currentTrade.entryPrice;
-              const decimalPlaces = getInstrumentDecimalPlaces(currentTrade.instrument);
 
-              const priceChangeFactor = (Math.random() - 0.5) * (currentTrade.instrument.includes("100") ? 0.005 : 0.0005); 
-              newCurrentPrice += priceChangeFactor * newCurrentPrice; 
-              newCurrentPrice = parseFloat(newCurrentPrice.toFixed(decimalPlaces));
-
-              if (currentTrade.action === 'CALL' && newCurrentPrice <= currentTrade.stopLossPrice) {
-                newStatus = 'lost_stoploss'; pnl = -currentTrade.stake;
-              } else if (currentTrade.action === 'PUT' && newCurrentPrice >= currentTrade.stopLossPrice) {
-                newStatus = 'lost_stoploss'; pnl = -currentTrade.stake;
+            setActiveAutomatedTrades(prevTrades => prevTrades.map(currentTrade => {
+              if (currentTrade.id === trade.id) {
+                return { ...currentTrade, status: newStatus, pnl, currentPrice, finalProfitLoss: isSettled ? pnl : undefined, isSettled };
               }
+              return currentTrade;
+            }));
 
-              if (newStatus === 'active' && Date.now() >= currentTrade.startTime + currentTrade.durationSeconds * 1000) {
-                const isWin = Math.random() < 0.83; 
-                if (isWin) { newStatus = 'won'; pnl = currentTrade.stake * 0.85; } 
-                else { newStatus = 'lost_duration'; pnl = -currentTrade.stake; }
+            if (isSettled) {
+              clearInterval(tradeIntervals.current.get(trade.id)!);
+              tradeIntervals.current.delete(trade.id);
+
+              // Update balance and profits claimable
+              setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+              setProfitsClaimable(prevProfits => ({
+                totalNetProfit: prevProfits.totalNetProfit + pnl,
+                tradeCount: prevProfits.tradeCount + 1,
+                winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                losingTrades: newStatus === 'lost' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+              }));
+
+              toast({
+                title: `Trade Concluded: ${trade.instrument}`,
+                description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
+                variant: pnl > 0 ? "default" : "destructive"
+              });
+
+              // Save to DB
+              if (userInfo?.id && trade.derivContractId) {
+                fetch('/api/trades', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', },
+                  body: JSON.stringify({
+                    userId: userInfo.id, email: userInfo.email, name: userInfo.name,
+                    symbol: trade.instrument, type: trade.action.toUpperCase(), // Assuming action is CALL/PUT like
+                    amount: trade.stake, price: trade.entryPrice, // Original entry price
+                    derivContractId: trade.derivContractId.toString(),
+                    derivAccountId: currentDerivAccountId,
+                    accountType: paperTradingMode,
+                    aiStrategyId: selectedAiStrategyId,
+                    status: 'OPEN', // Initial save might be OPEN
+                    openTime: new Date(trade.startTime).toISOString(),
+                    metadata: {
+                        mode: tradingMode, duration: `${trade.durationSeconds}s`, automated: true,
+                        tradeCategory: 'volatility', reasoning: trade.reasoning,
+                        buyPrice: trade.buyPrice
+                    }
+                  }),
+                })
+                .then(res => res.json())
+                .then(dbTrade => {
+                  if (dbTrade && dbTrade.id) {
+                    return fetch(`/api/trades/${dbTrade.id}/close`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', },
+                      body: JSON.stringify({
+                        exitPrice: contractStatus.current_spot || contractStatus.exit_tick || trade.entryPrice, // Best available exit price
+                        metadata: { outcome: newStatus, pnl: pnl, reason: "Automated trade completed via Deriv API" }
+                      }),
+                    });
+                  }
+                  throw new Error('Failed to create initial trade record in DB for concluded trade.');
+                })
+                .then(res => res?.json())
+                .then(closedDbTrade => {
+                  if (closedDbTrade) console.log(`[VolatilityDashboard] Concluded trade ${trade.derivContractId} saved and closed in DB.`);
+                  else console.warn(`[VolatilityDashboard] Failed to close concluded trade ${trade.derivContractId} in DB.`);
+                })
+                .catch(dbError => console.error("[VolatilityDashboard] Error saving concluded trade to DB:", dbError));
               }
-              
-              if (newStatus !== 'active') {
+            }
+          } catch (statusError: any) {
+            console.error(`Error fetching status for contract ${trade.derivContractId}:`, statusError);
+            // Potentially increment retry count and if max retries, mark as error_monitoring
+            setActiveAutomatedTrades(prev => prev.map(t => t.id === trade.id ? { ...t, status: 'error_monitoring', monitoringRetryCount: (t.monitoringRetryCount || 0) + 1 } : t));
+             if ((trade.monitoringRetryCount || 0) >= 2) { // After 3 attempts (0, 1, 2)
                 clearInterval(tradeIntervals.current.get(trade.id)!);
                 tradeIntervals.current.delete(trade.id);
-                
-                if (userInfo?.id) {
-                  console.log('[VolatilityDashboard] Storing automated trade in database for user:', userInfo.id);
-                  fetch('/api/trades', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      userId: userInfo.id,
-                      email: userInfo.email,
-                      name: userInfo.name,
-                      symbol: currentTrade.instrument,
-                      type: currentTrade.action === 'CALL' ? 'buy' : 'sell',
-                      amount: currentTrade.stake,
-                      price: currentTrade.entryPrice,
-                      aiStrategyId: selectedAiStrategyId,
-                      metadata: {
-                        mode: tradingMode,
-                        duration: `${currentTrade.durationSeconds}s`,
-                        accountType: paperTradingMode,
-                        automated: true,
-                        tradeCategory: 'volatility',
-                        reasoning: currentTrade.reasoning
-                      }
-                    }),
-                  })
-                  .then(response => response.json())
-                  .then(createdTrade => {
-                    if (createdTrade && createdTrade.id) {
-                      console.log('[VolatilityDashboard] Automated trade created, now closing:', createdTrade.id);
-                      return fetch(`/api/trades/${createdTrade.id}/close`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          exitPrice: newCurrentPrice,
-                          metadata: {
-                            outcome: newStatus,
-                            pnl: pnl,
-                            reason: "Automated trade completed"
-                          }
-                        }),
-                      });
-                    }
-                    throw new Error('Failed to create automated trade in DB');
-                  })
-                  .then(response => response?.json())
-                  .then(closedTrade => {
-                     if (closedTrade) {
-                        console.log('[VolatilityDashboard] Automated trade closed successfully:', closedTrade.id);
-                     } else {
-                        console.warn('[VolatilityDashboard] Failed to close automated trade in DB or no trade to close.');
-                     }
-                  })
-                  .catch(error => {
-                    console.error("[VolatilityDashboard] Error processing automated trade in database:", error);
-                  });
-                }
-                
-                setTimeout(() => { 
-                  setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-                  setProfitsClaimable(prevProfits => ({
-                    totalNetProfit: prevProfits.totalNetProfit + pnl,
+                toast({title: `Monitoring Error: ${trade.instrument}`, description: `Could not retrieve status after multiple attempts. Assuming loss of stake.`, variant: "destructive"});
+                 // Assume loss of stake for balance adjustment
+                const assumedLoss = -trade.stake;
+                setCurrentBalance(prevBal => parseFloat((prevBal + assumedLoss).toFixed(2)));
+                setProfitsClaimable(prevProfits => ({
+                    totalNetProfit: prevProfits.totalNetProfit + assumedLoss,
                     tradeCount: prevProfits.tradeCount + 1,
-                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-                    losingTrades: (newStatus === 'lost_duration' || newStatus === 'lost_stoploss') ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
-                  }));
-                  
-                  toast({
-                    title: `Auto-Trade Ended (Volatility - ${paperTradingMode}): ${currentTrade.instrument}`,
-                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
-                    variant: pnl > 0 ? "default" : "destructive"
-                  });
-                }, 0);
-              } else {
-                allTradesConcluded = false; 
-              }
-              return { ...currentTrade, status: newStatus, pnl, currentPrice: newCurrentPrice };
-            });
-
-            if (allTradesConcluded && isAutoTradingActive) { 
-                 setTimeout(() => { 
-                    setIsAutoTradingActive(false);
-                    toast({ title: "AI Volatility Trading Session Complete", description: `All volatility trades for ${paperTradingMode} account concluded.`});
-                }, 100); 
-            }
-            return updatedTrades;
-          });
-        }, 1000); 
+                    losingTrades: prevProfits.losingTrades + 1,
+                }));
+                 // Also attempt to save this as a 'lost' trade in DB due to monitoring error.
+             }
+          }
+        }, 5000); // Check status every 5 seconds
         tradeIntervals.current.set(trade.id, intervalId);
       }
     });
     
+    // Cleanup intervals on component unmount or when dependencies change
     return () => {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, userInfo, setCurrentBalance, setProfitsClaimable, toast, selectedAiStrategyId, tradingMode]);
 
 
   return (
