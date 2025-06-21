@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'; // Added useMemo
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart'; 
 import type { VolatilityInstrumentType, TradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index'; // Removed PaperTradingMode
@@ -404,7 +404,12 @@ export default function VolatilityTradingPage() {
     } finally {
       setIsAiLoading(false); 
     }
-  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId]);
+  }, [
+    autoTradeTotalStake, tradingMode, toast, selectedDerivAccountType, // Replaced paperTradingMode
+    currentBalance, authStatus, /*setCurrentBalance,*/ // setCurrentBalance removed as it's not directly settable this way
+    setProfitsClaimable, userInfo, selectedAiStrategyId, router, // Added router
+    consecutiveAiCallCount, lastAiCallTimestamp // Added cooldown states
+]);
 
   const handleStopAiAutoTrade = () => {
     setIsAutoTradingActive(false); 
