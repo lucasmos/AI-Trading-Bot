@@ -1653,21 +1653,24 @@ export async function getDerivAccountSettings(token: string): Promise<any> {
 
 export interface TradeDetails {
   symbol: string; // Deriv API symbol, e.g., R_100, frxEURUSD, 1HZ10V
-  contract_type: string; // Deriv contract type, e.g., CALL, PUT, MULTUP, MULTDOWN, DIGITMATCH, DIGITODD
+  contract_type: string; // Deriv contract type, e.g., CALL, PUT, MULTUP, MULTDOWN, DIGITMATCH, DIGITODD, ONETOUCH
   duration?: number;
   duration_unit?: "s" | "m" | "h" | "d" | "t"; // s=seconds, m=minutes, h=hours, d=days, t=ticks
   amount: number;
   currency: string;
-  stop_loss?: number; // For CFD, Multipliers. For options, it's a contract parameter.
-  take_profit?: number; // For CFD, Multipliers. For options, it's a contract parameter.
+  stop_loss?: number; // For CFD, Multipliers. For options, it's a contract parameter if supported by API.
+  take_profit?: number; // For CFD, Multipliers. For options, it's a contract parameter if supported by API.
   basis: "stake" | "payout"; // Typically "stake" for options
   token: string;
   multiplier?: number; // For Multiplier contracts
-  barrier?: string | number; // For contracts like DIGITOVER, DIGITUNDER, HIGHER, LOWER
-  last_digit_prediction?: number; // For DIGITMATCH, DIGITDIFF (0-9)
+  barrier?: string; // Barrier value as a string. Used for various contract types.
+                    // For DIGITMATCH/DIFF, this will be the predicted digit (e.g., "7").
+                    // For DIGITOVER/UNDER, this will be the threshold digit (e.g., "5").
+                    // For non-ATM CALL/PUT (HIGHER/LOWER) or ONETOUCH/NOTOUCH, this is a price offset (e.g., "+2.05") or absolute price ("123.45").
   // product_type is determined internally by placeTrade based on contract_type/symbol
-  // trade_category can be inferred from symbol or contract_type, or passed explicitly if ambiguous
-  trade_category?: 'options' | 'multiplier' | 'volatility_general' | 'volatility_digits';
+  // trade_category can be inferred from symbol or contract_type, or passed explicitly if ambiguous.
+  // Added 'volatility_touch' for ONETOUCH/NOTOUCH distinction if needed for more specific logic.
+  trade_category?: 'options' | 'multiplier' | 'volatility_general' | 'volatility_digits' | 'volatility_touch';
 }
 
 export interface DerivContractStatusData {
@@ -1795,13 +1798,16 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // Determine trade category (can be explicitly passed or inferred)
             let inferredCategory = tradeDetails.trade_category;
             if (!inferredCategory) {
-              if (tradeDetails.contract_type.startsWith('MULT')) {
+              const ct = tradeDetails.contract_type.toUpperCase();
+              if (ct.startsWith('MULT')) {
                 inferredCategory = 'multiplier';
               } else if (tradeDetails.symbol.startsWith('R_') || tradeDetails.symbol.startsWith('1HZ') || tradeDetails.symbol.startsWith('stpRNG') || tradeDetails.symbol.startsWith('BOOM') || tradeDetails.symbol.startsWith('CRASH') || tradeDetails.symbol.startsWith('JD')) {
-                if (tradeDetails.contract_type.startsWith('DIGIT')) {
+                if (ct.startsWith('DIGIT')) {
                   inferredCategory = 'volatility_digits';
+                } else if (ct === 'ONETOUCH' || ct === 'NOTOUCH') {
+                  inferredCategory = 'volatility_touch';
                 } else {
-                  inferredCategory = 'volatility_general'; // For CALL, PUT, CALLE, PUTE, etc. on Volatility Indices
+                  inferredCategory = 'volatility_general'; // CALL, PUT, CALLE, PUTE, HIGHER, LOWER etc.
                 }
               } else {
                 inferredCategory = 'options'; // Default for Forex, Crypto, Commodities if not multiplier
@@ -1813,79 +1819,76 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // Category-specific parameter handling
             switch (inferredCategory) {
               case 'multiplier':
-                if (typeof tradeDetails.multiplier === 'number') {
-                  proposalRequest.multiplier = tradeDetails.multiplier;
-                } else {
-                  throw new Error(`Multiplier value is required for ${tradeDetails.contract_type} contract (symbol: ${tradeDetails.symbol}) but was not provided.`);
+                if (typeof tradeDetails.multiplier !== 'number') {
+                  throw new Error(`Multiplier value is required for ${tradeDetails.contract_type} (symbol: ${tradeDetails.symbol}).`);
                 }
-                // SL/TP for multipliers are set via limit_order
+                proposalRequest.multiplier = tradeDetails.multiplier;
                 if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
                   proposalRequest.limit_order = {};
-                  if (typeof tradeDetails.take_profit === 'number') {
-                    proposalRequest.limit_order.take_profit = tradeDetails.take_profit;
-                  }
-                  if (typeof tradeDetails.stop_loss === 'number') {
-                    proposalRequest.limit_order.stop_loss = tradeDetails.stop_loss;
-                  }
+                  if (typeof tradeDetails.take_profit === 'number') proposalRequest.limit_order.take_profit = tradeDetails.take_profit;
+                  if (typeof tradeDetails.stop_loss === 'number') proposalRequest.limit_order.stop_loss = tradeDetails.stop_loss;
                 }
-                // Duration, duration_unit, product_type, barrier, last_digit_prediction are NOT used for Multipliers.
-                delete proposalRequest.duration;
-                delete proposalRequest.duration_unit;
-                delete proposalRequest.barrier; // ensure it's not passed
-                // product_type is not used
+                delete proposalRequest.duration; delete proposalRequest.duration_unit; delete proposalRequest.barrier;
                 break;
 
               case 'volatility_digits':
                 if (!tradeDetails.duration || !tradeDetails.duration_unit) {
-                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
-                }
-                proposalRequest.duration = tradeDetails.duration;
-                proposalRequest.duration_unit = tradeDetails.duration_unit; // Usually 't' for ticks
-
-                if (tradeDetails.contract_type === 'DIGITMATCH' || tradeDetails.contract_type === 'DIGITDIFF') {
-                  if (tradeDetails.last_digit_prediction === undefined || typeof tradeDetails.last_digit_prediction !== 'number' || tradeDetails.last_digit_prediction < 0 || tradeDetails.last_digit_prediction > 9) {
-                    throw new Error(`A 'last_digit_prediction' (0-9) is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided or invalid.`);
-                  }
-                  proposalRequest.barrier = tradeDetails.last_digit_prediction; // For DIGITMATCH/DIFF, barrier is the predicted digit
-                } else if (tradeDetails.contract_type === 'DIGITOVER' || tradeDetails.contract_type === 'DIGITUNDER') {
-                  if (tradeDetails.barrier === undefined || typeof tradeDetails.barrier !== 'number' ) { // Barrier here is the digit 0-8 for OVER, 1-9 for UNDER
-                    throw new Error(`A numeric 'barrier' is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided or invalid.`);
-                  }
-                  proposalRequest.barrier = tradeDetails.barrier;
-                } else if (tradeDetails.contract_type === 'DIGITEVEN' || tradeDetails.contract_type === 'DIGITODD') {
-                  // No barrier needed for EVEN/ODD
-                  delete proposalRequest.barrier;
-                } else {
-                  // Should not happen if contract_type starts with DIGIT but isn't one of the above
-                  throw new Error(`Unsupported DIGIT contract type: ${tradeDetails.contract_type}`);
-                }
-                // product_type is not used for these volatility contracts.
-                break;
-
-              case 'volatility_general': // e.g., CALL/PUT on Volatility Indices
-                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
-                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                  throw new Error(`Duration and unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
                 }
                 proposalRequest.duration = tradeDetails.duration;
                 proposalRequest.duration_unit = tradeDetails.duration_unit;
 
-                // For CALL/PUT (Rise/Fall) that are ATM, no barrier is sent.
-                // If it's a non-ATM type like HIGHER/LOWER, a barrier is required.
-                if (tradeDetails.contract_type === 'HIGHER' || tradeDetails.contract_type === 'LOWER' || tradeDetails.contract_type === 'TOUCH' || tradeDetails.contract_type === 'NOTOUCH') {
-                  if (tradeDetails.barrier === undefined) {
-                    throw new Error(`A 'barrier' is required for contract type ${tradeDetails.contract_type} on ${tradeDetails.symbol} but was not provided.`);
+                const contractUpper = tradeDetails.contract_type.toUpperCase();
+                if (contractUpper === 'DIGITMATCH' || contractUpper === 'DIGITDIFF') {
+                  if (tradeDetails.barrier === undefined || !/^[0-9]$/.test(tradeDetails.barrier)) { // Barrier is the predicted digit as string
+                    throw new Error(`A string barrier representing a single digit (0-9) is required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}. Received: '${tradeDetails.barrier}'`);
+                  }
+                  proposalRequest.barrier = tradeDetails.barrier;
+                } else if (contractUpper === 'DIGITOVER' || contractUpper === 'DIGITUNDER') {
+                   if (tradeDetails.barrier === undefined || !/^[0-8]$/.test(tradeDetails.barrier) && contractUpper === 'DIGITOVER' || !/^[1-9]$/.test(tradeDetails.barrier) && contractUpper === 'DIGITUNDER' ) {
+                    throw new Error(`A string barrier representing a valid digit threshold is required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}. Received: '${tradeDetails.barrier}'`);
+                  }
+                  proposalRequest.barrier = tradeDetails.barrier;
+                } else if (contractUpper === 'DIGITEVEN' || contractUpper === 'DIGITODD') {
+                  delete proposalRequest.barrier; // No barrier for EVEN/ODD
+                } else {
+                  throw new Error(`Unsupported DIGIT contract type: ${tradeDetails.contract_type} for category 'volatility_digits'.`);
+                }
+                break;
+
+              case 'volatility_touch': // ONETOUCH, NOTOUCH
+                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+                if (tradeDetails.barrier === undefined || typeof tradeDetails.barrier !== 'string' || tradeDetails.barrier.trim() === '') {
+                    throw new Error(`A string barrier (price offset or absolute price) is required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.barrier = tradeDetails.barrier;
+                break;
+
+              case 'volatility_general': // CALL, PUT, CALLE, PUTE, HIGHER, LOWER on Volatility Indices
+                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                }
+                proposalRequest.duration = tradeDetails.duration;
+                proposalRequest.duration_unit = tradeDetails.duration_unit;
+                // For CALL/PUT/CALLE/PUTE (ATM types), no barrier is sent.
+                // For HIGHER/LOWER (non-ATM types), a barrier is required.
+                if (tradeDetails.contract_type.toUpperCase() === 'HIGHER' || tradeDetails.contract_type.toUpperCase() === 'LOWER') {
+                  if (tradeDetails.barrier === undefined || typeof tradeDetails.barrier !== 'string' || tradeDetails.barrier.trim() === '') {
+                    throw new Error(`A string barrier (price offset or absolute price) is required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
                   }
                   proposalRequest.barrier = tradeDetails.barrier;
                 } else {
-                  // For standard CALL/PUT (ATM), ensure no barrier is accidentally passed.
-                  delete proposalRequest.barrier;
+                  delete proposalRequest.barrier; // Ensure no barrier for ATM CALL/PUT/CALLE/PUTE
                 }
-                // product_type is generally NOT sent for simple CALL/PUT on Volatility Indices.
                 break;
 
               case 'options': // Standard CALL/PUT on Forex/Crypto/Commodities
-                 if (!tradeDetails.duration || !tradeDetails.duration_unit) {
-                  throw new Error(`Duration and duration_unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
+                if (!tradeDetails.duration || !tradeDetails.duration_unit) {
+                  throw new Error(`Duration and unit are required for ${tradeDetails.contract_type} on ${tradeDetails.symbol}.`);
                 }
                 proposalRequest.duration = tradeDetails.duration;
                 proposalRequest.duration_unit = tradeDetails.duration_unit;

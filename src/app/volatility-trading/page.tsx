@@ -210,17 +210,18 @@ export default function VolatilityTradingPage() {
         const derivApiSymbol = instrumentToDerivSymbol(proposal.instrument as InstrumentType);
 
         tradesToAttempt.push({
-          id: clientTradeId,
+          id: clientTradeId, // Client-side unique ID
           instrument: proposal.instrument as VolatilityInstrumentType,
           derivSymbol: derivApiSymbol,
-          action: proposal.action, // This will be 'CALL' or 'PUT' from current AI
+          action: proposal.contract_type, // AI now provides specific contract_type
           stake: proposal.stake,
-          durationSeconds: proposal.durationSeconds,
-          durationUnit: 's', // Assuming seconds from AI for now
+          durationSeconds: proposal.duration_value, // AI provides duration_value
+          durationUnit: proposal.duration_unit,   // AI provides duration_unit
           reasoning: proposal.reasoning,
-          last_digit_prediction: proposal.last_digit_prediction, // If AI provides it
-          startTime: Date.now(),
+          barrier: proposal.barrier, // AI provides barrier directly (string)
+          startTime: Date.now(), // Initial timestamp
           status: 'pending_placement',
+          // entryPrice, buyPrice, derivContractId will be filled after successful placement
         });
       }
 
@@ -228,29 +229,35 @@ export default function VolatilityTradingPage() {
 
       // Sequentially place trades and update their status
       for (let i = 0; i < tradesToAttempt.length; i++) {
-        const tradeToPlace = tradesToAttempt[i];
+        const tradeToPlace = tradesToAttempt[i]; // This is of type ActiveAutomatedVolatilityTrade
         try {
+          // Determine trade_category for TradeDetails
+          let category: TradeDetails['trade_category'] = 'volatility_general';
+          const contractTypeUpper = tradeToPlace.action.toUpperCase();
+
+          if (contractTypeUpper.startsWith("DIGIT")) {
+            category = 'volatility_digits';
+          } else if (contractTypeUpper === "ONETOUCH" || contractTypeUpper === "NOTOUCH") {
+            category = 'volatility_touch';
+          } else if (contractTypeUpper.startsWith("MULT")) {
+            category = 'multiplier'; // Should not happen for Volatility page, but good for robustness
+          }
+          // Default is 'volatility_general' for CALL, PUT, CALLE, PUTE, HIGHER, LOWER etc.
+
           const tradeDetails: TradeDetails = {
             symbol: tradeToPlace.derivSymbol,
-            // TODO: Map proposal.action to specific Deriv contract_type. For now, assuming CALL/PUT.
-            // This will require AI to output more specific contract_type or a mapping here.
-            contract_type: tradeToPlace.action.toUpperCase(), // e.g. "CALL", "PUT"
-            duration: tradeToPlace.durationSeconds,
-            duration_unit: tradeToPlace.durationUnit || 's',
+            contract_type: tradeToPlace.action, // Already the specific Deriv contract type from AI
+            duration: tradeToPlace.durationSeconds, // Renamed from duration_value for TradeDetails
+            duration_unit: tradeToPlace.durationUnit,
             amount: tradeToPlace.stake,
             currency: 'USD',
             basis: 'stake',
             token: apiToken,
-            trade_category: 'volatility_general', // Or 'volatility_digits' if applicable
-            // last_digit_prediction: tradeToPlace.last_digit_prediction, // Pass if it's a digit trade
+            barrier: tradeToPlace.barrier, // Pass barrier if AI provided it
+            trade_category: category,
           };
 
-          // Specific handling for digit trades based on current AI output structure
-          if (tradeToPlace.action.toUpperCase().startsWith("DIGIT") && tradeToPlace.last_digit_prediction !== undefined) {
-            tradeDetails.trade_category = 'volatility_digits';
-            tradeDetails.last_digit_prediction = tradeToPlace.last_digit_prediction;
-          }
-
+          // No need for last_digit_prediction in TradeDetails as it's now part of barrier logic in placeTrade
 
           const derivTradeResponse = await placeTrade(tradeDetails, targetDerivAccountId);
 

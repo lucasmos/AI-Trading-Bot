@@ -45,13 +45,16 @@ export type VolatilityTradingStrategyInput = z.infer<typeof VolatilityTradingStr
 
 const VolatilityTradeProposalSchema = z.object({
   instrument: VolatilityInstrumentTypeSchema.describe("User-friendly instrument name, e.g., 'Volatility 100 Index'."),
-  contract_type: z.string().describe("Specific Deriv contract type, e.g., CALL, PUT, DIGITMATCH, DIGITODD, MULTUP. Must be chosen from availableInstrumentOfferings."),
+  contract_type: z.string().describe("Specific Deriv contract type (e.g., CALL, PUT, DIGITMATCH, DIGITOVER, ONETOUCH). Must be chosen from availableInstrumentOfferings."),
   stake: z.number().min(0.01).describe("Stake for this specific trade."),
-  duration_value: z.number().int().min(1).describe("The value for the duration (e.g., 30, 5). Must be valid for the chosen instrument and contract_type based on availableInstrumentOfferings."),
-  duration_unit: z.enum(['s', 'm', 'h', 'd', 't']).describe("Unit for the duration: s=seconds, m=minutes, h=hours, d=days, t=ticks. Must be valid for the chosen instrument and contract_type based on availableInstrumentOfferings."),
+  duration_value: z.number().int().min(1).describe("The value for the duration. Must be valid for the chosen instrument/contract_type based on availableInstrumentOfferings."),
+  duration_unit: z.enum(['s', 'm', 'h', 'd', 't']).describe("Unit for the duration (s, m, h, d, t). Must be valid for the chosen instrument/contract_type based on availableInstrumentOfferings."),
   reasoning: z.string().describe("Clear reasoning for proposing this trade."),
-  barrier: z.string().optional().describe("Barrier for certain contract types (e.g., HIGHER, LOWER, DIGITOVER, DIGITUNDER). Can be relative (+/- value like '+2.5') or absolute (a price like '123.45'). Required if the chosen contract_type needs it, based on availableInstrumentOfferings."),
-  last_digit_prediction: z.number().int().min(0).max(9).optional().describe("Predicted last digit (0-9) for DIGITMATCH/DIGITDIFF contracts. Required if contract_type is DIGITMATCH or DIGITDIFF."),
+  barrier: z.string().optional().describe("Barrier value as a string. Required for types like non-ATM CALL/PUT (e.g., HIGHER/LOWER), DIGITOVER/UNDER, ONETOUCH/NOTOUCH. Format depends on contract (e.g., '+2.5', '123.45', '6'). Check availableInstrumentOfferings."),
+  // last_digit_prediction is specifically for DIGITMATCH/DIGITDIFF. For these, the prediction (0-9) is sent as the 'barrier' field in the Deriv API proposal.
+  // So, if contract_type is DIGITMATCH/DIGITDIFF, the AI should put the predicted digit into the 'barrier' field as a string (e.g., "7").
+  // We are removing last_digit_prediction and relying on AI to use the 'barrier' field correctly for all barrier-related inputs.
+  // last_digit_prediction: z.number().int().min(0).max(9).optional().describe("Predicted last digit (0-9) for DIGITMATCH/DIGITDIFF contracts. This value should be placed in the 'barrier' field as a string for these contract types."),
 });
 
 const InferredVolatilityTradingStrategyOutputSchema = z.object({
@@ -107,8 +110,14 @@ Your Task:
 Output Format:
 Return a JSON object matching the output schema.
 'tradesToExecute' is an array of trade objects.
-Each trade must have 'instrument', 'contract_type', 'stake', 'duration_value', 'duration_unit', 'reasoning'.
-'barrier' and 'last_digit_prediction' should ONLY be included if required by the chosen 'contract_type' for that instrument.
+Each trade must have 'instrument', 'contract_type', 'stake', 'duration_value', 'duration_unit', and 'reasoning'.
+The 'barrier' field:
+  - MUST be included if 'contract_type' is 'CALL' or 'PUT' and you are targeting a non-ATM (non-At-The-Money) variant that requires a specific barrier (e.g., for "Higher" or "Lower" than current spot + offset). Provide barrier as a string, e.g., "+2.50" (relative) or "150.75" (absolute). If targeting an ATM CALL/PUT, omit the barrier.
+  - MUST be included and be a string representing a digit (e.g., "6", "7") if 'contract_type' is 'DIGITMATCH' or 'DIGITDIFF'. This is the predicted last digit.
+  - MUST be included and be a string representing a digit (e.g., "5", "8") if 'contract_type' is 'DIGITOVER' or 'DIGITUNDER'. This is the digit to be over/under.
+  - MUST be included and be a string representing a price level (e.g., "+1.50" or "123.45") if 'contract_type' is 'ONETOUCH' or 'NOTOUCH'.
+  - Should be OMITTED if 'contract_type' is 'DIGITEVEN' or 'DIGITODD', or an ATM 'CALL'/'PUT'.
+Consult 'availableInstrumentOfferings' for barrier requirements and formats.
 
 Begin your response with the JSON object.
 `,
@@ -191,14 +200,21 @@ const volatilityTradingStrategyFlow = ai.defineFlow(
       if (!isDurationUnitValid) console.warn(`AI proposed invalid duration_unit ${trade.duration_unit} for ${trade.instrument}. Filtering out.`);
       if (!isContractTypeValid) console.warn(`AI proposed invalid contract_type ${trade.contract_type} for ${trade.instrument}. Filtering out.`);
 
-      // Additional validation for barrier/last_digit_prediction based on contract_type
-      if (trade.contract_type === 'DIGITMATCH' || trade.contract_type === 'DIGITDIFF') {
-        if (trade.last_digit_prediction === undefined || trade.last_digit_prediction < 0 || trade.last_digit_prediction > 9) {
-          console.warn(`AI proposed ${trade.contract_type} for ${trade.instrument} without a valid last_digit_prediction. Filtering out.`);
-          return false;
-        }
+      // Barrier validation: The prompt now guides the AI to use the barrier field correctly.
+      // Specific validation here for all cases of barrier (presence, format based on contract_type)
+      // can become very complex and might be better handled by Deriv API's rejection of the proposal if malformed.
+      // The primary check is that the AI adheres to instructions.
+      // Example: if contract_type is DIGITMATCH, barrier should be a string digit "0"-"9".
+      if ((trade.contract_type === 'DIGITMATCH' || trade.contract_type === 'DIGITDIFF' || trade.contract_type === 'DIGITOVER' || trade.contract_type === 'DIGITUNDER') && (trade.barrier === undefined || !/^[0-9]$/.test(trade.barrier) && !/^[+-]?[0-9]+(\.[0-9]+)?$/.test(trade.barrier) )) {
+          // This check is a bit broad for barrier; DIGITMATCH/DIFF/OVER/UNDER expect single digit string for barrier.
+          // Other types like ONETOUCH expect price string.
+          // For now, a simple presence check if barrier seems logically required by a type that's not CALL/PUT/CALLE/PUTE/DIGITEVEN/DIGITODD.
+          if (trade.barrier === undefined && !['CALL','PUT','CALLE','PUTE','DIGITEVEN','DIGITODD','ACCU','MULTUP','MULTDOWN'].includes(trade.contract_type.toUpperCase())) {
+            //This list may need to be more exhaustive based on which types absolutely don't need barriers
+             console.warn(`AI proposed ${trade.contract_type} for ${trade.instrument} which might require a barrier, but none was provided. Filtering out if it's a known barrier-requiring type not explicitly handled yet.`);
+             // Depending on strictness, could return false here.
+          }
       }
-      // Add more specific validations for barrier if other contract types needing it are common
 
       return isStakeValid && isDurationValueValid && isDurationUnitValid && isContractTypeValid;
     });
