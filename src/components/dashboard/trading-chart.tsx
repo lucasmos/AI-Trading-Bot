@@ -10,23 +10,6 @@ import { getCandles } from '@/services/deriv';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
-import React from 'react';
-import { Cell } from 'recharts';
-
-type ChartTabType = "price" | "rsi" | "macd" | "bb" | "ema" | "atr";
-
-// Placeholder for instrumentOfferings - replace with actual import if available
-// If instrumentOfferings comes from another file, ensure it's imported.
-// For now, assuming a structure that has an 'instrument' property.
-const instrumentOfferings: { instrument: InstrumentType }[] = [
-  { instrument: 'EUR/USD' },
-  { instrument: 'XAU/USD' },
-  { instrument: 'BTC/USD' },
-  { instrument: 'GBP/USD' },
-  { instrument: 'ETH/USD' },
-  { instrument: 'AUD/USD' },
-  // Add other instruments as needed
-];
 
 const chartConfig = {
   price: {
@@ -90,9 +73,9 @@ type ChartConfigType = {
 // Explicitly type chartConfig
 const typedChartConfig: ChartConfigType = chartConfig;
 
+
 interface SingleInstrumentChartDisplayProps {
   instrument: InstrumentType;
-  isMarketOpen: boolean | null; // Pass market status down to stop fetches
 }
 
 interface ChartDataPoint {
@@ -113,7 +96,7 @@ interface ChartDataPoint {
   atr?: number;
 }
 
-function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstrumentChartDisplayProps) {
+function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -143,22 +126,8 @@ function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstru
     setError(null);
 
     async function fetchDataAndIndicators() {
-      // If the market is closed, do not fetch data.
-      if (isMarketOpen === false) {
-        setError(`Market is closed for ${instrument}.`);
-        setChartData([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // If market status is still loading (isMarketOpen === null), wait.
-      if (isMarketOpen === null) {
-        setError(`Determining market status for ${instrument}...`);
-        setChartData([]);
-        setIsLoading(true); // Keep loading state true while determining status
-        return;
-      }
-      
+      // If the tab is hidden, don't fetch.
+      // This is a simple way to pause polling when the user is not viewing the tab.
       if (document.hidden) {
         // console.log(`Tab hidden, skipping fetch for ${instrument}`); // Optional: for debugging
         return;
@@ -293,7 +262,7 @@ function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstru
       clearInterval(pollIntervalId); // Clear the interval to stop polling.
       document.removeEventListener('visibilitychange', handleVisibilityChange); // Remove visibility change listener.
     };
-  }, [instrument, isMarketOpen]); // Re-run effect if instrument changes or market status changes
+  }, [instrument]); // Re-run effect if instrument changes
 
   if (isLoading) {
     return (
@@ -315,17 +284,17 @@ function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstru
 
   return (
     <ChartContainer config={typedChartConfig} className="min-h-[200px] w-full">
-      <React.Fragment>
+      <>
         {/* Price + Bollinger Bands Chart */}
         <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} />
-            <YAxis 
+            <YAxis
                 yAxisId="left"
-                orientation="left" 
-                domain={yDomainPrice} 
+                orientation="left"
+                domain={yDomainPrice}
                 tickFormatter={(value: number) => value.toFixed(decimalPlaces)}
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
@@ -374,7 +343,11 @@ function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstru
               <Line type="monotone" dataKey="macdSignal" stroke={chartConfig.macdSignal.color} strokeWidth={2} dot={false} yAxisId="left" name="Signal Line" />
               <Bar dataKey="macdHistogram" yAxisId="left" name="Histogram">
                 {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={(entry.macdHistogram ?? 0) >= 0 ? chartConfig.macdHistogram.colorPositive : chartConfig.macdHistogram.colorNegative} />
+                  <Bar
+                    key={`cell-${index}`}
+                    dataKey="macdHistogram"
+                    fill={(entry.macdHistogram ?? 0) >= 0 ? chartConfig.macdHistogram.colorPositive : chartConfig.macdHistogram.colorNegative}
+                  />
                 ))}
               </Bar>
             </ComposedChart>
@@ -400,7 +373,7 @@ function SingleInstrumentChartDisplay({ instrument, isMarketOpen }: SingleInstru
         <p className="text-xs text-muted-foreground mt-1 px-2">
           <strong>Average True Range (ATR):</strong> Measures market volatility. Higher ATR indicates higher volatility, helping determine stop-loss levels and position sizing.
         </p>
-      </React.Fragment>
+      </>
     </ChartContainer>
   );
 }
@@ -409,73 +382,42 @@ interface TradingChartProps {
   instrument: InstrumentType;
   onInstrumentChange: (instrument: InstrumentType) => void;
   instrumentsToShow: InstrumentType[]; // Added prop to specify which instruments to show
-  isMarketOpen: boolean | null; // New prop for market status
-  marketStatusMessage: string | null; // New prop for market status message
+  isMarketOpen: boolean; // New prop
+  marketStatusMessage: string | null; // New prop
 }
 
 export function TradingChart({ instrument, onInstrumentChange, instrumentsToShow, isMarketOpen, marketStatusMessage }: TradingChartProps) {
-  const [activeTab, setActiveTab] = useState<ChartTabType>("price");
-
-  // Filter instruments based on instrumentsToShow prop
-  const filteredInstruments = useMemo(() => {
-    return instrumentOfferings.filter((offering: { instrument: InstrumentType }) => instrumentsToShow.includes(offering.instrument));
-  }, [instrumentsToShow]);
-
-  // Ensure the selected instrument is always one of the filtered instruments
-  useEffect(() => {
-    if (!filteredInstruments.some((off: { instrument: InstrumentType }) => off.instrument === instrument)) {
-      if (filteredInstruments.length > 0) {
-        onInstrumentChange(filteredInstruments[0].instrument);
-      }
-    }
-  }, [instrument, filteredInstruments, onInstrumentChange]);
-
-  // Conditional rendering for the chart
-  const renderChartContent = () => {
-    if (isMarketOpen === null) {
-      return (
-        <div className="flex items-center justify-center h-48">
-          <p className="text-muted-foreground">{marketStatusMessage}</p>
-        </div>
-      );
-    }
-
-    if (!isMarketOpen) {
-      return (
-        <div className="flex flex-col items-center justify-center h-96 text-center bg-gray-100 dark:bg-gray-800 rounded-md p-4">
-          <p className="text-xl font-semibold text-red-500 mb-2">Market Closed</p>
-          <p className="text-muted-foreground mb-4">{marketStatusMessage}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Charts are disabled when the market is closed.
-          </p>
-        </div>
-      );
-    }
-
-    // Existing chart rendering logic for when the market is open
-    return (
-      <TabsContent value={activeTab} className="flex-1 min-h-[400px] data-[state=inactive]:hidden">
-        <SingleInstrumentChartDisplay instrument={instrument} isMarketOpen={isMarketOpen} />
-      </TabsContent>
-    );
-  };
-
   return (
-    <Card className="flex flex-col h-full">
+    <Card className="shadow-lg col-span-1 md:col-span-2 min-h-[900px]">
       <CardHeader>
         <CardTitle>Market Watch</CardTitle>
         <CardDescription>Live price action for selected instruments.</CardDescription>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col pt-2 pr-0 pl-0">
-        <Tabs defaultValue="price" className="flex-1 flex flex-col" onValueChange={(value) => setActiveTab(value as ChartTabType)}>
-          <TabsList className="grid w-full grid-cols-5 h-10 rounded-lg overflow-hidden shrink-0">
-            <TabsTrigger value="price">Price</TabsTrigger>
-            <TabsTrigger value="rsi">RSI</TabsTrigger>
-            <TabsTrigger value="macd">MACD</TabsTrigger>
-            <TabsTrigger value="bb">BB</TabsTrigger>
-            <TabsTrigger value="ema">EMA</TabsTrigger>
+      <CardContent>
+        <Tabs value={instrument} onValueChange={(value) => onInstrumentChange(value as InstrumentType)} className="w-full">
+          <TabsList 
+            className="w-full justify-start overflow-x-auto whitespace-nowrap scrollbar-hide mb-4"
+            style={{ WebkitOverflowScrolling: 'touch' }} // For iOS Safari smooth scrolling
+          >
+            {instrumentsToShow.map((inst) => (
+              <TabsTrigger key={inst} value={inst}>
+                {inst}
+              </TabsTrigger>
+            ))}
           </TabsList>
-          {renderChartContent()}
+          
+          {isMarketOpen ? (
+            instrumentsToShow.map((inst) => (
+              <TabsContent key={inst} value={inst} className="w-full">
+                <SingleInstrumentChartDisplay instrument={inst} />
+              </TabsContent>
+            ))
+          ) : (
+            <div className="text-center py-20 text-muted-foreground">
+              <p className="text-lg font-semibold">Market Closed</p>
+              <p>{marketStatusMessage || "This market is currently closed."}</p>
+            </div>
+          )}
         </Tabs>
       </CardContent>
     </Card>
