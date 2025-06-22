@@ -14,7 +14,12 @@ import type { VolatilityInstrumentType, PriceTick as ExternalPriceTick } from '@
 
 // Schemas for AI Flow
 // Using z.string() for VolatilityInstrumentTypeSchema for flexibility, cast to VolatilityInstrumentType where needed.
-const VolatilityInstrumentTypeSchema = z.string().describe("Deriv symbol for a volatility index, e.g., R_10, 1HZ10V");
+// Import the actual volatility instruments
+import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
+
+const VolatilityInstrumentTypeSchema = z.enum(
+  VOLATILITY_INSTRUMENTS as [string, ...string[]]
+).describe("Deriv symbol for a volatility index");
 
 const PriceTickSchema = z.object({
   epoch: z.number(),
