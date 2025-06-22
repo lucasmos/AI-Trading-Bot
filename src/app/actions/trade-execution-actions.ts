@@ -159,7 +159,13 @@ export async function executeVolatilityAiTradeLoop(
       let rawCandlesData: CandleData[] | undefined = undefined;
 
       if (userSelectedTradeType.startsWith("Digits")) {
-        priceData = await getTicks(instrument as any, 25, userDerivApiToken);
+        // Fetch raw tick data and map into PriceTick[]
+        const tickData = await getTicks(instrument as VolatilityInstrumentType, 25, userDerivApiToken);
+        priceData = tickData.map(tick => ({
+          epoch: tick.epoch,
+          price: tick.quote,
+          time: new Date(tick.epoch * 1000).toISOString()
+        }));
         if (priceData.length > 0) {
           instrumentLatestSpot[instrument] = priceData[priceData.length - 1].price;
         }
