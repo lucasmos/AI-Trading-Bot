@@ -56,3 +56,48 @@ export function getInstrumentDecimalPlaces(instrument: InstrumentType): number {
       return 2; // A general fallback
   }
 }
+
+import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types'; // Make sure this path is correct
+
+export function getDisplayTradeTypeDetails(
+  derivContractType: string,
+  userSelectedTradeType?: UserTradeTypeValue | string,
+  barrier?: string | number | null
+): string {
+  // First, handle specific Deriv contract types that are unambiguous
+  switch (derivContractType) {
+    case 'CALLE': return 'Rise or Equal';
+    case 'PUTE': return 'Fall or Equal';
+    case 'DIGITEVEN': return 'Digit Even';
+    case 'DIGITODD': return 'Digit Odd';
+    case 'DIGITMATCH':
+      return barrier !== undefined && barrier !== null ? `Digit Matches ${barrier}` : 'Digit Matches';
+    case 'DIGITDIFF':
+      return barrier !== undefined && barrier !== null ? `Digit Differs ${barrier}` : 'Digit Differs';
+    case 'ONETOUCH': return 'Touch';
+    case 'NOTOUCH': return 'No Touch';
+    case 'DIGITOVER':
+      return barrier !== undefined && barrier !== null ? `Digit Over ${barrier}` : 'Digit Over';
+    case 'DIGITUNDER':
+      return barrier !== undefined && barrier !== null ? `Digit Under ${barrier}` : 'Digit Under';
+  }
+
+  // For CALL/PUT, the meaning depends on the user's selected high-level trade type
+  if (derivContractType === 'CALL') {
+    if (userSelectedTradeType === 'RiseFall') return 'Rise';
+    if (userSelectedTradeType === 'HigherLower') {
+      return barrier !== undefined && barrier !== null ? `Higher than ${barrier}` : 'Higher';
+    }
+    return 'Call'; // Generic Call
+  }
+
+  if (derivContractType === 'PUT') {
+    if (userSelectedTradeType === 'RiseFall') return 'Fall';
+    if (userSelectedTradeType === 'HigherLower') {
+      return barrier !== undefined && barrier !== null ? `Lower than ${barrier}` : 'Lower';
+    }
+    return 'Put'; // Generic Put
+  }
+
+  return derivContractType; // Fallback to the raw Deriv contract type if no specific mapping found
+}
