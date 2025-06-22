@@ -9,7 +9,8 @@ import {
   executeVolatilityAiTradeLoop,
   VolatilityTradeExecutionResult
 } from '@/app/actions/trade-execution-actions';
-import { UserTradeType as UserTradeTypeValue } from '@/ai/flows/volatility-trading-strategy-flow'; // Renamed to avoid conflict
+// Import UserTradeType from the new shared location
+import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';

@@ -30,15 +30,8 @@ const InstrumentIndicatorDataSchema = z.object({
   atr: z.number().optional(),
 }).describe("Calculated technical indicators for an instrument.");
 
-
-export const UserTradeTypeSchema = z.enum([
-  'RiseFall',
-  'HigherLower',
-  'TouchNoTouch',
-  'DigitsEvenOdd',
-  'DigitsOverUnder'
-]);
-export type UserTradeType = z.infer<typeof UserTradeTypeSchema>;
+// Import UserTradeTypeSchema and UserTradeType from the shared file
+import { UserTradeTypeSchema, UserTradeType } from '@/types/ai-shared-types';
 
 const VolatilitySingleTradeStrategyInputSchema = z.object({
   currentInstrument: VolatilityInstrumentTypeSchema.describe("The specific volatility instrument to analyze for a trade."),
@@ -232,4 +225,9 @@ export const generateVolatilitySingleTradeDecision = volatilitySingleTradeStrate
 
 
 // This is a type alias for external use if needed, actual VolatilityInstrumentType is from @/types
-export type VolatilityInstrumentTypeAlias = VolatilityInstrumentType;
+// Remove export of VolatilityInstrumentTypeAlias if it's not strictly needed externally
+// or ensure it's also moved to a non-'use server' file if it were a value.
+// Since it's a type, it's likely fine, but for maximum safety with 'use server' files,
+// only async functions should be exported.
+// For now, let's comment it out as it's not directly causing the "found object" error.
+// export type VolatilityInstrumentTypeAlias = VolatilityInstrumentType;

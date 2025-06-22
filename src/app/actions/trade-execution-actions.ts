@@ -140,9 +140,10 @@ export async function executeAiTradingStrategy(
 
 import {
     generateVolatilitySingleTradeDecision,
-    VolatilitySingleTradeStrategyInput,
-    UserTradeType
+    VolatilitySingleTradeStrategyInput
+    // UserTradeType will be imported from the new shared file
 } from '@/ai/flows/volatility-trading-strategy-flow';
+import { UserTradeType } from '@/types/ai-shared-types'; // Import from shared location
 import { getCandles } from '@/services/deriv'; // Assuming getCandles is in deriv.ts
 import { calculateIndicators } from '@/lib/technical-analysis'; // Assuming this function exists
 import { VolatilityInstrumentType, PriceTick } from '@/types'; // Assuming these types exist
@@ -157,8 +158,7 @@ export interface VolatilityTradeExecutionResult {
   aiReasoning?: string;
 }
 
-const VOLATILITY_INDICES_TO_TRADE: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
-const STAKE_PER_TRADE = 1; // Example: Can be made configurable. Min stake for Deriv is often $0.35 for options.
+// Moved VOLATILITY_INDICES_TO_TRADE and STAKE_PER_TRADE inside executeVolatilityAiTradeLoop
 
 export async function executeVolatilityAiTradeLoop(
   userDerivApiToken: string,
@@ -167,19 +167,22 @@ export async function executeVolatilityAiTradeLoop(
   userId: string,
   userSelectedTradeType: UserTradeType,
 ): Promise<VolatilityTradeExecutionResult[]> {
+  const VOLATILITY_INDICES_TO_TRADE: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
+  const STAKE_PER_TRADE = 1; // Example: Can be made configurable. Min stake for Deriv is often $0.35 for options.
+
   const results: VolatilityTradeExecutionResult[] = [];
 
   if (!userDerivApiToken || !targetAccountId || !userId) {
     const errorMsg = "User token, target account ID, or user ID is missing for Volatility AI trade loop.";
-    console.error(`[executeVolatilityAiTradeLoop] Pre-condition failed: ${errorMsg}`);
-    return VOLATILITY_INDICES_TO_TRADE.map(instrument => ({
+    console.error(`[TradeAction/Loop] Pre-condition failed: ${errorMsg}`); // Updated console log prefix
+    return VOLATILITY_INDICES_TO_TRADE.map(instrument => ({ // VOLATILITY_INDICES_TO_TRADE is now in scope
         success: false,
         instrument,
         error: errorMsg,
     }));
   }
 
-  console.log(`[executeVolatilityAiTradeLoop] Starting trade loop. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}`);
+  console.log(`[TradeAction/Loop] Starting trade loop. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}`); // Updated console log prefix
 
   for (const instrument of VOLATILITY_INDICES_TO_TRADE) {
     let tradeDetailsForApi: TradeDetails | null = null;
