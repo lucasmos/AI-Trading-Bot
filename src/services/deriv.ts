@@ -492,6 +492,154 @@ export async function getCandles(
   ]);
 }
 
+// --- START OF NEW getTicks FUNCTION ---
+/**
+ * Fetches historical tick data for a given instrument from Deriv API.
+ * @param instrument The trading instrument.
+ * @param count Number of ticks to fetch (default 100).
+ * @param token Optional Deriv API token for authorization.
+ * @returns A promise that resolves to an array of PriceTick.
+ */
+export async function getTicks(
+  instrument: InstrumentType,
+  count: number = 100, // Default to 100 ticks
+  token?: string
+): Promise<PriceTick[]> {
+  const symbol = instrumentToDerivSymbol(instrument);
+  const decimalPlaces = getInstrumentDecimalPlaces(instrument); // For formatting price if needed, though ticks are usually raw
+
+  const ws = new WebSocket(DERIV_API_URL);
+  let operationTimeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutDuration = 15000; // 15 seconds for ticks history
+  const symbolForTimeoutLog = symbol;
+
+  const cleanup = (isError: boolean = false, message?: string) => {
+    if (operationTimeout) {
+      clearTimeout(operationTimeout);
+      operationTimeout = null;
+    }
+    if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+      const logMessage = `[DerivService/getTicks] Closing WebSocket for ${symbolForTimeoutLog}. ${message || (isError ? "Error occurred" : "Operation complete")}`;
+      if (isError) console.error(logMessage); else console.log(logMessage);
+      ws.close(1000, message || (isError ? "Error occurred" : "Operation complete"));
+    }
+  };
+
+  const promiseLogic = new Promise<PriceTick[]>((resolve, reject) => {
+    ws.onopen = () => {
+      let authorized = false;
+      if (token) {
+        console.log('[DerivService/getTicks] Authorizing with provided token.');
+        ws.send(JSON.stringify({ authorize: token }));
+        authorized = true;
+      } else if (DERIV_API_TOKEN) { // Fallback to global demo token
+        console.log('[DerivService/getTicks] Authorizing with global DERIV_API_TOKEN.');
+        ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
+        authorized = true;
+      } else {
+        console.log('[DerivService/getTicks] No token provided, proceeding without explicit authorization for ticks.');
+      }
+
+      setTimeout(() => {
+        const request = {
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count: count,
+          end: 'latest',
+          style: 'ticks', // Crucial difference: 'ticks' instead of 'candles'
+          // granularity is NOT used with style: 'ticks'
+        };
+        console.log('[DerivService/getTicks] Sending ticks_history request (style:ticks):', JSON.stringify(request));
+        ws.send(JSON.stringify(request));
+      }, authorized ? 500 : 0);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+
+        if (response.error) {
+          console.error('[DerivService/getTicks] API Error:', response.error);
+          cleanup(true, response.error.message);
+          reject(new Error(response.error.message || 'Unknown API error fetching ticks'));
+          return;
+        }
+
+        if (response.msg_type === 'history') { // For style: 'ticks', msg_type is 'history'
+          const prices = response.history?.prices || [];
+          const times = response.history?.times || [];
+          const ticks: PriceTick[] = prices.map((price: number, index: number) => ({
+            epoch: times[index],
+            price: parseFloat(price.toFixed(decimalPlaces)), // Apply decimal formatting
+            time: formatTickTime(times[index]),
+          }));
+          cleanup(false, "Ticks received successfully");
+          resolve(ticks.slice(-count)); // Ensure we only return the requested count
+          return;
+        } else if (response.msg_type === 'authorize') {
+          if (response.error) {
+            console.error('[DerivService/getTicks] Authorization Error:', response.error.message);
+          } else {
+            console.log('[DerivService/getTicks] Authorization successful/response received.');
+          }
+        } else if (response.msg_type === 'candles') {
+             console.warn('[DerivService/getTicks] Received candles msg_type when history (for ticks) was expected. This might indicate an issue.');
+             cleanup(true, "Received 'candles' msg_type when 'history' (for ticks) was expected.");
+             reject(new Error("Received 'candles' msg_type when 'history' (for ticks) was expected."));
+             return;
+        }
+      } catch (e) {
+        console.error('[DerivService/getTicks] Error processing message:', e);
+        cleanup(true, (e as Error).message);
+        reject(e);
+      }
+    };
+
+    ws.onerror = (event) => {
+      let errorMessage = 'WebSocket error fetching ticks.';
+      if (event && typeof event === 'object') {
+        if ('message' in event && (event as any).message) {
+            errorMessage = `WebSocket Error: ${(event as any).message}`;
+        } else {
+            errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+        }
+      }
+      console.error('[DerivService/getTicks] WebSocket Error Event:', event);
+      cleanup(true, errorMessage);
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      console.log(`[DerivService/getTicks] WebSocket connection closed for ${symbolForTimeoutLog}. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
+      // cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      // If promise is not settled, timeout should handle it. Avoid calling cleanup again if already called by resolve/reject.
+      if (operationTimeout) { // Check if timeout is still active (meaning promise hasn't settled via other paths)
+          cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      }
+    };
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<PriceTick[]>((_, rejectTimeout) => {
+      operationTimeout = setTimeout(() => {
+        const reason = `getTicks operation timed out for symbol ${symbolForTimeoutLog}`;
+        console.error(`[DerivService/getTicks] ${reason}`);
+        // Ensure cleanup is called ONLY if the WebSocket is still in a state where it might need closing by timeout logic.
+        // If it closed and promiseLogic already called cleanup, this might be redundant or error-prone.
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+            cleanup(true, "Operation timed out");
+        } else if (!ws) {
+            // If ws is null, it means onopen might not have even fired.
+             console.warn(`[DerivService/getTicks] Timeout occurred but WebSocket instance was null for ${symbolForTimeoutLog}.`);
+        }
+        rejectTimeout(new Error(reason));
+      }, timeoutDuration);
+    })
+  ]);
+}
+// --- END OF NEW getTicks FUNCTION ---
+
 // Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
 
 export async function getTradingTimes(date: string = 'today', token?: string): Promise<any | { error: string }> {
