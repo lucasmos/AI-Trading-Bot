@@ -58,9 +58,10 @@ const PromptFormattedInstrumentIndicatorSchema = z.object({
   atr: z.string().optional(),
 });
 
-const VolatilityStrategyPromptInputSchema = VolatilitySingleTradeStrategyInputSchema.extend({
-    formattedIndicators: PromptFormattedInstrumentIndicatorSchema.nullable().describe("Pre-formatted string versions of indicators for prompt display.")
-}).omit({ instrumentIndicators: true }); // Remove raw instrumentIndicators from prompt input, use formattedIndicators instead
+// Corrected: Extend from VolatilitySessionStrategyInputSchema
+const VolatilityStrategyPromptInputSchema = VolatilitySessionStrategyInputSchema.extend({
+    formattedInstrumentIndicators: z.record(VolatilityInstrumentTypeSchema, PromptFormattedInstrumentIndicatorSchema.nullable()).optional().describe("Record mapping each instrument to its pre-formatted string versions of indicators.")
+}).omit({ instrumentIndicators: true }); // Omit raw, use formatted (this was already in my previous full file, ensuring it's correct)
 
 const VolatilitySingleTradeProposalSchema = z.object({
   instrument: VolatilityInstrumentTypeSchema,
@@ -238,17 +239,31 @@ const volatilitySingleTradeStrategyFlow = ai.defineFlow(
       }
 
       // Barrier validation based on userSelectedTradeType
-      const requiresBarrier = input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch' || input.userSelectedTradeType === 'DigitsOverUnder';
-      if (requiresBarrier && (output.barrier === undefined || output.barrier === null || String(output.barrier).trim() === '')) {
-        validationError = `Barrier is required for ${input.userSelectedTradeType} but was not provided by AI.`;
-      }
-
-      if (input.userSelectedTradeType === 'DigitsOverUnder' && output.barrier !== undefined) {
-        const barrierNum = parseInt(String(output.barrier));
-        if (isNaN(barrierNum) || barrierNum < 0 || barrierNum > 9) {
-          validationError = `Invalid barrier '${output.barrier}' for DigitsOverUnder. Must be a digit 0-9.`;
+      if (input.userSelectedTradeType === 'DigitsOverUnder') {
+        if (output.barrier === undefined || output.barrier === null || String(output.barrier).trim() === '') {
+            validationError = `Barrier (predicted digit) is mandatory for DigitsOverUnder but was not provided by AI.`;
+        } else {
+            const barrierString = String(output.barrier).trim();
+            // Check if it's a single digit string using regex
+            if (!/^\d$/.test(barrierString)) {
+                validationError = `Invalid barrier '${output.barrier}' for DigitsOverUnder. Must be a single digit string (0-9).`;
+            } else {
+                // Optional: further check if truly needed after regex, but safe
+                const barrierNum = parseInt(barrierString);
+                if (barrierNum < 0 || barrierNum > 9) {
+                    validationError = `Invalid barrier value '${output.barrier}' for DigitsOverUnder. Must be between 0-9.`;
+                }
+            }
+        }
+      } else if (input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch') {
+        // For HigherLower & TouchNoTouch, AI is now instructed to OMIT the barrier.
+        // If AI provides one, we can warn and remove it, ensuring it doesn't cause issues downstream.
+        if (output.barrier !== undefined && output.barrier !== null) {
+          console.warn(`[AIFlow/${input.currentInstrument}] AI provided an unexpected barrier ('${output.barrier}') for ${input.userSelectedTradeType}. This will be ignored as it's set programmatically by the server action.`);
+          delete output.barrier; // Remove it to adhere to the new contract (AI doesn't set this barrier type)
         }
       }
+      // No barrier validation needed for RiseFall or DigitsEvenOdd from AI output.
 
       if (output.derivContractType?.startsWith("DIGIT") && output.durationUnit !== 't') {
         validationError = `Duration unit must be 't' (ticks) for Digit contracts. Got '${output.durationUnit}'.`;
