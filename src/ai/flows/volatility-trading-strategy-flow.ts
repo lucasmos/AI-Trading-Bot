@@ -101,22 +101,22 @@ No technical indicators provided. Base your decision on price action and trade t
 Your Task:
 1. Based on the user's selected trade type ('{{{userSelectedTradeType}}}') and your analysis of the instrument data (price ticks and indicators if available), decide if a trade is viable.
 2. If a trade is viable (set 'shouldTrade: true'):
-   a. Determine the precise Deriv API contract type ('derivContractType'). Examples:
-      - For 'RiseFall': 'CALL' (if you predict price will rise) or 'PUT' (if you predict price will fall).
-      - For 'RiseFall': 'CALL' (if you predict price will rise) or 'PUT' (if you predict price will fall). No 'barrier' field needed in output for this type.
-      - For 'HigherLower': 'CALL' (if price will be higher than barrier) or 'PUT' (if price lower than barrier). YOU MUST provide a 'barrier' field in the output. The barrier is a price string (e.g., "123.45" for absolute, or a relative offset like "+0.123" or "-0.123" from current spot).
-      - For 'TouchNoTouch': 'ONETOUCH' (if price will touch barrier) or 'NOTOUCH' (if not). YOU MUST provide a 'barrier' field in the output. The barrier is a price string (e.g., "123.45" for absolute, or a relative offset like "+0.123" or "-0.123" from current spot).
-      - For 'DigitsEvenOdd': 'DIGITEVEN' (if last digit is even) or 'DIGITODD' (if odd). No 'barrier' field needed in output for this type.
-      - For 'DigitsOverUnder': 'DIGITOVER' (if last digit > predicted digit) or 'DIGITUNDER' (if last digit < predicted digit). YOU MUST provide a 'barrier' field in the output. The barrier is a single digit string (e.g., "7", "3").
-   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't' and 'duration' is typically 1-10 ticks. For other types like 'RiseFall', 'HigherLower', 'TouchNoTouch', 'durationUnit' is usually 's' (seconds) or 'm' (minutes). Minimum duration is 1 tick or 1 second.
+   a. Determine the precise Deriv API contract type ('derivContractType'). Critically important:
+      - For 'RiseFall': 'CALL' (price up) or 'PUT' (price down). The 'barrier' field MUST NOT be present in your JSON output.
+      - For 'HigherLower': If you decide 'shouldTrade' is true, you MUST output 'derivContractType' as 'CALL' or 'PUT', AND YOU ABSOLUTELY MUST also output a 'barrier' field. This 'barrier' must be a string representing a price offset (e.g., "+0.123", "-0.05") or an absolute price level (e.g., "123.45"). A HigherLower trade proposal without a 'barrier' is invalid.
+      - For 'TouchNoTouch': If you decide 'shouldTrade' is true, you MUST output 'derivContractType' as 'ONETOUCH' or 'NOTOUCH', AND YOU ABSOLUTELY MUST also output a 'barrier' field. This 'barrier' must be a string (price offset or absolute price). A TouchNoTouch trade proposal without a 'barrier' is invalid.
+      - For 'DigitsEvenOdd': 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
+      - For 'DigitsOverUnder': If you decide 'shouldTrade' is true, you MUST output 'derivContractType' as 'DIGITOVER' or 'DIGITUNDER', AND YOU ABSOLUTELY MUST also output a 'barrier' field. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without a 'barrier' (predicted digit) is invalid.
+   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks. For other types like 'RiseFall', 'HigherLower', 'TouchNoTouch', 'durationUnit' is usually 's' (seconds) or 'm' (minutes). Minimum duration is 1 tick or 1 second.
    c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
-3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false' and do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
+3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'. In this case, do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
 4. Provide concise 'reasoning' for your decision, explaining how the data supports your choice for the given '{{{userSelectedTradeType}}}'.
 
 Output Format: Return a single JSON object matching the output schema.
 - If 'shouldTrade' is true: 'derivContractType', 'duration', 'durationUnit', and 'stake' are ALWAYS mandatory.
-- If 'shouldTrade' is true AND 'userSelectedTradeType' is 'HigherLower', 'TouchNoTouch', or 'DigitsOverUnder': the 'barrier' field is ALSO mandatory. For other trade types when 'shouldTrade' is true, 'barrier' should be omitted.
+- If 'shouldTrade' is true AND 'userSelectedTradeType' is 'HigherLower', 'TouchNoTouch', or 'DigitsOverUnder': the 'barrier' field is ALSO ABSOLUTELY MANDATORY. Double-check your output for these types. For other trade types ('RiseFall', 'DigitsEvenOdd') when 'shouldTrade' is true, 'barrier' MUST be omitted.
 - If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
+IMPORTANT: For 'HigherLower', 'TouchNoTouch', and 'DigitsOverUnder' trade types, if 'shouldTrade' is true, the 'barrier' field in your JSON output is NON-NEGOTIABLE and MUST be provided. Double-check your output for these types.
 
 Example for RiseFall (predicting RISE):
 {
