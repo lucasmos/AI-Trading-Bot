@@ -33,6 +33,16 @@ const InstrumentIndicatorDataSchema = z.object({
 // Import UserTradeTypeSchema and UserTradeType from the shared file
 import { UserTradeTypeSchema, UserTradeType } from '@/types/ai-shared-types';
 
+// Schema for the input of a single trade decision flow (NEWLY ADDED)
+const VolatilitySingleTradeStrategyInputSchema = z.object({
+  currentInstrument: VolatilityInstrumentTypeSchema.describe("The specific volatility instrument to analyze."),
+  userSelectedTradeType: UserTradeTypeSchema.describe("The type of trade selected by the user."),
+  stakePerTrade: z.number().min(0.01).describe("The allocated stake for this potential trade."),
+  instrumentTicks: z.array(PriceTickSchema).describe("Recent price ticks for the current instrument."),
+  instrumentIndicators: InstrumentIndicatorDataSchema.optional().describe('Calculated technical indicators for the current instrument.'),
+});
+export type VolatilitySingleTradeStrategyInput = z.infer<typeof VolatilitySingleTradeStrategyInputSchema>;
+
 // Renaming: Input for the new flow that considers multiple instruments and a total stake.
 const VolatilitySessionStrategyInputSchema = z.object({
   availableInstruments: z.array(VolatilityInstrumentTypeSchema).describe("List of volatility instruments to consider for trading, e.g., ['R_10', 'R_25', 'R_50', 'R_75', 'R_100']."),
