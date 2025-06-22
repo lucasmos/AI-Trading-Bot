@@ -1,5 +1,3 @@
-'use client';
-
 import { RSI, MACD, BollingerBands, SMA, EMA, ATR } from 'technicalindicators';
 // Specific Input/Output types are not explicitly exported by the library for static calculate methods.
 // We rely on the structure the calculate methods expect.
