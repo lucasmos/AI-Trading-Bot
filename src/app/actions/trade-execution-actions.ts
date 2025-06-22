@@ -261,12 +261,22 @@ export async function executeVolatilityAiTradeLoop(
           const atr = instrumentATR[instrumentFromAI];
 
           if (latestSpot !== undefined) {
++            // Guard against invalid or zero spot prices
++            if (latestSpot <= 0) {
++              throw new Error(`Invalid spot price (${latestSpot}) for ${instrumentFromAI}. Cannot calculate barrier.`);
++            }
             const offsetFactor = userSelectedTradeType === 'HigherLower' ? 0.3 : 0.5;
             const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.0005;
 
             let barrierValue = (aiProposal.derivContractType === 'CALL' || aiProposal.derivContractType === 'ONETOUCH')
                                ? latestSpot + atrBasedOffset
                                : latestSpot - atrBasedOffset;
++            
++            // Ensure we didn't compute a non‐positive barrier
++            if (barrierValue <= 0) {
++              throw new Error(`Calculated barrier (${barrierValue}) is invalid for ${instrumentFromAI}.`);
++            }
+            
             const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
             calculatedBarrier = barrierValue.toFixed(decimalPlaces);
             console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier}`);
