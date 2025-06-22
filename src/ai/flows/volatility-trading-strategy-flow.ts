@@ -38,9 +38,26 @@ const VolatilitySingleTradeStrategyInputSchema = z.object({
   userSelectedTradeType: UserTradeTypeSchema.describe("The type of trade selected by the user."),
   stakePerTrade: z.number().min(0.01).describe("The allocated stake for this potential trade."),
   instrumentTicks: z.array(PriceTickSchema).describe("Recent price ticks for the current instrument."),
-  instrumentIndicators: InstrumentIndicatorDataSchema.optional().describe('Calculated technical indicators for the current instrument.'),
+  instrumentIndicators: InstrumentIndicatorDataSchema.optional().describe('Calculated technical indicators for the current instrument.'), // This is the raw data
 });
 export type VolatilitySingleTradeStrategyInput = z.infer<typeof VolatilitySingleTradeStrategyInputSchema>;
+
+// New schema for prompt input with pre-formatted indicators
+const PromptFormattedInstrumentIndicatorSchema = z.object({
+  rsi: z.string().optional(), // e.g., "70.12" or "N/A"
+  macdLine: z.string().optional(),
+  macdSignal: z.string().optional(),
+  macdHist: z.string().optional(),
+  bbUpper: z.string().optional(),
+  bbMiddle: z.string().optional(),
+  bbLower: z.string().optional(),
+  ema: z.string().optional(),
+  atr: z.string().optional(),
+});
+
+const VolatilityStrategyPromptInputSchema = VolatilitySingleTradeStrategyInputSchema.extend({
+    formattedIndicators: PromptFormattedInstrumentIndicatorSchema.nullable().describe("Pre-formatted string versions of indicators for prompt display.")
+}).omit({ instrumentIndicators: true }); // Remove raw instrumentIndicators from prompt input, use formattedIndicators instead
 
 const VolatilitySingleTradeProposalSchema = z.object({
   instrument: VolatilityInstrumentTypeSchema,
@@ -57,7 +74,7 @@ export type VolatilitySingleTradeProposal = z.infer<typeof VolatilitySingleTrade
 
 const determineDerivContractTypePrompt = ai.definePrompt({
   name: 'determineDerivContractTypePrompt',
-  input: { schema: VolatilitySingleTradeStrategyInputSchema },
+  input: { schema: VolatilityStrategyPromptInputSchema }, // Use new schema with formatted indicators
   output: { schema: VolatilitySingleTradeProposalSchema },
   prompt: `
 You are an expert AI trading strategist for Deriv Volatility Indices.
@@ -70,13 +87,13 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 - Time: {{time}}, Price: {{price}}
 {{/each}}
 
-{{#if instrumentIndicators}}
+{{#if formattedIndicators}}
 Calculated Technical Indicators for {{{currentInstrument}}}:
-  RSI: {{#if instrumentIndicators.rsi}}{{instrumentIndicators.rsi.toFixed 4}}{{else}}N/A{{/if}}
-  MACD: {{#if instrumentIndicators.macd}}Line: {{instrumentIndicators.macd.macd.toFixed 4}}, Signal: {{instrumentIndicators.macd.signal.toFixed 4}}, Hist: {{instrumentIndicators.macd.histogram.toFixed 4}}{{else}}N/A{{/if}}
-  Bollinger Bands: {{#if instrumentIndicators.bollingerBands}}Upper: {{instrumentIndicators.bollingerBands.upper.toFixed 4}}, Middle: {{instrumentIndicators.bollingerBands.middle.toFixed 4}}, Lower: {{instrumentIndicators.bollingerBands.lower.toFixed 4}}{{else}}N/A{{/if}}
-  EMA (20): {{#if instrumentIndicators.ema}}{{instrumentIndicators.ema.toFixed 4}}{{else}}N/A{{/if}}
-  ATR (14): {{#if instrumentIndicators.atr}}{{instrumentIndicators.atr.toFixed 4}}{{else}}N/A{{/if}}
+  RSI: {{formattedIndicators.rsi}}
+  MACD: Line: {{formattedIndicators.macdLine}}, Signal: {{formattedIndicators.macdSignal}}, Hist: {{formattedIndicators.macdHist}}
+  Bollinger Bands: Upper: {{formattedIndicators.bbUpper}}, Middle: {{formattedIndicators.bbMiddle}}, Lower: {{formattedIndicators.bbLower}}
+  EMA (20): {{formattedIndicators.ema}}
+  ATR (14): {{formattedIndicators.atr}}
 {{else}}
 No technical indicators provided. Base your decision on price action and trade type logic.
 {{/if}}
@@ -155,11 +172,30 @@ const volatilitySingleTradeStrategyFlow = ai.defineFlow(
     }
 
     // Ensure instrumentIndicators is null or an object, not undefined for the prompt
-    const promptInput = {
-      ...input,
-      instrumentIndicators: input.instrumentIndicators || null,
-    };
+    // Create formattedIndicators object
+    let formattedIndicatorsForPrompt: z.infer<typeof PromptFormattedInstrumentIndicatorSchema> | null = null;
+    if (input.instrumentIndicators) {
+      const ind = input.instrumentIndicators;
+      formattedIndicatorsForPrompt = {
+        rsi: ind.rsi !== undefined ? ind.rsi.toFixed(2) : "N/A",
+        macdLine: ind.macd?.macd !== undefined ? ind.macd.macd.toFixed(4) : "N/A",
+        macdSignal: ind.macd?.signal !== undefined ? ind.macd.signal.toFixed(4) : "N/A",
+        macdHist: ind.macd?.histogram !== undefined ? ind.macd.histogram.toFixed(4) : "N/A",
+        bbUpper: ind.bollingerBands?.upper !== undefined ? ind.bollingerBands.upper.toFixed(4) : "N/A",
+        bbMiddle: ind.bollingerBands?.middle !== undefined ? ind.bollingerBands.middle.toFixed(4) : "N/A",
+        bbLower: ind.bollingerBands?.lower !== undefined ? ind.bollingerBands.lower.toFixed(4) : "N/A",
+        ema: ind.ema !== undefined ? ind.ema.toFixed(4) : "N/A",
+        atr: ind.atr !== undefined ? ind.atr.toFixed(4) : "N/A",
+      };
+    }
 
+    const promptInput: z.infer<typeof VolatilityStrategyPromptInputSchema> = {
+      currentInstrument: input.currentInstrument,
+      userSelectedTradeType: input.userSelectedTradeType,
+      stakePerTrade: input.stakePerTrade,
+      instrumentTicks: input.instrumentTicks,
+      formattedIndicators: formattedIndicatorsForPrompt, // Pass the formatted object
+    };
 
     const { output } = await determineDerivContractTypePrompt(promptInput) as { output: VolatilitySingleTradeProposal | null };
 
