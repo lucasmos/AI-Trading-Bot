@@ -65,7 +65,7 @@ const VolatilitySingleTradeProposalSchema = z.object({
   derivContractType: z.string().optional().describe("The specific Deriv API contract type (e.g., CALL, PUT, DIGITEVEN, ONETOUCH). Required if shouldTrade is true."),
   duration: z.number().int().min(1).optional().describe("Trade duration value. Required if shouldTrade is true."),
   durationUnit: z.enum(['s', 'm', 'h', 'd', 't']).optional().describe("Unit for the duration (e.g., seconds, ticks). Required if shouldTrade is true."),
-  barrier: z.union([z.string(), z.number()]).optional().describe("Predicted barrier or digit, if applicable to the trade type."),
+  barrier: z.string().optional().describe("Predicted barrier (as a string) or digit (as a string), if applicable to the trade type."),
   stake: z.number().min(0.01).optional().describe("Proposed stake for this trade. Required if shouldTrade is true."),
   reasoning: z.string().describe("AI's reasoning for the decision."),
 });
