@@ -134,20 +134,32 @@ export interface AutomatedTradingStrategyOutput {
 // For AI Flow (Volatility auto-trading)
 export interface VolatilityTradeProposal {
   instrument: InstrumentType;
-  action: 'CALL' | 'PUT';
+  action: 'CALL' | 'PUT'; // This is the AI's directional suggestion for simple Rise/Fall in current page simulation
   stake: number;
   durationSeconds: number;
   reasoning: string;
+  // If AI were to output specific Deriv contract types, it would be here.
+  // For now, the page simulation implies Rise/Fall based on CALL/PUT.
 }
 
-export interface ActiveAutomatedVolatilityTrade extends VolatilityTradeProposal {
+export interface ActiveAutomatedVolatilityTrade { // Removed 'extends VolatilityTradeProposal' to redefine fields clearly
   id: string;
+  instrument: InstrumentType;
+  stake: number;
+  durationSeconds: number;
+  reasoning?: string; // Make optional if not always present
   entryPrice: number;
-  stopLossPrice: number;
+  stopLossPrice: number; // Specific to the page's simulation
   startTime: number;
-  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual';
+  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual' | 'pending_execution' | 'failed_placement'; // Added new statuses for real trades
   pnl?: number;
-  currentPrice?: number;
+  currentPrice?: number; // For simulation or live price updates
+
+  // New fields for better type display and future real trading
+  derivContractType: string; // e.g., "CALL", "PUT", "DIGITEVEN", "DIGITOVER" - this will store proposal.action for now
+  userSelectedTradeType?: string; // e.g., "RiseFall", "DigitsEvenOdd" - if available from UI selection
+  barrier?: string | number | null; // Store barrier if applicable (e.g. for DigitsOverUnder)
+  error?: string; // To store placement errors for real trades
 }
 
 export interface VolatilityTradingStrategyInput {

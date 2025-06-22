@@ -9,124 +9,291 @@
 
 import { ai } from '@/ai/genkit';
 import * as z from 'zod';
-import type { VolatilityInstrumentType, TradingMode, PriceTick, VolatilityTradingStrategyOutput, VolatilityTradeProposal } from '@/types';
+// Assuming PriceTick is defined in '@/types' and InstrumentIndicatorData can be structured from there or defined here
+import type { VolatilityInstrumentType, PriceTick as ExternalPriceTick } from '@/types';
 
-// Define a schema for individual instrument indicators
+// Schemas for AI Flow
+// Using z.string() for VolatilityInstrumentTypeSchema for flexibility, cast to VolatilityInstrumentType where needed.
+const VolatilityInstrumentTypeSchema = z.string().describe("Deriv symbol for a volatility index, e.g., R_10, 1HZ10V");
+
+const PriceTickSchema = z.object({
+  epoch: z.number(),
+  price: z.number(),
+  time: z.string(),
+}).describe("A single price tick data point.");
+
 const InstrumentIndicatorDataSchema = z.object({
   rsi: z.number().optional(),
   macd: z.object({ macd: z.number(), signal: z.number(), histogram: z.number() }).optional(),
   bollingerBands: z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).optional(),
   ema: z.number().optional(),
   atr: z.number().optional(),
+}).describe("Calculated technical indicators for an instrument.");
+
+// Import UserTradeTypeSchema and UserTradeType from the shared file
+import { UserTradeTypeSchema, UserTradeType } from '@/types/ai-shared-types';
+
+// Renaming: Input for the new flow that considers multiple instruments and a total stake.
+const VolatilitySessionStrategyInputSchema = z.object({
+  availableInstruments: z.array(VolatilityInstrumentTypeSchema).describe("List of volatility instruments to consider for trading, e.g., ['R_10', 'R_25', 'R_50', 'R_75', 'R_100']."),
+  userSelectedTradeType: UserTradeTypeSchema.describe("The type of trade selected by the user for all trades in this session."),
+  totalSessionStake: z.number().min(0.35).describe("User's total stake to be apportioned across chosen trades for this session. Minimum $0.35 total."),
+  // instrumentTicks and instrumentIndicators will now be records, mapping instrument symbol to its data.
+  instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)).describe("Record mapping each available instrument symbol to its recent price ticks."),
+  instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema.optional()).optional().describe('Record mapping each available instrument to its calculated technical indicators.'),
+});
+export type VolatilitySessionStrategyInput = z.infer<typeof VolatilitySessionStrategyInputSchema>;
+
+// Schema for pre-formatted indicators, remains the same
+// Schema for pre-formatted indicators, remains the same
+const PromptFormattedInstrumentIndicatorSchema = z.object({
+  rsi: z.string().optional(),
+  macdLine: z.string().optional(),
+  macdSignal: z.string().optional(),
+  macdHist: z.string().optional(),
+  bbUpper: z.string().optional(),
+  bbMiddle: z.string().optional(),
+  bbLower: z.string().optional(),
+  ema: z.string().optional(),
+  atr: z.string().optional(),
 });
 
-// Re-define PriceTick schema locally for this flow if it's not directly importable or to avoid complex imports
-const PriceTickSchema = z.object({
-  epoch: z.number(),
-  price: z.number(),
-  time: z.string(),
+// Corrected: Extend from VolatilitySessionStrategyInputSchema
+const VolatilityStrategyPromptInputSchema = VolatilitySessionStrategyInputSchema.extend({
+    formattedInstrumentIndicators: z.record(VolatilityInstrumentTypeSchema, PromptFormattedInstrumentIndicatorSchema.nullable()).optional().describe("Record mapping each instrument to its pre-formatted string versions of indicators.")
+}).omit({ instrumentIndicators: true }); // Omit raw, use formatted (this was already in my previous full file, ensuring it's correct)
+
+const VolatilitySingleTradeProposalSchema = z.object({
+  instrument: VolatilityInstrumentTypeSchema,
+  shouldTrade: z.boolean().describe("Whether the AI recommends placing a trade or not."),
+  derivContractType: z.string().optional().describe("The specific Deriv API contract type (e.g., CALL, PUT, DIGITEVEN, ONETOUCH). Required if shouldTrade is true."),
+  duration: z.number().int().min(1).optional().describe("Trade duration value. Required if shouldTrade is true."),
+  durationUnit: z.enum(['s', 'm', 'h', 'd', 't']).optional().describe("Unit for the duration (e.g., seconds, ticks). Required if shouldTrade is true."),
+  barrier: z.string().optional().describe("Predicted barrier (as a string) or digit (as a string), if applicable to the trade type."),
+  stake: z.number().min(0.01).optional().describe("Proposed stake for this trade. Required if shouldTrade is true."),
+  reasoning: z.string().describe("AI's reasoning for the decision."),
+});
+export type VolatilitySingleTradeProposal = z.infer<typeof VolatilitySingleTradeProposalSchema>;
+
+
+const determineDerivContractTypePrompt = ai.definePrompt({
+  name: 'determineDerivContractTypePrompt',
+  input: { schema: VolatilityStrategyPromptInputSchema }, // Use new schema with formatted indicators
+  output: { schema: VolatilitySingleTradeProposalSchema },
+  prompt: `
+You are an expert AI trading strategist for Deriv Volatility Indices.
+Analyze the provided data for the instrument: {{{currentInstrument}}}.
+User has selected the trade type: {{{userSelectedTradeType}}}.
+Recommended stake for this trade: {{{stakePerTrade}}}.
+
+Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
+{{#each instrumentTicks}}
+- Time: {{time}}, Price: {{price}}
+{{/each}}
+
+{{#if formattedIndicators}}
+Calculated Technical Indicators for {{{currentInstrument}}}:
+  RSI: {{formattedIndicators.rsi}}
+  MACD: Line: {{formattedIndicators.macdLine}}, Signal: {{formattedIndicators.macdSignal}}, Hist: {{formattedIndicators.macdHist}}
+  Bollinger Bands: Upper: {{formattedIndicators.bbUpper}}, Middle: {{formattedIndicators.bbMiddle}}, Lower: {{formattedIndicators.bbLower}}
+  EMA (20): {{formattedIndicators.ema}}
+  ATR (14): {{formattedIndicators.atr}}
+{{else}}
+No technical indicators provided. Base your decision on price action and trade type logic.
+{{/if}}
+
+Your Task:
+1. Based on the user's selected trade type ('{{{userSelectedTradeType}}}') and your analysis of the instrument data (price ticks and indicators if available), decide if a trade is viable.
+2. If a trade is viable (set 'shouldTrade: true'):
+   a. Determine the precise Deriv API contract type ('derivContractType').
+      - For 'RiseFall': Output 'CALL' (price up) or 'PUT' (price down). The 'barrier' field MUST NOT be present in your JSON output.
+      - For 'HigherLower': Output 'CALL' (price will be higher than a programmatically set default barrier) or 'PUT' (price will be lower than a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
+      - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set default barrier) or 'NOTOUCH' (price will not touch a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
+      - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
+      - For 'DigitsOverUnder': Output 'DIGITOVER' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit). YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without this digit 'barrier' is invalid.
+   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks. For other types, 'durationUnit' is usually 's' (seconds) or 'm' (minutes). Minimum duration is 1 tick or 1 second.
+   c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
+3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'. In this case, do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
+4. Provide concise 'reasoning' for your decision. If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch', you can suggest barrier characteristics in your reasoning (e.g., "barrier should be significantly above current spot", "aim for a tight barrier").
+
+Output Format: Return a single JSON object matching the output schema.
+- If 'shouldTrade' is true: 'derivContractType', 'duration', 'durationUnit', and 'stake' are ALWAYS mandatory.
+- If 'shouldTrade' is true AND 'userSelectedTradeType' is 'DigitsOverUnder': the 'barrier' field (predicted digit) is ALSO ABSOLUTELY MANDATORY.
+- For 'RiseFall', 'HigherLower', 'TouchNoTouch', 'DigitsEvenOdd' when 'shouldTrade' is true: the 'barrier' field MUST be omitted from your JSON output.
+- If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
+CRITICAL CHECK: Before outputting JSON, if 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch' and 'shouldTrade' is true, ensure you have OMITTED the 'barrier' field. If 'userSelectedTradeType' is 'DigitsOverUnder' and 'shouldTrade' is true, ensure you have INCLUDED the 'barrier' field with the predicted digit.
+
+Example for RiseFall (predicting RISE):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "CALL",
+  "duration": 60,
+  "durationUnit": "s",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Strong bullish momentum observed in recent ticks and RSI above 70."
+}
+
+Example for HigherLower (predicting LOWER with relative barrier):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "PUT",
+  "duration": 120,
+  "durationUnit": "s",
+  "barrier": "-0.075",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Price showing resistance, MACD declining. Barrier set slightly below current spot."
+}
+
+Example for DigitsOverUnder (predicting UNDER 3):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "DIGITUNDER",
+  "duration": 5,
+  "durationUnit": "t",
+  "barrier": "3",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Last few ticks ended in low digits (0,1,2). Predicting next will be under 3."
+}
+
+Example for No Trade:
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": false,
+  "reasoning": "Market for {{{currentInstrument}}} is too volatile and indicators are conflicting for {{{userSelectedTradeType}}}."
+}
+
+Begin your response with the JSON object.
+`
 });
 
-// Use z.string() for instrument keys/names and cast to VolatilityInstrumentType in code where needed.
-const VolatilityInstrumentTypeSchema = z.string(); 
-
-const VolatilityTradingStrategyInputSchema = z.object({
-  totalStake: z.number().min(1).describe("User's total stake for the session."),
-  instruments: z.array(VolatilityInstrumentTypeSchema).describe("Array of volatility instrument symbols."),
-  tradingMode: z.enum(['conservative', 'balanced', 'aggressive']).describe("User's trading mode."),
-  aiStrategyId: z.string().optional().describe('The selected AI trading strategy ID from global strategies.'),
-  instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)),
-  instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema).optional().describe('Calculated technical indicators for each instrument.'),
-  formattedIndicatorsString: z.string().optional().describe('Pre-formatted string of technical indicators for the prompt.'),
-});
-
-export type VolatilityTradingStrategyInput = z.infer<typeof VolatilityTradingStrategyInputSchema>;
-
-const VolatilityTradeProposalSchema = z.object({
-  instrument: VolatilityInstrumentTypeSchema, // Corresponds to VolatilityInstrumentType
-  action: z.enum(['CALL', 'PUT']),
-  stake: z.number().min(0.01),
-  durationSeconds: z.number().int().min(1),
-  reasoning: z.string(),
-});
-
-// Infer the output type from the Zod schema, but ensure it matches the imported VolatilityTradingStrategyOutput
-const InferredVolatilityTradingStrategyOutputSchema = z.object({
-  tradesToExecute: z.array(VolatilityTradeProposalSchema),
-  overallReasoning: z.string(),
-});
-
-const prompt = ai.definePrompt({
-  name: 'volatilityTradingStrategyPrompt',
-  input: {schema: VolatilityTradingStrategyInputSchema},
-  output: {schema: InferredVolatilityTradingStrategyOutputSchema},
-  prompt: `You are an expert AI trading strategist specializing in Volatility Indices. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data for these indices.\r\r\nYou MUST aim for a minimum 83% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Volatility Instruments: {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\n\r\nRecent Price Ticks for Volatility Indices (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
-{{{formattedIndicatorsString}}} 
-Important System Rule: A fixed 5% stop-loss based on the entry price will be automatically applied to every trade by the system. Consider this when selecting trades; avoid trades highly likely to hit this stop-loss quickly unless the potential reward significantly outweighs this risk within the trade duration. Volatility indices can be very volatile, so shorter durations might be preferred, or ensure the trend is strong enough to withstand potential 5% pullbacks for longer durations.\r\n\r\nYour Task:\r\n1.  Analyze the provided tick data AND technical indicators (if available in the formatted string) for trends, momentum, volatility, and potential reversal points for each volatility instrument.\r\n2.  Based on the '{{{tradingMode}}}', decide which instruments to trade. You do not have to trade all of them. Prioritize instruments with higher profit potential aligned with the risk mode and the 83% win rate target, considering all available data. Focus on the core Volatility Indices (e.g., Volatility 10, 25, 50, 75, 100).\r\n    *   Conservative: Focus on safest, clearest signals from indicators and trends, smaller stakes. Aim for >75% win rate. Consider shorter durations due to volatility.\r\n    *   Balanced: Mix of opportunities, moderate stakes. Aim for >=83% win rate.\r\n    *   Aggressive: Higher risk/reward, potentially more volatile instruments, larger stakes if confidence is high. Aim for >=83% win rate, even with higher risk. Longer durations can be considered if strong momentum is evident.\r\n3.  For each instrument you choose to trade:\r\n    *   Determine the trade direction: 'CALL' (price will go up) or 'PUT' (price will go down).\r\n    *   Recommend a trade duration in SECONDS (e.g., 30, 60, 180, 300). Durations MUST be positive integers representing seconds, with a minimum value of 1.\r\n    *   The system will set a 5% stop-loss. Your reasoning should reflect an understanding of this and how it impacts trade selection for volatile instruments.\r\n4.  Apportion the '{{{totalStake}}}' among your chosen trades. The sum of stakes for all proposed trades MUST NOT exceed '{{{totalStake}}}'. Each stake must be a positive value, with a minimum value of 0.01.\r\n5.  Provide clear reasoning for each trade proposal and for your overall strategy, explicitly mentioning how it aligns with the 83% win rate target and the 5% stop-loss rule, particularly in the context of volatility indices.\r\n\r\nOutput Format:\r\nReturn a JSON object matching the output schema. Ensure 'tradesToExecute' is an array of trade objects.\r\nEach trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.\r\nEach trade's 'durationSeconds' must be an integer number of seconds (e.g., 30, 60, 300) and at least 1.\r\n\r\nBegin your response with the JSON object.\r\n`,
-});
-
-const volatilityTradingStrategyFlow = ai.defineFlow(
+const volatilitySingleTradeStrategyFlow = ai.defineFlow(
   {
-    name: 'volatilityTradingStrategyFlow',
-    inputSchema: VolatilityTradingStrategyInputSchema,
-    outputSchema: InferredVolatilityTradingStrategyOutputSchema, // Use inferred for the flow definition
+    name: 'volatilitySingleTradeStrategyFlow',
+    inputSchema: VolatilitySingleTradeStrategyInputSchema,
+    outputSchema: VolatilitySingleTradeProposalSchema,
   },
-  async (input: VolatilityTradingStrategyInput): Promise<VolatilityTradingStrategyOutput> => {
-    // Prepare the formattedIndicatorsString before calling the prompt
-    let formattedIndicators = '';
-    if (input.instrumentIndicators) {
-      formattedIndicators = '\n\nCalculated Technical Indicators:\n';
-      for (const inst in input.instrumentIndicators) {
-        const ind = input.instrumentIndicators[inst as VolatilityInstrumentType];
-        formattedIndicators += `Instrument: ${inst}\n`;
-        formattedIndicators += `  RSI: ${ind.rsi?.toFixed(4) ?? 'N/A'}\n`;
-        formattedIndicators += `  MACD: ${ind.macd ? `Line(${ind.macd.macd.toFixed(4)}), Signal(${ind.macd.signal.toFixed(4)}), Hist(${ind.macd.histogram.toFixed(4)})` : 'N/A'}\n`;
-        formattedIndicators += `  Bollinger Bands: ${ind.bollingerBands ? `Upper(${ind.bollingerBands.upper.toFixed(4)}), Middle(${ind.bollingerBands.middle.toFixed(4)}), Lower(${ind.bollingerBands.lower.toFixed(4)})` : 'N/A'}\n`;
-        formattedIndicators += `  EMA: ${ind.ema?.toFixed(4) ?? 'N/A'}\n`;
-        formattedIndicators += `  ATR: ${ind.atr?.toFixed(4) ?? 'N/A'}\n`;
-      }
+  async (input: VolatilitySingleTradeStrategyInput): Promise<VolatilitySingleTradeProposal> => {
+    console.log(`[AI Flow] Received input for ${input.currentInstrument}, trade type ${input.userSelectedTradeType}, stake ${input.stakePerTrade}`);
+
+    if (!input.instrumentTicks || input.instrumentTicks.length === 0) {
+        console.warn(`[AI Flow] No tick data for ${input.currentInstrument}. Recommending no trade.`);
+        return {
+            instrument: input.currentInstrument as VolatilityInstrumentType,
+            shouldTrade: false,
+            reasoning: `No tick data available for ${input.currentInstrument} to make a decision.`,
+        };
     }
 
-    const promptInput = {
-      ...input,
-      formattedIndicatorsString: formattedIndicators,
+    // Ensure instrumentIndicators is null or an object, not undefined for the prompt
+    // Create formattedIndicators object
+    let formattedIndicatorsForPrompt: z.infer<typeof PromptFormattedInstrumentIndicatorSchema> | null = null;
+    if (input.instrumentIndicators) {
+      const ind = input.instrumentIndicators;
+      formattedIndicatorsForPrompt = {
+        rsi: ind.rsi !== undefined ? ind.rsi.toFixed(2) : "N/A",
+        macdLine: ind.macd?.macd !== undefined ? ind.macd.macd.toFixed(4) : "N/A",
+        macdSignal: ind.macd?.signal !== undefined ? ind.macd.signal.toFixed(4) : "N/A",
+        macdHist: ind.macd?.histogram !== undefined ? ind.macd.histogram.toFixed(4) : "N/A",
+        bbUpper: ind.bollingerBands?.upper !== undefined ? ind.bollingerBands.upper.toFixed(4) : "N/A",
+        bbMiddle: ind.bollingerBands?.middle !== undefined ? ind.bollingerBands.middle.toFixed(4) : "N/A",
+        bbLower: ind.bollingerBands?.lower !== undefined ? ind.bollingerBands.lower.toFixed(4) : "N/A",
+        ema: ind.ema !== undefined ? ind.ema.toFixed(4) : "N/A",
+        atr: ind.atr !== undefined ? ind.atr.toFixed(4) : "N/A",
+      };
+    }
+
+    const promptInput: z.infer<typeof VolatilityStrategyPromptInputSchema> = {
+      currentInstrument: input.currentInstrument,
+      userSelectedTradeType: input.userSelectedTradeType,
+      stakePerTrade: input.stakePerTrade,
+      instrumentTicks: input.instrumentTicks,
+      formattedIndicators: formattedIndicatorsForPrompt, // Pass the formatted object
     };
 
-    const {output} = await prompt(promptInput) as { output: VolatilityTradingStrategyOutput | null }; // Cast AI output
+    const { output } = await determineDerivContractTypePrompt(promptInput) as { output: VolatilitySingleTradeProposal | null };
+
     if (!output) {
-      throw new Error("AI failed to generate an automated volatility trading strategy.");
+      console.error(`[AIFlow/${input.currentInstrument}] AI failed to generate a trade proposal for type ${input.userSelectedTradeType}. Null output received from prompt.`);
+      // Return a "no trade" decision instead of throwing an error to allow the loop to continue
+      return {
+        instrument: input.currentInstrument as VolatilityInstrumentType,
+        shouldTrade: false,
+        reasoning: `AI failed to generate a response for ${input.currentInstrument}.`,
+      };
     }
-    
-    // Validate and filter AI output for stake and durationSeconds
-    output.tradesToExecute = output.tradesToExecute.filter(trade => {
-      const isStakeValid = typeof trade.stake === 'number' && trade.stake >= 0.01;
-      const isDurationValid = Number.isInteger(trade.durationSeconds) && trade.durationSeconds >= 1;
+    console.log(`[AIFlow/${input.currentInstrument}] Raw AI Output for type ${input.userSelectedTradeType}:`, JSON.stringify(output, null, 2));
 
-      if (!isStakeValid) {
-        console.warn(`AI proposed invalid stake ${trade.stake} for ${trade.instrument} (Volatility). Filtering out trade.`);
+    // Validate AI output
+    if (output.shouldTrade) {
+      let validationError: string | null = null;
+      if (!output.derivContractType) validationError = "derivContractType is missing.";
+      else if (!output.duration) validationError = "duration is missing.";
+      else if (!output.durationUnit) validationError = "durationUnit is missing.";
+      else if (!output.stake) validationError = "stake is missing.";
+      else if (output.stake !== input.stakePerTrade) {
+        console.warn(`[AI Flow] AI proposed stake ${output.stake} different from input ${input.stakePerTrade} for ${input.currentInstrument}. Overriding with input stake.`);
+        output.stake = input.stakePerTrade;
       }
-      if (!isDurationValid) {
-        console.warn(`AI proposed invalid duration ${trade.durationSeconds} for ${trade.instrument} (Volatility). Filtering out trade.`);
-      }
-      return isStakeValid && isDurationValid;
-    });
-    
-    let totalProposedStake = output.tradesToExecute.reduce((sum, trade) => sum + (trade.stake || 0), 0);
-    totalProposedStake = parseFloat(totalProposedStake.toFixed(2));
 
-    if (totalProposedStake > input.totalStake) {
-      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${input.totalStake} (Volatility). Trades may be capped or rejected by execution logic.`);
-    }
-    // Ensure the returned type matches the specific VolatilityTradingStrategyOutput from @/types
-    return {
-      ...output,
-      tradesToExecute: output.tradesToExecute.map(trade => ({
-        ...trade,
-        instrument: trade.instrument as VolatilityInstrumentType, // Cast instrument back to precise type
-      })),
-            };
+      // Barrier validation based on userSelectedTradeType
+      if (input.userSelectedTradeType === 'DigitsOverUnder') {
+        if (output.barrier === undefined || output.barrier === null || String(output.barrier).trim() === '') {
+            validationError = `Barrier (predicted digit) is mandatory for DigitsOverUnder but was not provided by AI.`;
+        } else {
+            const barrierString = String(output.barrier).trim();
+            // Check if it's a single digit string using regex
+            if (!/^\d$/.test(barrierString)) {
+                validationError = `Invalid barrier '${output.barrier}' for DigitsOverUnder. Must be a single digit string (0-9).`;
+            } else {
+                // Optional: further check if truly needed after regex, but safe
+                const barrierNum = parseInt(barrierString);
+                if (barrierNum < 0 || barrierNum > 9) {
+                    validationError = `Invalid barrier value '${output.barrier}' for DigitsOverUnder. Must be between 0-9.`;
+                }
+            }
         }
+      } else if (input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch') {
+        // For HigherLower & TouchNoTouch, AI is now instructed to OMIT the barrier.
+        // If AI provides one, we can warn and remove it, ensuring it doesn't cause issues downstream.
+        if (output.barrier !== undefined && output.barrier !== null) {
+          console.warn(`[AIFlow/${input.currentInstrument}] AI provided an unexpected barrier ('${output.barrier}') for ${input.userSelectedTradeType}. This will be ignored as it's set programmatically by the server action.`);
+          delete output.barrier; // Remove it to adhere to the new contract (AI doesn't set this barrier type)
+        }
+      }
+      // No barrier validation needed for RiseFall or DigitsEvenOdd from AI output.
+
+      if (output.derivContractType?.startsWith("DIGIT") && output.durationUnit !== 't') {
+        validationError = `Duration unit must be 't' (ticks) for Digit contracts. Got '${output.durationUnit}'.`;
+      }
+
+      if (validationError) {
+        console.error(`[AIFlow/${input.currentInstrument}] AI recommended trade but failed validation for type ${input.userSelectedTradeType}: ${validationError}. Output:`, JSON.stringify(output, null, 2));
+        return {
+            instrument: input.currentInstrument as VolatilityInstrumentType,
+            shouldTrade: false,
+            reasoning: `AI proposed an invalid trade: ${validationError}`,
+        };
+      }
+      console.log(`[AIFlow/${input.currentInstrument}] Validated AI Trade Proposal for type ${input.userSelectedTradeType}:`, JSON.stringify(output, null, 2));
+    } else {
+      console.log(`[AIFlow/${input.currentInstrument}] AI Recommends NO TRADE for type ${input.userSelectedTradeType}. Reasoning: ${output.reasoning}`);
+    }
+    // Ensure output instrument matches input, and cast type
+    output.instrument = input.currentInstrument as VolatilityInstrumentType;
+    return output;
+  }
 );
 
-export const generateVolatilityTradingStrategy = volatilityTradingStrategyFlow;
+export const generateVolatilitySingleTradeDecision = volatilitySingleTradeStrategyFlow;
 
+
+// This is a type alias for external use if needed, actual VolatilityInstrumentType is from @/types
+// Remove export of VolatilityInstrumentTypeAlias if it's not strictly needed externally
+// or ensure it's also moved to a non-'use server' file if it were a value.
+// Since it's a type, it's likely fine, but for maximum safety with 'use server' files,
+// only async functions should be exported.
+// For now, let's comment it out as it's not directly causing the "found object" error.
+// export type VolatilityInstrumentTypeAlias = VolatilityInstrumentType;
