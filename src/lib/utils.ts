@@ -33,7 +33,16 @@ export function getInstrumentDecimalPlaces(instrument: InstrumentType): number {
     case 'Volatility 75 Index':
       return 4; // Example, verify specific index (often has more decimals)
     case 'Volatility 100 Index':
-      return 2; // Example, verify specific index
+    case 'R_100':
+      return 2;
+    case 'R_10':
+      return 3;
+    case 'R_25':
+      return 3;
+    case 'R_50':
+      return 2;
+    case 'R_75':
+      return 4;
     case 'Boom 500 Index':
     case 'Boom 600 Index':
     case 'Boom 900 Index':

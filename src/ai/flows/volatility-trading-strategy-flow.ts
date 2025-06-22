@@ -299,11 +299,169 @@ const volatilitySingleTradeStrategyFlow = ai.defineFlow(
 
 export const generateVolatilitySingleTradeDecision = volatilitySingleTradeStrategyFlow;
 
+// Schema for the output of the session strategy
+const VolatilitySessionStrategyOutputSchema = z.object({
+  tradesToExecute: z.array(VolatilitySingleTradeProposalSchema).describe("List of trade proposals for the session."),
+  overallReasoning: z.string().describe("Overall reasoning for the set of trades proposed for the session."),
+  // Potential future additions: total stake allocated, number of trades, etc.
+});
+export type VolatilitySessionStrategyOutput = z.infer<typeof VolatilitySessionStrategyOutputSchema>;
 
-// This is a type alias for external use if needed, actual VolatilityInstrumentType is from @/types
-// Remove export of VolatilityInstrumentTypeAlias if it's not strictly needed externally
-// or ensure it's also moved to a non-'use server' file if it were a value.
-// Since it's a type, it's likely fine, but for maximum safety with 'use server' files,
-// only async functions should be exported.
-// For now, let's comment it out as it's not directly causing the "found object" error.
-// export type VolatilityInstrumentTypeAlias = VolatilityInstrumentType;
+
+// New Flow: generateVolatilitySessionStrategy
+// This flow orchestrates decisions for multiple instruments based on a total session stake.
+export const generateVolatilitySessionStrategy = ai.defineFlow(
+  {
+    name: 'generateVolatilitySessionStrategy',
+    inputSchema: VolatilitySessionStrategyInputSchema,
+    outputSchema: VolatilitySessionStrategyOutputSchema,
+  },
+  async (input: VolatilitySessionStrategyInput): Promise<VolatilitySessionStrategyOutput> => {
+    console.log(`[AI Session Flow] Received input. User Trade Type: ${input.userSelectedTradeType}, Total Stake: ${input.totalSessionStake}, Instruments: ${input.availableInstruments.join(', ')}`);
+    const tradesToExecute: VolatilitySingleTradeProposal[] = [];
+    let totalStakeAllocated = 0;
+    const maxTradesPerSession = 5; // Example: Limit the number of trades AI can propose in one session
+    let tradesProposedCount = 0;
+
+    // Simple stake apportionment: divide total stake by number of instruments or a max number of trades
+    // This can be made more sophisticated later (e.g., based on AI confidence per instrument)
+    const potentialTradesToConsider = Math.min(input.availableInstruments.length, maxTradesPerSession);
+    const baseStakePerTrade = potentialTradesToConsider > 0 ? parseFloat((input.totalSessionStake / potentialTradesToConsider).toFixed(2)) : 0;
+
+    if (baseStakePerTrade < 0.35 && potentialTradesToConsider > 0) {
+        console.warn(`[AI Session Flow] Base stake per trade ($${baseStakePerTrade}) is below Deriv minimum of $0.35. This might lead to issues if AI proposes trades with this stake.`);
+        // Depending on strictness, could return no trades or let AI try with this (Deriv API will reject)
+    }
+
+    let overallReasoning = `AI session for ${input.userSelectedTradeType} with total stake $${input.totalSessionStake}. `;
+
+    for (const instrument of input.availableInstruments) {
+      if (tradesProposedCount >= maxTradesPerSession) {
+        overallReasoning += `Max trades limit (${maxTradesPerSession}) reached. No more instruments analyzed. `;
+        break;
+      }
+
+      const singleInstrumentTicks = input.instrumentTicks[instrument] || [];
+      const singleInstrumentIndicators = input.instrumentIndicators?.[instrument];
+
+      if (singleInstrumentTicks.length === 0) {
+        console.log(`[AI Session Flow] Skipping ${instrument} due to no tick data.`);
+        overallReasoning += `Skipped ${instrument} (no data). `;
+        continue;
+      }
+
+      const singleTradeInput: VolatilitySingleTradeStrategyInput = {
+        currentInstrument: instrument,
+        userSelectedTradeType: input.userSelectedTradeType,
+        stakePerTrade: baseStakePerTrade, // Provide the calculated stake for this instrument
+        instrumentTicks: singleInstrumentTicks,
+        instrumentIndicators: singleInstrumentIndicators,
+      };
+
+      console.log(`[AI Session Flow] Calling single trade decision for ${instrument}`);
+      const decision = await generateVolatilitySingleTradeDecision(singleTradeInput);
+
+      if (decision.shouldTrade && decision.stake && decision.stake > 0) {
+        if (totalStakeAllocated + decision.stake <= input.totalSessionStake) {
+          tradesToExecute.push(decision);
+          totalStakeAllocated += decision.stake;
+          tradesProposedCount++;
+          overallReasoning += `For ${instrument}: ${decision.reasoning}. `;
+          console.log(`[AI Session Flow] Trade proposed for ${instrument}. Stake: ${decision.stake}. Total allocated: ${totalStakeAllocated}`);
+        } else {
+          overallReasoning += `Skipped proposed trade for ${instrument} (stake ${decision.stake}) as it would exceed total session stake. `;
+          console.log(`[AI Session Flow] Skipping trade for ${instrument} (stake ${decision.stake}) - exceeds total session stake.`);
+        }
+      } else {
+        overallReasoning += `For ${instrument}: No trade recommended (${decision.reasoning}). `;
+         console.log(`[AI Session Flow] No trade recommended for ${instrument}.`);
+      }
+    }
+
+    if (tradesToExecute.length === 0) {
+      overallReasoning += 'No suitable trading opportunities found across the analyzed instruments for the specified criteria.';
+    } else {
+      overallReasoning += `Total stake allocated: $${totalStakeAllocated.toFixed(2)} for ${tradesToExecute.length} trades.`;
+    }
+
+    console.log(`[AI Session Flow] Completed. Proposed ${tradesToExecute.length} trades. Final Reasoning: ${overallReasoning}`);
+    return {
+      tradesToExecute,
+      overallReasoning,
+    };
+  }
+);
+
+// OLDER FLOW - Kept for compatibility if `volatility-trading/page.tsx` still uses it directly for simulation without the new loop.
+// Ensure its schemas are also defined/exported or handle its removal if fully deprecated.
+// For now, assuming VolatilityTradingStrategyInput and VolatilityTradingStrategyOutput are defined elsewhere or were part of a previous structure.
+// If these are missing, they would also cause ReferenceErrors.
+// Based on current file, they ARE missing. Let's define them.
+
+export const VolatilityTradingStrategyInputSchema = z.object({
+  totalStake: z.number().describe("Total stake amount for the trading strategy."),
+  instruments: z.array(VolatilityInstrumentTypeSchema).describe("List of instruments to consider."),
+  tradingMode: z.enum(['conservative', 'balanced', 'aggressive']).describe("User's preferred trading mode."),
+  aiStrategyId: z.string().optional().describe("Identifier for a specific AI strategy variant."),
+  instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)).describe("Record mapping instrument to its price ticks."),
+  instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema.optional()).optional().describe("Record mapping instrument to its indicators."),
+});
+export type VolatilityTradingStrategyInput = z.infer<typeof VolatilityTradingStrategyInputSchema>;
+
+export const VolatilityTradeProposalSchema = z.object({
+  instrument: VolatilityInstrumentTypeSchema,
+  action: z.enum(['CALL', 'PUT']).describe("Direction of the proposed trade."),
+  stake: z.number().describe("Stake for this specific trade."),
+  durationSeconds: z.number().int().min(15).describe("Duration of the trade in seconds."),
+  reasoning: z.string().describe("AI's reasoning for this trade proposal."),
+  // barrier and other contract-specific params could be added if AI generates more complex proposals
+});
+export type VolatilityTradeProposal = z.infer<typeof VolatilityTradeProposalSchema>;
+
+
+export const VolatilityTradingStrategyOutputSchema = z.object({
+  tradesToExecute: z.array(VolatilityTradeProposalSchema).describe("Array of trades the AI has decided to execute."),
+  overallReasoning: z.string().describe("Overall reasoning for the strategy and proposed trades."),
+});
+export type VolatilityTradingStrategyOutput = z.infer<typeof VolatilityTradingStrategyOutputSchema>;
+
+
+export const generateVolatilityTradingStrategy = ai.defineFlow(
+  {
+    name: 'generateVolatilityTradingStrategy', // This is the OLD flow name
+    inputSchema: VolatilityTradingStrategyInputSchema, // Using the newly defined schema
+    outputSchema: VolatilityTradingStrategyOutputSchema, // Using the newly defined schema
+  },
+  async (input: VolatilityTradingStrategyInput): Promise<VolatilityTradingStrategyOutput> => {
+    // This is a simplified mock implementation for the old flow.
+    // Replace with actual logic if this flow is still actively used and needs to be intelligent.
+    console.warn("[AI Flow - generateVolatilityTradingStrategy] This is an older/mocked flow. For new multi-instrument session strategies, use generateVolatilitySessionStrategy.");
+    const tradesToExecute: VolatilityTradeProposal[] = [];
+    let allocatedStake = 0;
+
+    if (input.instruments.length > 0 && input.totalStake > 0) {
+        const instrumentToTrade = input.instruments[0]; // Just pick the first one for this mock
+        const stakeForThisTrade = Math.min(input.totalStake, 10); // Cap stake for mock
+
+        if (input.instrumentTicks[instrumentToTrade] && input.instrumentTicks[instrumentToTrade].length > 1) {
+            const ticks = input.instrumentTicks[instrumentToTrade];
+            const lastPrice = ticks[ticks.length -1].price;
+            const prevPrice = ticks[ticks.length -2].price;
+
+            tradesToExecute.push({
+                instrument: instrumentToTrade,
+                action: lastPrice > prevPrice ? 'CALL' : 'PUT', // Simple mock logic
+                stake: stakeForThisTrade,
+                durationSeconds: 60,
+                reasoning: `Mock decision for ${instrumentToTrade} based on simple price change. Last: ${lastPrice}, Prev: ${prevPrice}. Trading Mode: ${input.tradingMode}`,
+            });
+            allocatedStake += stakeForThisTrade;
+        }
+    }
+
+    return {
+      tradesToExecute,
+      overallReasoning: `Mock strategy for ${input.instruments.join(', ')}. Total stake attempted: $${allocatedStake.toFixed(2)}. Trading Mode: ${input.tradingMode}. AI Strategy ID: ${input.aiStrategyId || 'default'}.`,
+    };
+  }
+);
