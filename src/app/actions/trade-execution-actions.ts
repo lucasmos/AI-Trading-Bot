@@ -144,9 +144,9 @@ import {
     // UserTradeType will be imported from the new shared file
 } from '@/ai/flows/volatility-trading-strategy-flow';
 import { UserTradeType } from '@/types/ai-shared-types'; // Import from shared location
-import { getCandles } from '@/services/deriv'; // Assuming getCandles is in deriv.ts
-import { calculateIndicators } from '@/lib/technical-analysis'; // Assuming this function exists
-import { VolatilityInstrumentType, PriceTick } from '@/types'; // Assuming these types exist
+import { getCandles } from '@/services/deriv';
+import { calculateAllIndicators } from '@/lib/technical-analysis'; // Corrected import name
+import { VolatilityInstrumentType, PriceTick, CandleData } from '@/types'; // Added CandleData
 
 export interface VolatilityTradeExecutionResult {
   success: boolean;
@@ -206,36 +206,42 @@ export async function executeVolatilityAiTradeLoop(
                                                                                     // For simplicity, let's use 1-minute candles (granularity 60) for non-digits
                                                                                     // and try to simulate ticks with 1s candles for digits.
 
-      let priceTicks: PriceTick[];
+      let rawCandlesData: CandleData[];
       if (userSelectedTradeType.startsWith("Digits")) {
-          // Fetch more granular data for Digits, e.g., last 25 ticks (if API supports direct tick fetching for history)
-          // Or use 1-second candles as a proxy if ticks_history style='ticks' is not straightforward here.
-          // Assuming getCandles with granularity 0 or 1 fetches tick-like data. Deriv API uses 'ticks' style, not granularity 0 for ticks.
-          // This is a simplification. Real tick history might be needed.
-          // For now, using 1s candles as proxy for recent price movements.
-          const rawCandles = await getCandles(instrument as any, 25, 1, userDerivApiToken); // last 25 seconds
-          priceTicks = rawCandles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+          // For Digits, fetch more recent/granular data. Using 1s candles as a proxy.
+          // Fetching 25 1-second candles.
+          rawCandlesData = await getCandles(instrument as any, 25, 1, userDerivApiToken);
       } else {
-          const rawCandles = await getCandles(instrument as any, 60, 60, userDerivApiToken); // last 60 1-min candles
-          priceTicks = rawCandles.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+          // For other types, fetch 1-minute candles. Fetching 60 periods.
+          rawCandlesData = await getCandles(instrument as any, 60, 60, userDerivApiToken);
       }
 
-      if (!priceTicks || priceTicks.length < 5) { // Need some data
-          console.warn(`[executeVolatilityAiTradeLoop] Insufficient price data for ${instrument} (needed 5, got ${priceTicks?.length}). Skipping.`);
-          results.push({ success: false, instrument, error: "Insufficient price data." , aiReasoning: "Skipped due to insufficient price data."});
+      if (!rawCandlesData || rawCandlesData.length < 5) { // Need some data for indicators
+          const errorMsg = `Insufficient candle data for ${instrument} (needed 5, got ${rawCandlesData?.length}). Cannot calculate indicators or proceed.`;
+          console.warn(`[TradeAction/Loop] ${errorMsg}`);
+          results.push({ success: false, instrument, error: "Insufficient candle data.", aiReasoning: "Skipped due to insufficient candle data."});
           continue;
       }
 
-      const indicators = calculateIndicators(priceTicks, ['rsi', 'macd', 'bollingerBands', 'ema', 'atr']);
+      // Pass the full CandleData array to calculateAllIndicators
+      const indicators = calculateAllIndicators(rawCandlesData);
+
+      // Prepare PriceTick[] for AI (AI prompt expects this format for recent prices)
+      // Using the same rawCandlesData for this, converting to PriceTick
+      const priceTicksForAI: PriceTick[] = rawCandlesData.map(c => ({
+          epoch: c.epoch,
+          price: c.close, // Using close price for the tick representation
+          time: c.time
+      }));
 
       const aiInput: VolatilitySingleTradeStrategyInput = {
-        currentInstrument: instrument, // User-friendly name for AI context
+        currentInstrument: instrument,
         userSelectedTradeType: userSelectedTradeType,
         stakePerTrade: STAKE_PER_TRADE,
-        instrumentTicks: priceTicks.slice(-50), // Send last 50 points to AI
-        instrumentIndicators: indicators,
+        instrumentTicks: priceTicksForAI.slice(-50), // Send last 50 data points (candles/ticks) to AI
+        instrumentIndicators: indicators, // Pass the calculated indicators
       };
-      console.log(`[TradeAction/Loop] Calling AI for ${instrument} (Deriv: ${currentApiSymbol}), User Trade Type: ${userSelectedTradeType}. AI Input:`, JSON.stringify(aiInput, (key, value) => key === 'instrumentTicks' ? `${value.length} ticks` : value , 2));
+      console.log(`[TradeAction/Loop] Calling AI for ${instrument} (Deriv: ${currentApiSymbol}), User Trade Type: ${userSelectedTradeType}. AI Input (Indicators):`, JSON.stringify(indicators, null, 2), `AI Input (Ticks): ${priceTicksForAI.length} points provided, sending last 50.`);
       const aiProposal = await generateVolatilitySingleTradeDecision(aiInput);
       aiReasoning = aiProposal.reasoning;
       console.log(`[TradeAction/Loop] AI Proposal received for ${instrument}: `, JSON.stringify(aiProposal, null, 2));
