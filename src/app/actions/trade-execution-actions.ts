@@ -139,14 +139,14 @@ export async function executeAiTradingStrategy(
 
 
 import {
-    generateVolatilitySingleTradeDecision,
-    VolatilitySingleTradeStrategyInput
+    generateVolatilitySessionStrategy, // Corrected flow name
+    VolatilitySessionStrategyInput // Use the new input schema type for session strategy
     // UserTradeType will be imported from the new shared file
 } from '@/ai/flows/volatility-trading-strategy-flow';
 import { UserTradeType } from '@/types/ai-shared-types'; // Import from shared location
-import { getCandles, getTicks } from '@/services/deriv'; // Added getTicks
+import { getCandles, getTicks } from '@/services/deriv';
 import { calculateAllIndicators } from '@/lib/technical-analysis'; // Corrected import name
-import { VolatilityInstrumentType, PriceTick, CandleData } from '@/types'; // Added CandleData
+import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData } from '@/types'; // Added CandleData, InstrumentIndicatorData
 
 export interface VolatilityTradeExecutionResult {
   success: boolean;

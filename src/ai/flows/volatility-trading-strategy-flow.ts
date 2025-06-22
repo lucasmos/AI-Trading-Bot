@@ -33,18 +33,21 @@ const InstrumentIndicatorDataSchema = z.object({
 // Import UserTradeTypeSchema and UserTradeType from the shared file
 import { UserTradeTypeSchema, UserTradeType } from '@/types/ai-shared-types';
 
-const VolatilitySingleTradeStrategyInputSchema = z.object({
-  currentInstrument: VolatilityInstrumentTypeSchema.describe("The specific volatility instrument to analyze for a trade."),
-  userSelectedTradeType: UserTradeTypeSchema.describe("The type of trade selected by the user."),
-  stakePerTrade: z.number().min(0.01).describe("The allocated stake for this potential trade."),
-  instrumentTicks: z.array(PriceTickSchema).describe("Recent price ticks for the current instrument."),
-  instrumentIndicators: InstrumentIndicatorDataSchema.optional().describe('Calculated technical indicators for the current instrument.'), // This is the raw data
+// Renaming: Input for the new flow that considers multiple instruments and a total stake.
+const VolatilitySessionStrategyInputSchema = z.object({
+  availableInstruments: z.array(VolatilityInstrumentTypeSchema).describe("List of volatility instruments to consider for trading, e.g., ['R_10', 'R_25', 'R_50', 'R_75', 'R_100']."),
+  userSelectedTradeType: UserTradeTypeSchema.describe("The type of trade selected by the user for all trades in this session."),
+  totalSessionStake: z.number().min(0.35).describe("User's total stake to be apportioned across chosen trades for this session. Minimum $0.35 total."),
+  // instrumentTicks and instrumentIndicators will now be records, mapping instrument symbol to its data.
+  instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)).describe("Record mapping each available instrument symbol to its recent price ticks."),
+  instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema.optional()).optional().describe('Record mapping each available instrument to its calculated technical indicators.'),
 });
-export type VolatilitySingleTradeStrategyInput = z.infer<typeof VolatilitySingleTradeStrategyInputSchema>;
+export type VolatilitySessionStrategyInput = z.infer<typeof VolatilitySessionStrategyInputSchema>;
 
-// New schema for prompt input with pre-formatted indicators
+// Schema for pre-formatted indicators, remains the same
+// Schema for pre-formatted indicators, remains the same
 const PromptFormattedInstrumentIndicatorSchema = z.object({
-  rsi: z.string().optional(), // e.g., "70.12" or "N/A"
+  rsi: z.string().optional(),
   macdLine: z.string().optional(),
   macdSignal: z.string().optional(),
   macdHist: z.string().optional(),
