@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'; // Added useMemo
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart'; 
-import type { VolatilityInstrumentType, TradingMode, PaperTradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index';
+import type { VolatilityInstrumentType, TradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index'; // Removed PaperTradingMode
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,21 +22,32 @@ import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { useRouter } from 'next/navigation';
+import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-balance-listener'; // Added ListenerStatus
+
+const DEFAULT_PAPER_BALANCE = 10000; // Fallback if context value is null for demo
+const DEFAULT_LIVE_BALANCE = 0;    // Fallback if context value is null for real
+
 
 export default function VolatilityTradingPage() {
   const router = useRouter();
   const { 
     authStatus, 
     userInfo,
-    paperBalance, 
-    setPaperBalance, 
-    liveBalance, 
-    setLiveBalance 
+    // paperBalance, // Removed
+    // setPaperBalance, // Removed
+    // liveBalance, // Removed
+    // setLiveBalance, // Removed
+    selectedDerivAccountType,
+    derivDemoBalance,
+    derivLiveBalance, // This is the 'real' balance from context
+    derivDemoAccountId,
+    derivRealAccountId,
+    updateSelectedDerivAccountType,
   } = useAuth();
   
   const [currentVolatilityInstrument, setCurrentVolatilityInstrument] = useState<VolatilityInstrumentType>(VOLATILITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
-  const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); 
+  // const [paperTradingMode, setPaperTradingMode] = useState<PaperTradingMode>('paper'); // Removed, will use selectedDerivAccountType
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
   
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(100);
@@ -55,14 +66,60 @@ export default function VolatilityTradingPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
-  const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
-  const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
-
   // const router = useRouter(); // already added above
   const { toast } = useToast();
 
+  // States for DerivBalanceListener
+  const [freshDemoBalance, setFreshDemoBalance] = useState<number | null>(null);
+  const [freshRealBalance, setFreshRealBalance] = useState<number | null>(null);
+  const [isLoadingDemoBalance, setIsLoadingDemoBalance] = useState<boolean>(false);
+  const [isLoadingRealBalance, setIsLoadingRealBalance] = useState<boolean>(false);
+  const [demoSyncStatus, setDemoSyncStatus] = useState<ListenerStatus>('idle');
+  const [realSyncStatus, setRealSyncStatus] = useState<ListenerStatus>('idle');
+  const demoBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
+  const realBalanceListenerRef = useRef<DerivBalanceListener | null>(null);
+
+
+  // Adjusted currentBalance and displayAccountId logic
+  const currentBalance = useMemo(() => {
+    if (authStatus === 'pending' || !userInfo) return null;
+
+    if (authStatus === 'authenticated') { // Removed userInfo.derivAccessToken check, as selection implies link
+      if (selectedDerivAccountType === 'demo') {
+        if (isLoadingDemoBalance && freshDemoBalance === null) return null;
+        if (freshDemoBalance !== null) return freshDemoBalance;
+        return derivDemoBalance ?? 0; // Default to 0 if derivDemoBalance is null
+      } else if (selectedDerivAccountType === 'real') {
+        if (isLoadingRealBalance && freshRealBalance === null) return null;
+        if (freshRealBalance !== null) return freshRealBalance;
+        return derivLiveBalance ?? 0; // Default to 0 if derivLiveBalance is null
+      }
+    }
+    // Fallback for guest or non-Deriv user (though UI might prevent this state for this page)
+    // Or if selectedDerivAccountType is somehow null despite being authenticated.
+    // Provide a sensible default or null to show loading/unavailable in BalanceDisplay.
+    return selectedDerivAccountType === 'demo' ? (derivDemoBalance ?? 0) : (derivLiveBalance ?? 0);
+  }, [
+    authStatus, userInfo, selectedDerivAccountType,
+    derivDemoBalance, derivLiveBalance,
+    freshDemoBalance, freshRealBalance,
+    isLoadingDemoBalance, isLoadingRealBalance
+  ]);
+
+  const currentDisplayAccountId = useMemo(() => {
+    if (!userInfo) return null;
+    return selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId;
+  }, [userInfo, selectedDerivAccountType, derivDemoAccountId, derivRealAccountId]);
+
+  const currentSyncStatus = useMemo(() => {
+    return selectedDerivAccountType === 'demo' ? demoSyncStatus : realSyncStatus;
+  }, [selectedDerivAccountType, demoSyncStatus, realSyncStatus]);
+
+
   useEffect(() => {
-    const profitsKey = `volatilityProfitsClaimable_${paperTradingMode}`;
+    // Ensure localStorage keys are based on selectedDerivAccountType for consistency
+    const accountTypeKey = selectedDerivAccountType === 'real' ? 'live' : 'paper'; // 'paper' for demo
+    const profitsKey = `volatilityProfitsClaimable_${accountTypeKey}`;
     const storedProfits = localStorage.getItem(profitsKey);
     if (storedProfits) {
       try {
@@ -74,18 +131,86 @@ export default function VolatilityTradingPage() {
     } else {
       setProfitsClaimable({ totalNetProfit: 0, tradeCount: 0, winningTrades: 0, losingTrades: 0 });
     }
-  }, [paperTradingMode]);
+  }, [selectedDerivAccountType]); // Depends on selectedDerivAccountType now
 
   useEffect(() => {
-    const profitsKey = `volatilityProfitsClaimable_${paperTradingMode}`;
+    const accountTypeKey = selectedDerivAccountType === 'real' ? 'live' : 'paper';
+    const profitsKey = `volatilityProfitsClaimable_${accountTypeKey}`;
     localStorage.setItem(profitsKey, JSON.stringify(profitsClaimable));
-  }, [profitsClaimable, paperTradingMode]);
+  }, [profitsClaimable, selectedDerivAccountType]); // Depends on selectedDerivAccountType now
 
   const handleInstrumentChange = (instrument: string) => {
     if (VOLATILITY_INSTRUMENTS.includes(instrument as VolatilityInstrumentType)) {
       setCurrentVolatilityInstrument(instrument as VolatilityInstrumentType);
     }
   };
+
+  // Listener setup effects (similar to DashboardPage)
+  useEffect(() => {
+    return () => { // Top-level cleanup
+      if (demoBalanceListenerRef.current) demoBalanceListenerRef.current.close();
+      if (realBalanceListenerRef.current) realBalanceListenerRef.current.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const demoToken = userInfo?.derivDemoApiToken;
+    if (selectedDerivAccountType === 'demo' && demoToken && derivDemoAccountId) {
+      if (demoBalanceListenerRef.current) demoBalanceListenerRef.current.close();
+      setFreshDemoBalance(prev => prev ?? derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+      setIsLoadingDemoBalance(true);
+      demoBalanceListenerRef.current = new DerivBalanceListener(
+        demoToken, derivDemoAccountId,
+        (balanceData) => setFreshDemoBalance(balanceData.balance),
+        (error) => console.error('[VolatilityPage] Demo Balance Listener Error:', error),
+        (status, message) => {
+          setDemoSyncStatus(status);
+          if (message) console.log(`[VolatilityPage] Demo Listener Status: ${status} - ${message}`);
+          if (status === 'error' && message) toast({ title: 'Demo Balance Sync Issue', description: message, variant: 'destructive'});
+          setIsLoadingDemoBalance(!(status === 'connected' || status === 'error' || status === 'disconnected' || status === 'idle'));
+        }
+      );
+    } else {
+       if (demoBalanceListenerRef.current) {
+          demoBalanceListenerRef.current.close();
+          demoBalanceListenerRef.current = null;
+       }
+       setFreshDemoBalance(derivDemoBalance ?? DEFAULT_PAPER_BALANCE);
+       setIsLoadingDemoBalance(false);
+       setDemoSyncStatus('idle');
+    }
+    return () => { if (demoBalanceListenerRef.current) demoBalanceListenerRef.current.close(); };
+  }, [userInfo?.derivDemoApiToken, derivDemoAccountId, toast, derivDemoBalance, selectedDerivAccountType]);
+
+  useEffect(() => {
+    const realToken = userInfo?.derivRealApiToken;
+    if (selectedDerivAccountType === 'real' && realToken && derivRealAccountId) {
+      if (realBalanceListenerRef.current) realBalanceListenerRef.current.close();
+      setFreshRealBalance(prev => prev ?? derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+      setIsLoadingRealBalance(true);
+      realBalanceListenerRef.current = new DerivBalanceListener(
+        realToken, derivRealAccountId,
+        (balanceData) => setFreshRealBalance(balanceData.balance),
+        (error) => console.error('[VolatilityPage] Real Balance Listener Error:', error),
+        (status, message) => {
+          setRealSyncStatus(status);
+          if (message) console.log(`[VolatilityPage] Real Listener Status: ${status} - ${message}`);
+          if (status === 'error' && message) toast({ title: 'Real Balance Sync Issue', description: message, variant: 'destructive'});
+          setIsLoadingRealBalance(!(status === 'connected' || status === 'error' || status === 'disconnected' || status === 'idle'));
+        }
+      );
+    } else {
+      if (realBalanceListenerRef.current) {
+          realBalanceListenerRef.current.close();
+          realBalanceListenerRef.current = null;
+      }
+      setFreshRealBalance(derivLiveBalance ?? DEFAULT_LIVE_BALANCE);
+      setIsLoadingRealBalance(false);
+      setRealSyncStatus('idle');
+    }
+    return () => { if (realBalanceListenerRef.current) realBalanceListenerRef.current.close(); };
+  }, [userInfo?.derivRealApiToken, derivRealAccountId, toast, derivLiveBalance, selectedDerivAccountType]);
+
 
   const handleAutoStakeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(event.target.value);
@@ -95,6 +220,28 @@ export default function VolatilityTradingPage() {
       setAutoTradeTotalStake(0);
     }
   };
+
+  const handleAccountTypeSwitch = async (newTypeFromControl: 'demo' | 'real' | null) => {
+    // Ensure newTypeFromControl is correctly 'demo' or 'real'
+    const newApiType = newTypeFromControl; // Assuming the control passes 'demo' or 'real' directly
+    if (!newApiType || (newApiType !== 'demo' && newApiType !== 'real')) {
+        toast({ title: "Invalid Selection", description: "Please select a valid account type.", variant: "destructive"});
+        return;
+    }
+
+    if (!userInfo?.derivAccessToken && !(userInfo?.derivDemoApiToken && userInfo?.derivRealApiToken)) { // Check if any Deriv connection exists
+        toast({ title: "Deriv Account Not Linked", description: "Please connect your Deriv account via Profile page to switch modes.", variant: "destructive" });
+        return;
+    }
+    if (newApiType === selectedDerivAccountType) return; // Already selected
+    try {
+        await updateSelectedDerivAccountType(newApiType); // This is 'demo' or 'real'
+        toast({ title: "Account Switched", description: `Switched to ${newApiType} account. Balances reflected.`, variant: "default" });
+    } catch (error) {
+        toast({ title: "Switch Failed", description: `Failed to switch to ${newApiType} account. Error: ${(error as Error).message}`, variant: "destructive" });
+    }
+  };
+
 
   const handleStartAiAutoTrade = useCallback(async () => {
     if (authStatus === 'unauthenticated') {
@@ -107,18 +254,20 @@ export default function VolatilityTradingPage() {
       return;
     }
 
-    // The new check `if (authStatus === 'unauthenticated')` is more comprehensive.
-    // The old `if (authStatus !== 'authenticated' && paperTradingMode === 'live')` is now covered.
-    // if (authStatus !== 'authenticated' && paperTradingMode === 'live') {
-    //   toast({ title: "Login Required", description: "AI Auto-Trading on Real Account requires login.", variant: "destructive" });
-    //   return;
-    // }
+    if (!selectedDerivAccountType) {
+        toast({ title: "Account Not Selected", description: "Please select a Deriv account type (Demo/Real) first.", variant: "destructive" });
+        return;
+    }
+
     if (autoTradeTotalStake <= 0) {
       toast({ title: "Invalid Stake", description: "Please enter a valid total stake for AI trading.", variant: "destructive" });
       return;
     }
-    if (autoTradeTotalStake > currentBalance) {
-        toast({ title: `Insufficient ${paperTradingMode === 'paper' ? 'Demo' : 'Real'} Balance`, description: `Total stake $${autoTradeTotalStake.toFixed(2)} exceeds available balance of $${currentBalance.toFixed(2)}.`, variant: "destructive" });
+
+    // Ensure currentBalance is not null for the check
+    const balanceToCheck = currentBalance ?? 0; // currentBalance already uses useMemo and defaults
+    if (autoTradeTotalStake > balanceToCheck) {
+        toast({ title: `Insufficient ${selectedDerivAccountType === 'demo' ? 'Demo' : 'Real'} Balance`, description: `Total stake $${autoTradeTotalStake.toFixed(2)} exceeds available balance of $${balanceToCheck.toFixed(2)}.`, variant: "destructive" });
         return;
     }
 
@@ -136,7 +285,7 @@ export default function VolatilityTradingPage() {
     setIsAiLoading(true); 
     setIsAutoTradingActive(true);
     setActiveAutomatedTrades([]); 
-    setProfitsClaimable({ totalNetProfit: 0, tradeCount: 0, winningTrades: 0, losingTrades: 0 });
+    // setProfitsClaimable({ totalNetProfit: 0, tradeCount: 0, winningTrades: 0, losingTrades: 0 }); // This is handled by useEffect on account change now
 
 
     try {
@@ -201,7 +350,7 @@ export default function VolatilityTradingPage() {
         return;
       }
       
-      toast({ title: "AI Auto-Trade Strategy Initiated (Volatility)", description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${paperTradingMode} account on volatility indices. ${strategyResult.overallReasoning}`, duration: 7000});
+      toast({ title: "AI Auto-Trade Strategy Initiated (Volatility)", description: `AI proposes ${strategyResult.tradesToExecute.length} trade(s) for ${selectedDerivAccountType} account on volatility indices. ${strategyResult.overallReasoning}`, duration: 7000});
       setConsecutiveAiCallCount(prev => prev + 1); // Increment AI call count
       setLastAiCallTimestamp(Date.now()); // Update last AI call timestamp
 
@@ -255,12 +404,20 @@ export default function VolatilityTradingPage() {
     } finally {
       setIsAiLoading(false); 
     }
-  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId]);
+  }, [
+    autoTradeTotalStake, tradingMode, toast, selectedDerivAccountType, // Replaced paperTradingMode
+    currentBalance, authStatus, /*setCurrentBalance,*/ // setCurrentBalance removed as it's not directly settable this way
+    setProfitsClaimable, userInfo, selectedAiStrategyId, router, // Added router
+    consecutiveAiCallCount, lastAiCallTimestamp // Added cooldown states
+]);
 
   const handleStopAiAutoTrade = () => {
     setIsAutoTradingActive(false); 
     tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
     tradeIntervals.current.clear();
+
+    // No direct balance update here; rely on listeners or next fetch for AuthContext update.
+    // const setCurrentBalance = selectedDerivAccountType === 'demo' ? setFreshDemoBalance : setFreshRealBalance; // This is not how it works.
 
     setActiveAutomatedTrades(prevTrades => 
       prevTrades.map(trade => {
@@ -286,7 +443,7 @@ export default function VolatilityTradingPage() {
                 metadata: {
                   mode: tradingMode,
                   duration: `${trade.durationSeconds}s`,
-                  accountType: paperTradingMode,
+                  accountType: selectedDerivAccountType, // Use selectedDerivAccountType
                   automated: true,
                   manualStop: true,
                   tradeCategory: 'volatility',
@@ -328,21 +485,19 @@ export default function VolatilityTradingPage() {
             });
           }
           
-          setTimeout(() => {
-            setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-            setProfitsClaimable(prevProfits => ({
-              totalNetProfit: prevProfits.totalNetProfit + pnl,
-              tradeCount: prevProfits.tradeCount + 1,
-              winningTrades: prevProfits.winningTrades, 
-              losingTrades: prevProfits.losingTrades + 1, 
-            }));
-          }, 0);
+          // Update profits claimable, balance will be updated by listener or next context sync
+          setProfitsClaimable(prevProfits => ({
+            totalNetProfit: prevProfits.totalNetProfit + pnl,
+            tradeCount: prevProfits.tradeCount + 1,
+            winningTrades: prevProfits.winningTrades,
+            losingTrades: prevProfits.losingTrades + 1,
+          }));
           return { ...trade, status: 'lost_duration', pnl, reasoning: (trade.reasoning || "") + " Manually stopped." };
         }
         return trade;
       })
     );
-    toast({ title: "AI Volatility Trading Stopped", description: `Automated trading session for ${paperTradingMode} account has been stopped.`});
+    toast({ title: "AI Volatility Trading Stopped", description: `Automated trading session for ${selectedDerivAccountType} account has been stopped.`});
   };
   
   useEffect(() => {
@@ -411,7 +566,7 @@ export default function VolatilityTradingPage() {
                       metadata: {
                         mode: tradingMode,
                         duration: `${currentTrade.durationSeconds}s`,
-                        accountType: paperTradingMode,
+                      accountType: selectedDerivAccountType, // Use selectedDerivAccountType
                         automated: true,
                         tradeCategory: 'volatility',
                         reasoning: currentTrade.reasoning
@@ -452,21 +607,19 @@ export default function VolatilityTradingPage() {
                   });
                 }
                 
-                setTimeout(() => { 
-                  setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
-                  setProfitsClaimable(prevProfits => ({
-                    totalNetProfit: prevProfits.totalNetProfit + pnl,
-                    tradeCount: prevProfits.tradeCount + 1,
-                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-                    losingTrades: (newStatus === 'lost_duration' || newStatus === 'lost_stoploss') ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
-                  }));
-                  
-                  toast({
-                    title: `Auto-Trade Ended (Volatility - ${paperTradingMode}): ${currentTrade.instrument}`,
-                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
-                    variant: pnl > 0 ? "default" : "destructive"
-                  });
-                }, 0);
+                // Update profits claimable, balance will be updated by listener or next context sync
+                setProfitsClaimable(prevProfits => ({
+                  totalNetProfit: prevProfits.totalNetProfit + pnl,
+                  tradeCount: prevProfits.tradeCount + 1,
+                  winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                  losingTrades: (newStatus === 'lost_duration' || newStatus === 'lost_stoploss') ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+                }));
+
+                toast({
+                  title: `Auto-Trade Ended (Volatility - ${selectedDerivAccountType}): ${currentTrade.instrument}`,
+                  description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
+                  variant: pnl > 0 ? "default" : "destructive"
+                });
               } else {
                 allTradesConcluded = false; 
               }
@@ -476,7 +629,7 @@ export default function VolatilityTradingPage() {
             if (allTradesConcluded && isAutoTradingActive) { 
                  setTimeout(() => { 
                     setIsAutoTradingActive(false);
-                    toast({ title: "AI Volatility Trading Session Complete", description: `All volatility trades for ${paperTradingMode} account concluded.`});
+                    toast({ title: "AI Volatility Trading Session Complete", description: `All volatility trades for ${selectedDerivAccountType} account concluded.`});
                 }, 100); 
             }
             return updatedTrades;
@@ -490,15 +643,16 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
+  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode]); // Added selectedDerivAccountType, tradingMode and removed setCurrentBalance
 
 
   return (
     <div className="container mx-auto py-2 space-y-6">
-      <BalanceDisplay 
-        balance={currentBalance} 
-        selectedAccountType={paperTradingMode as 'demo' | 'real' | null} 
-        displayAccountId={null} 
+      <BalanceDisplay
+        balance={currentBalance ?? DEFAULT_PAPER_BALANCE} // Provide a fallback if currentBalance is null
+        selectedAccountType={selectedDerivAccountType}
+        displayAccountId={currentDisplayAccountId}
+        syncStatus={currentSyncStatus} // Pass the determined sync status
       />
       <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><Activity className="h-8 w-8 text-primary" />AI Volatility Index Trading</h1>
       
@@ -551,14 +705,27 @@ export default function VolatilityTradingPage() {
                 </div>
               </div>
               <div>
-                <Label htmlFor="vol-account-mode">Account Type</Label>
-                <Select value={paperTradingMode} onValueChange={(val) => setPaperTradingMode(val as PaperTradingMode)} disabled={isAutoTradingActive || isAiLoading}>
-                  <SelectTrigger id="vol-account-mode" className="mt-1"><SelectValue /></SelectTrigger>
+                <Label htmlFor="vol-account-mode">Deriv Account Type</Label>
+                <Select
+                  value={selectedDerivAccountType || ''} // Handle null case for initial render if needed
+                  onValueChange={(val) => handleAccountTypeSwitch(val as 'demo' | 'real')}
+                  disabled={isAutoTradingActive || isAiLoading || authStatus !== 'authenticated' || !userInfo}
+                >
+                  <SelectTrigger id="vol-account-mode" className="mt-1">
+                    <SelectValue placeholder="Select Deriv Account" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="paper"><UserCheck className="mr-2 h-4 w-4 inline-block text-blue-500"/>Demo Account</SelectItem>
-                    <SelectItem value="live"><Briefcase className="mr-2 h-4 w-4 inline-block text-green-500"/>Real Account (Simulated)</SelectItem>
+                    <SelectItem value="demo" disabled={!userInfo?.derivDemoAccountId}>
+                      <UserCheck className="mr-2 h-4 w-4 inline-block text-blue-500"/>Demo Account {userInfo?.derivDemoAccountId ? `(${userInfo.derivDemoAccountId.substring(0,3)}...${userInfo.derivDemoAccountId.slice(-3)})` : '(Not Linked)'}
+                    </SelectItem>
+                    <SelectItem value="real" disabled={!userInfo?.derivRealAccountId}>
+                      <Briefcase className="mr-2 h-4 w-4 inline-block text-green-500"/>Real Account {userInfo?.derivRealAccountId ? `(${userInfo.derivRealAccountId.substring(0,3)}...${userInfo.derivRealAccountId.slice(-3)})` : '(Not Linked)'}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                {authStatus === 'authenticated' && !userInfo?.derivDemoAccountId && !userInfo?.derivRealAccountId && (
+                     <p className="text-xs text-muted-foreground mt-1">Link your Deriv accounts in Profile to enable selection.</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="vol-auto-stake">Total Stake for Session ($)</Label>
@@ -615,7 +782,7 @@ export default function VolatilityTradingPage() {
              />
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Active AI Volatility Trades ({paperTradingMode === 'live' ? 'Real - Simulated' : 'Demo'})</CardTitle>
+                <CardTitle>Active AI Volatility Trades ({selectedDerivAccountType === 'real' ? 'Real' : (selectedDerivAccountType === 'demo' ? 'Demo' : 'N/A')})</CardTitle>
                 <CardDescription>Monitoring automated volatility trades. Stop-Loss is 5% of entry.</CardDescription>
               </CardHeader>
               <CardContent>
