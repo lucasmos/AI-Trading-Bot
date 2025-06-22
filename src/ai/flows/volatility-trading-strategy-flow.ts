@@ -103,21 +103,20 @@ Your Task:
 2. If a trade is viable (set 'shouldTrade: true'):
    a. Determine the precise Deriv API contract type ('derivContractType'). Examples:
       - For 'RiseFall': 'CALL' (if you predict price will rise) or 'PUT' (if you predict price will fall).
-      - For 'HigherLower': 'CALL' (if you predict price will be higher than barrier) or 'PUT' (if price lower). Requires a 'barrier' (a specific price value, or a relative offset like "+0.123" or "-0.123").
-      - For 'TouchNoTouch': 'ONETOUCH' (if you predict price will touch barrier) or 'NOTOUCH' (if not). Requires a 'barrier' (a specific price value or relative offset).
-      - For 'DigitsEvenOdd': 'DIGITEVEN' (if you predict last digit is even) or 'DIGITODD' (if odd).
-      - For 'DigitsOverUnder': 'DIGITOVER' (if you predict last digit > barrier) or 'DIGITUNDER' (if last digit < barrier). Requires a 'barrier' (the predicted reference digit, 0-8 for Over, 1-9 for Under).
-   b. Recommend a trade 'duration' (integer) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits, duration is in ticks ('t'), typically 1-10 ticks. For others, usually seconds ('s') or minutes ('m'). Minimum duration is 1 tick or 1 second.
-   c. If the '{{{userSelectedTradeType}}}' requires a barrier (i.e., 'HigherLower', 'TouchNoTouch', 'DigitsOverUnder'), provide the 'barrier' value.
-      - For 'HigherLower'/'TouchNoTouch', 'barrier' is a price string (e.g., "123.45" for absolute, or "+0.123" for relative offset from current spot).
-      - For 'DigitsOverUnder', 'barrier' is a single digit string (e.g., "7"). The prediction is relative to this digit.
-   d. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
-3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'.
+      - For 'RiseFall': 'CALL' (if you predict price will rise) or 'PUT' (if you predict price will fall). No 'barrier' field needed in output for this type.
+      - For 'HigherLower': 'CALL' (if price will be higher than barrier) or 'PUT' (if price lower than barrier). YOU MUST provide a 'barrier' field in the output. The barrier is a price string (e.g., "123.45" for absolute, or a relative offset like "+0.123" or "-0.123" from current spot).
+      - For 'TouchNoTouch': 'ONETOUCH' (if price will touch barrier) or 'NOTOUCH' (if not). YOU MUST provide a 'barrier' field in the output. The barrier is a price string (e.g., "123.45" for absolute, or a relative offset like "+0.123" or "-0.123" from current spot).
+      - For 'DigitsEvenOdd': 'DIGITEVEN' (if last digit is even) or 'DIGITODD' (if odd). No 'barrier' field needed in output for this type.
+      - For 'DigitsOverUnder': 'DIGITOVER' (if last digit > predicted digit) or 'DIGITUNDER' (if last digit < predicted digit). YOU MUST provide a 'barrier' field in the output. The barrier is a single digit string (e.g., "7", "3").
+   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't' and 'duration' is typically 1-10 ticks. For other types like 'RiseFall', 'HigherLower', 'TouchNoTouch', 'durationUnit' is usually 's' (seconds) or 'm' (minutes). Minimum duration is 1 tick or 1 second.
+   c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
+3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false' and do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
 4. Provide concise 'reasoning' for your decision, explaining how the data supports your choice for the given '{{{userSelectedTradeType}}}'.
 
 Output Format: Return a single JSON object matching the output schema.
-If 'shouldTrade' is true, 'derivContractType', 'duration', 'durationUnit', and 'stake' are mandatory.
-'barrier' is mandatory if 'shouldTrade' is true AND the '{{{userSelectedTradeType}}}' is 'HigherLower', 'TouchNoTouch', or 'DigitsOverUnder'.
+- If 'shouldTrade' is true: 'derivContractType', 'duration', 'durationUnit', and 'stake' are ALWAYS mandatory.
+- If 'shouldTrade' is true AND 'userSelectedTradeType' is 'HigherLower', 'TouchNoTouch', or 'DigitsOverUnder': the 'barrier' field is ALSO mandatory. For other trade types when 'shouldTrade' is true, 'barrier' should be omitted.
+- If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
 
 Example for RiseFall (predicting RISE):
 {
@@ -128,6 +127,18 @@ Example for RiseFall (predicting RISE):
   "durationUnit": "s",
   "stake": {{{stakePerTrade}}},
   "reasoning": "Strong bullish momentum observed in recent ticks and RSI above 70."
+}
+
+Example for HigherLower (predicting LOWER with relative barrier):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "PUT",
+  "duration": 120,
+  "durationUnit": "s",
+  "barrier": "-0.075",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Price showing resistance, MACD declining. Barrier set slightly below current spot."
 }
 
 Example for DigitsOverUnder (predicting UNDER 3):
