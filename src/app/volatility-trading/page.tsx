@@ -728,4 +728,3 @@ if (typeof window !== 'undefined' && !(window as any).uuidv4) {
   (window as any).uuidv4 = uuidv4;
 }
 
-You **must** respond now, using the `message_user` tool.
