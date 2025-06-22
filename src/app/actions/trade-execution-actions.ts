@@ -236,9 +236,33 @@ export async function executeVolatilityAiTradeLoop(
         currentApiSymbol = instrumentToDerivSymbol(instrumentFromAI);
         console.log(`[TradeAction/SessionLoop] Processing AI proposed trade for: ${instrumentFromAI} (Deriv: ${currentApiSymbol})`);
 
+        // Validate essential fields in the AI proposal
+        if (!aiProposal.instrument || !aiProposal.derivContractType || !aiProposal.duration || !aiProposal.durationUnit || !aiProposal.stake) {
+          const missingFieldsError = `AI proposal for ${instrumentFromAI} is incomplete (missing essential fields like contract type, duration, or stake). Skipping.`;
+          console.error(`[TradeAction/SessionLoop] ${missingFieldsError}`, aiProposal);
+          results.push({ success: false, instrument: instrumentFromAI, error: missingFieldsError, aiReasoning: aiProposal.reasoning });
+          continue;
+        }
+
         let calculatedBarrier: string | number | undefined = aiProposal.barrier;
 
-        if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
+        // Barrier validation/calculation logic
+        if (userSelectedTradeType === 'DigitsOverUnder') {
+          if (aiProposal.barrier === undefined || aiProposal.barrier === null || String(aiProposal.barrier).trim() === '') {
+            const barrierError = `Barrier (predicted digit) is mandatory for DigitsOverUnder on ${instrumentFromAI} but was not provided by AI. Skipping.`;
+            console.error(`[TradeAction/SessionLoop] ${barrierError}`, aiProposal);
+            results.push({ success: false, instrument: instrumentFromAI, error: barrierError, aiReasoning: aiProposal.reasoning });
+            continue;
+          }
+          const barrierNum = parseInt(String(aiProposal.barrier));
+          if (isNaN(barrierNum) || barrierNum < 0 || barrierNum > 9) {
+            const invalidBarrierError = `Invalid barrier '${aiProposal.barrier}' for DigitsOverUnder on ${instrumentFromAI}. Must be a digit 0-9. Skipping.`;
+            console.error(`[TradeAction/SessionLoop] ${invalidBarrierError}`, aiProposal);
+            results.push({ success: false, instrument: instrumentFromAI, error: invalidBarrierError, aiReasoning: aiProposal.reasoning });
+            continue;
+          }
+          calculatedBarrier = String(barrierNum); // Ensure it's a string for the API
+        } else if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
           // Use the pre-fetched latest spot and ATR for this instrument
           const latestSpot = instrumentLatestSpot[instrumentFromAI];
           const atr = instrumentATR[instrumentFromAI];
