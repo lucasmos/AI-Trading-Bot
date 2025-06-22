@@ -8,37 +8,36 @@ import {
   placeTrade,
   TradeDetails,
   PlaceTradeResponse,
-  instrumentToDerivSymbol
+  instrumentToDerivSymbol,
+  getCandles, // Ensure getCandles is imported
+  getTicks    // Ensure getTicks is imported
 } from '@/services/deriv';
-import { prisma } from '@/lib/db'; // Import Prisma client
+import { prisma } from '@/lib/db';
+
+// Types needed for the new executeVolatilityAiTradeLoop
+import {
+    generateVolatilitySessionStrategy, // Corrected: Import the new flow name
+    VolatilitySessionStrategyInput // Corrected: Import the new input type
+} from '@/ai/flows/volatility-trading-strategy-flow';
+import { UserTradeType } from '@/types/ai-shared-types';
+import { calculateAllIndicators } from '@/lib/technical-analysis';
+import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ActiveAutomatedVolatilityTrade } from '@/types';
+import { getInstrumentDecimalPlaces } from '@/lib/utils'; // Assuming this utility exists
 
 export interface TradeExecutionResult {
   success: boolean;
   instrument: ForexCryptoCommodityInstrumentType;
   tradeResponse?: PlaceTradeResponse;
   error?: string;
-  dbTradeId?: string; // To return the ID of the trade record in our DB
+  dbTradeId?: string;
 }
 
-/**
- * Executes a series of trades based on an AI-generated trading strategy, places them on the specified Deriv account, and records each trade in the database.
- *
- * For each trade proposal in the strategy, attempts to execute the trade via the Deriv API and persist the trade details. Returns an array of results indicating the success or failure of each trade, including error messages and database record IDs where applicable.
- *
- * @param strategy - The AI-generated trading strategy containing trade proposals to execute.
- * @param userDerivApiToken - The API token used to authenticate with the Deriv platform.
- * @param targetAccountId - The Deriv account ID where trades will be executed.
- * @param selectedAccountType - Specifies whether the trades are executed on a 'demo' or 'real' account.
- * @param userId - The unique identifier of the user executing the trades.
- * @returns An array of trade execution results, each detailing the outcome of an attempted trade.
- */
 export async function executeAiTradingStrategy(
   strategy: AutomatedTradingStrategyOutput,
   userDerivApiToken: string,
-  targetAccountId: string, // The specific Deriv account ID (CR... or VRTC...)
-  selectedAccountType: 'demo' | 'real', // The type of account being traded on
-  userId: string // The user's unique ID from your application's User model
-  // aiStrategyId is now expected to be part of the strategy object if needed for saving
+  targetAccountId: string,
+  selectedAccountType: 'demo' | 'real',
+  userId: string
 ): Promise<TradeExecutionResult[]> {
   const results: TradeExecutionResult[] = [];
 
@@ -89,76 +88,49 @@ export async function executeAiTradingStrategy(
         token: '***REDACTED***'
       });
 
-      // Call placeTrade with targetAccountId
       const derivTradeResponse = await placeTrade(tradeDetails, targetAccountId);
-
       console.log(`[executeAiTradingStrategy] Trade placed successfully via Deriv API for ${tradeProposal.instrument}:`, derivTradeResponse);
 
-      // Save the executed trade to the database
       const savedDbTrade = await prisma.trade.create({
         data: {
           userId: userId,
-          symbol: tradeProposal.instrument, // Storing the user-friendly symbol
-          type: tradeProposal.action,       // 'CALL' or 'PUT'
+          symbol: tradeProposal.instrument,
+          type: tradeProposal.action,
           amount: tradeProposal.stake,
-          price: derivTradeResponse.entry_spot, // Entry price from Deriv
-          totalValue: tradeProposal.stake,      // For binary, totalValue is the stake
-          status: 'OPEN',                       // Initial status
-          openTime: new Date(),                 // Current time as open time
+          price: derivTradeResponse.entry_spot,
+          totalValue: tradeProposal.stake,
+          status: 'OPEN',
+          openTime: new Date(),
           derivContractId: derivTradeResponse.contract_id.toString(),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
-          aiStrategyId: strategy.aiStrategyId || null, // Assuming aiStrategyId is on strategy object
-          metadata: { // Store additional info if needed
+          aiStrategyId: strategy.aiStrategyId || null,
+          metadata: {
             reasoning: tradeProposal.reasoning,
             derivLongcode: derivTradeResponse.longcode,
           }
         },
       });
       console.log(`[executeAiTradingStrategy] Trade for ${tradeProposal.instrument} saved to DB. DB Trade ID: ${savedDbTrade.id}, Deriv Contract ID: ${derivTradeResponse.contract_id}`);
-
-      results.push({
-        success: true,
-        instrument: tradeProposal.instrument,
-        tradeResponse: derivTradeResponse,
-        dbTradeId: savedDbTrade.id,
-      });
-
+      results.push({ success: true, instrument: tradeProposal.instrument, tradeResponse: derivTradeResponse, dbTradeId: savedDbTrade.id });
     } catch (error: any) {
       console.error(`[executeAiTradingStrategy] Failed to place or save trade for ${tradeProposal.instrument}:`, error);
-      results.push({
-        success: false,
-        instrument: tradeProposal.instrument,
-        error: error.message || 'Unknown error during trade placement or DB save.',
-      });
+      results.push({ success: false, instrument: tradeProposal.instrument, error: error.message || 'Unknown error during trade placement or DB save.' });
     }
   }
-
   return results;
 }
 
-
-import {
-    generateVolatilitySessionStrategy, // Corrected flow name
-    VolatilitySessionStrategyInput // Use the new input schema type for session strategy
-    // UserTradeType will be imported from the new shared file
-} from '@/ai/flows/volatility-trading-strategy-flow';
-import { UserTradeType } from '@/types/ai-shared-types'; // Import from shared location
-import { getCandles, getTicks } from '@/services/deriv';
-import { calculateAllIndicators } from '@/lib/technical-analysis'; // Corrected import name
-import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData } from '@/types'; // Added CandleData, InstrumentIndicatorData
-
+// Interface for the new Volatility AI Trade Loop
 export interface VolatilityTradeExecutionResult {
   success: boolean;
   instrument: VolatilityInstrumentType;
-  tradeParams?: TradeDetails; // Details sent to placeTrade
+  tradeParams?: TradeDetails;
   tradeResponse?: PlaceTradeResponse;
   error?: string;
   dbTradeId?: string;
   aiReasoning?: string;
 }
-
-// Moved VOLATILITY_INDICES_TO_TRADE and STAKE_PER_TRADE inside executeVolatilityAiTradeLoop
 
 export async function executeVolatilityAiTradeLoop(
   userDerivApiToken: string,
@@ -166,206 +138,184 @@ export async function executeVolatilityAiTradeLoop(
   selectedAccountType: 'demo' | 'real',
   userId: string,
   userSelectedTradeType: UserTradeType,
+  totalStakeFromUser: number
 ): Promise<VolatilityTradeExecutionResult[]> {
-  const VOLATILITY_INDICES_TO_TRADE: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
-  const STAKE_PER_TRADE = 1; // Example: Can be made configurable. Min stake for Deriv is often $0.35 for options.
-
+  const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
   const results: VolatilityTradeExecutionResult[] = [];
 
   if (!userDerivApiToken || !targetAccountId || !userId) {
     const errorMsg = "User token, target account ID, or user ID is missing for Volatility AI trade loop.";
-    console.error(`[TradeAction/Loop] Pre-condition failed: ${errorMsg}`); // Updated console log prefix
-    return VOLATILITY_INDICES_TO_TRADE.map(instrument => ({ // VOLATILITY_INDICES_TO_TRADE is now in scope
-        success: false,
-        instrument,
-        error: errorMsg,
-    }));
+    console.error(`[TradeAction/Session] Pre-condition failed: ${errorMsg}`);
+    return [{ success: false, instrument: "N/A" as VolatilityInstrumentType, error: errorMsg }];
   }
 
-  console.log(`[TradeAction/Loop] Starting trade loop. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}`); // Updated console log prefix
+  console.log(`[TradeAction/Session] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
 
-  for (const instrument of VOLATILITY_INDICES_TO_TRADE) {
-    let tradeDetailsForApi: TradeDetails | null = null;
-    let aiReasoning: string | undefined = undefined;
-    let currentApiSymbol: string | null = null;
+  // 1. Fetch data for ALL available instruments first
+  const instrumentTicksForAI: Record<string, PriceTick[]> = {};
+  const instrumentIndicatorsForAI: Record<string, InstrumentIndicatorData | undefined> = {};
+  const instrumentLatestSpot: Record<string, number | undefined> = {}; // To store latest spot for barrier calc
+  const instrumentATR: Record<string, number | undefined> = {}; // To store ATR for barrier calc
 
+  for (const instrument of AVAILABLE_VOLATILITY_INDICES) {
     try {
-      currentApiSymbol = instrumentToDerivSymbol(instrument as any); // Ensure mapping
-      console.log(`[TradeAction/Loop] START Processing instrument: ${instrument} (Deriv Symbol: ${currentApiSymbol}), User Trade Type: ${userSelectedTradeType}`);
-
-      // 1. Fetch data for AI
-      const priceDataPoints = 100; // Number of data points for AI analysis
-      // Using 1-minute candles to get a decent amount of data quickly. For ticks, might need more frequent calls or shorter granularity.
-      // For Digits, very recent tick data (last 10-20 ticks) is more relevant than 100 1-minute candles.
-      // This part needs careful consideration based on how `getCandles` and AI expect data.
-      // Let's assume for now `getCandles` can provide granular enough data if `granularity=1` (second)
-      // and count is e.g. 60 for last minute of 1-sec data points.
-      const candleCountForTicks = 60; // e.g., last 60 seconds of data
-      const tickGranularity = userSelectedTradeType.startsWith("Digits") ? 0 : 60; // 0 for ticks, 60 for 1-min candles for others (or adjust)
-                                                                                    // Deriv API: 0 for ticks, 60, 120, ... for candles
-                                                                                    // For simplicity, let's use 1-minute candles (granularity 60) for non-digits
-                                                                                    // and try to simulate ticks with 1s candles for digits.
-
-      let priceTicksForAI: PriceTick[];
-      let indicators: any = {}; // Initialize indicators object
-      let latestSpotPriceForBarrierCalc: number | undefined = undefined;
-      let atrValueForBarrierCalc: number | undefined = undefined;
+      let priceData: PriceTick[];
+      let indicators: InstrumentIndicatorData | undefined = {};
 
       if (userSelectedTradeType.startsWith("Digits")) {
-          priceTicksForAI = await getTicks(instrument as any, 25, userDerivApiToken);
-          console.log(`[TradeAction/Loop] Fetched ${priceTicksForAI.length} ticks for ${instrument} (Digits trade).`);
-          if (priceTicksForAI.length > 0) {
-            latestSpotPriceForBarrierCalc = priceTicksForAI[priceTicksForAI.length - 1].price;
-          }
-          // Indicators for digits from ticks are minimal for now.
+        priceData = await getTicks(instrument as any, 25, userDerivApiToken); // Fetch last 25 ticks
+        if (priceData.length > 0) {
+          instrumentLatestSpot[instrument] = priceData[priceData.length - 1].price;
+        }
       } else {
-          // For non-Digits (RiseFall, HigherLower, TouchNoTouch)
-          // Fetch fewer candles to reduce processing time, e.g., 30 instead of 60
-          const candleCount = 30;
-          const rawCandlesData = await getCandles(instrument as any, candleCount, 60, userDerivApiToken);
-          if (!rawCandlesData || rawCandlesData.length < 5) { // Still need a minimum for indicators
-              const errorMsg = `Insufficient candle data for ${instrument} (needed 5, got ${rawCandlesData?.length}). Cannot calculate indicators or proceed.`;
-              console.warn(`[TradeAction/Loop] ${errorMsg}`);
-              results.push({ success: false, instrument, error: "Insufficient candle data.", aiReasoning: "Skipped due to insufficient candle data."});
-              continue;
-          }
+        const rawCandlesData = await getCandles(instrument as any, 30, 60, userDerivApiToken); // Fetch 30 1-min candles
+        if (rawCandlesData && rawCandlesData.length >= 5) {
           indicators = calculateAllIndicators(rawCandlesData);
-          if (indicators.atr) {
-            atrValueForBarrierCalc = indicators.atr;
+          priceData = rawCandlesData.map(c => ({ epoch: c.epoch, price: c.close, time: c.time }));
+          if (priceData.length > 0) {
+            instrumentLatestSpot[instrument] = priceData[priceData.length - 1].price;
           }
-          priceTicksForAI = rawCandlesData.map(c => ({
-              epoch: c.epoch,
-              price: c.close,
-              time: c.time
-          }));
-          if (priceTicksForAI.length > 0) {
-            latestSpotPriceForBarrierCalc = priceTicksForAI[priceTicksForAI.length - 1].price;
+          if (indicators?.atr) { // Ensure indicators and atr itself are defined
+            instrumentATR[instrument] = indicators.atr;
           }
-      }
-
-      if (!priceTicksForAI || priceTicksForAI.length < 5) { // Check after fetching
-          const errorMsg = `Insufficient price data (ticks/candles) for ${instrument} (needed 5, got ${priceTicksForAI?.length}). Skipping.`;
-          console.warn(`[TradeAction/Loop] ${errorMsg}`);
-          results.push({ success: false, instrument, error: "Insufficient price data.", aiReasoning: "Skipped due to insufficient price data."});
-          continue;
-      }
-
-      const aiInput: VolatilitySingleTradeStrategyInput = {
-        currentInstrument: instrument,
-        userSelectedTradeType: userSelectedTradeType,
-        stakePerTrade: STAKE_PER_TRADE,
-        instrumentTicks: priceTicksForAI.slice(-50),
-        instrumentIndicators: indicators,
-      };
-      console.log(`[TradeAction/Loop] Calling AI for ${instrument} (Deriv: ${currentApiSymbol}), User Trade Type: ${userSelectedTradeType}. AI Input (Indicators):`, JSON.stringify(indicators, null, 2), `AI Input (Ticks): ${priceTicksForAI.length} points provided, sending last 50.`);
-      const aiProposal = await generateVolatilitySingleTradeDecision(aiInput);
-      aiReasoning = aiProposal.reasoning;
-      console.log(`[TradeAction/Loop] AI Proposal received for ${instrument}: `, JSON.stringify(aiProposal, null, 2));
-
-
-      if (!aiProposal.shouldTrade || !aiProposal.derivContractType || !aiProposal.duration || !aiProposal.durationUnit || !aiProposal.stake) {
-        const noTradeReason = `AI decided not to trade or proposal incomplete: ${aiProposal.reasoning || 'No specific reason.'}`;
-        console.log(`[TradeAction/Loop] SKIPPING ${instrument}: ${noTradeReason}`);
-        results.push({ success: false, instrument, error: noTradeReason, aiReasoning });
-        continue;
-      }
-
-      let calculatedBarrier: string | number | undefined = aiProposal.barrier; // Use AI barrier by default (for DigitsOverUnder)
-
-      // Programmatically set barrier for HigherLower and TouchNoTouch if AI didn't (or wasn't supposed to)
-      if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
-        if (latestSpotPriceForBarrierCalc !== undefined) {
-          const offsetFactor = userSelectedTradeType === 'HigherLower' ? 0.3 : 0.5; // Smaller offset for HL, wider for TNT
-          const atrBasedOffset = atrValueForBarrierCalc ? atrValueForBarrierCalc * offsetFactor : latestSpotPriceForBarrierCalc * 0.0005; // Fallback to 0.05% if ATR missing
-
-          let barrierValue: number;
-          if (aiProposal.derivContractType === 'CALL' || aiProposal.derivContractType === 'ONETOUCH') { // Assuming ONETOUCH implies barrier is touched from current price
-            barrierValue = latestSpotPriceForBarrierCalc + atrBasedOffset;
-          } else { // PUT or NOTOUCH
-            barrierValue = latestSpotPriceForBarrierCalc - atrBasedOffset;
-          }
-          // Deriv expects barrier as string, often relative or absolute.
-          // For simplicity, sending absolute calculated value as string.
-          // Or, calculate relative offset string:
-          // const offset = barrierValue - latestSpotPriceForBarrierCalc;
-          // calculatedBarrier = (offset > 0 ? "+" : "") + offset.toFixed(getInstrumentDecimalPlaces(instrument as any) || 2);
-          const decimalPlaces = getInstrumentDecimalPlaces(instrument as any);
-          calculatedBarrier = barrierValue.toFixed(decimalPlaces); // Send absolute barrier
-
-          console.log(`[TradeAction/Loop] Programmatically determined barrier for ${instrument} (${aiProposal.derivContractType}): ${calculatedBarrier} (Spot: ${latestSpotPriceForBarrierCalc}, ATR-Offset: ${atrBasedOffset.toFixed(decimalPlaces)})`);
         } else {
-          const noSpotError = `Cannot programmatically determine barrier for ${instrument} due to missing spot price. Skipping.`;
-          console.error(`[TradeAction/Loop] ${noSpotError}`);
-          results.push({ success: false, instrument, error: noSpotError, aiReasoning });
-          continue;
+          priceData = [];
         }
       }
 
-
-      tradeDetailsForApi = {
-        symbol: currentApiSymbol,
-        contract_type: aiProposal.derivContractType,
-        duration: aiProposal.duration,
-        duration_unit: aiProposal.durationUnit,
-        amount: aiProposal.stake,
-        currency: 'USD',
-        basis: 'stake',
-        token: userDerivApiToken,
-        barrier: calculatedBarrier, // Use the potentially programmatically set barrier
-      };
-
-      console.log(`[TradeAction/Loop] Constructing TradeDetails for ${instrument} (Deriv: ${currentApiSymbol}):`, JSON.stringify({ ...tradeDetailsForApi, token: '***REDACTED***' }, null, 2));
-
-      const derivTradeResponse = await placeTrade(tradeDetailsForApi, targetAccountId);
-      console.log(`[TradeAction/Loop] Deriv API placeTrade response for ${instrument}: Contract ID ${derivTradeResponse.contract_id}`, derivTradeResponse);
-
-      const savedDbTrade = await prisma.trade.create({
-        data: {
-          userId: userId,
-          symbol: instrument, // Store user-friendly name
-          type: `${userSelectedTradeType} (${aiProposal.derivContractType})`,
-          amount: tradeDetailsForApi.amount,
-          price: derivTradeResponse.entry_spot,
-          totalValue: tradeDetailsForApi.amount, // For options, stake is usually the value at risk
-          status: 'OPEN', // Assuming trade is open until result is known
-          openTime: new Date(),
-          derivContractId: derivTradeResponse.contract_id.toString(),
-          derivAccountId: targetAccountId,
-          accountType: selectedAccountType,
-          aiStrategyId: null, // Populate if applicable
-          metadata: {
-            reasoning: aiProposal.reasoning,
-            derivLongcode: derivTradeResponse.longcode,
-            barrier: aiProposal.barrier,
-            duration: aiProposal.duration,
-            durationUnit: aiProposal.durationUnit,
-            userSelectedTradeType: userSelectedTradeType,
-            derivSymbol: currentApiSymbol,
-          }
-        },
-      });
-      console.log(`[TradeAction/Loop] Trade for ${instrument} saved to DB. DB ID: ${savedDbTrade.id}`);
-
-      results.push({
-        success: true,
-        instrument,
-        tradeParams: tradeDetailsForApi,
-        tradeResponse: derivTradeResponse,
-        dbTradeId: savedDbTrade.id,
-        aiReasoning,
-      });
-
-    } catch (error: any) {
-      console.error(`[TradeAction/Loop] CRITICAL ERROR during trade execution for ${instrument} (Deriv: ${currentApiSymbol || 'N/A'}):`, error.message, error.stack);
-      results.push({
-        success: false,
-        instrument,
-        tradeParams: tradeDetailsForApi || undefined,
-        error: error.message || 'Unknown error during trade execution for volatility instrument.',
-        aiReasoning,
-      });
+      if (!priceData || priceData.length < 5) {
+        console.warn(`[TradeAction/Session] Insufficient data for ${instrument}. It will be passed to AI with limited info.`);
+        instrumentTicksForAI[instrument] = [];
+        instrumentIndicatorsForAI[instrument] = undefined; // Explicitly undefined
+      } else {
+        instrumentTicksForAI[instrument] = priceData.slice(-50);
+        instrumentIndicatorsForAI[instrument] = indicators;
+      }
+    } catch (dataFetchError: any) {
+      console.error(`[TradeAction/Session] Failed to fetch data for ${instrument}: ${dataFetchError.message}`);
+      instrumentTicksForAI[instrument] = [];
+      instrumentIndicatorsForAI[instrument] = undefined; // Explicitly undefined on error
     }
   }
-  console.log(`[TradeAction/Loop] Finished Volatility AI trade loop. Total results processed: ${results.length}`);
+
+  // 2. Call AI flow ONCE with all data and total stake
+  const aiSessionInput: VolatilitySessionStrategyInput = {
+    availableInstruments: AVAILABLE_VOLATILITY_INDICES,
+    userSelectedTradeType: userSelectedTradeType,
+    totalSessionStake: totalStakeFromUser,
+    instrumentTicks: instrumentTicksForAI, // This is Record<string, PriceTick[]>
+    instrumentIndicators: instrumentIndicatorsForAI, // This is Record<string, InstrumentIndicatorData | undefined>
+  };
+
+  console.log(`[TradeAction/Session] Calling AI for session strategy. TradeType: ${userSelectedTradeType}, TotalStake: ${totalStakeFromUser}`);
+
+  try {
+    const aiSessionStrategy = await generateVolatilitySessionStrategy(aiSessionInput);
+    console.log(`[TradeAction/Session] AI Session Strategy received. Overall Reasoning: ${aiSessionStrategy.overallReasoning}`);
+    console.log(`[TradeAction/Session] AI proposes ${aiSessionStrategy.tradesToExecute.length} trades.`);
+
+    if (aiSessionStrategy.tradesToExecute.length === 0) {
+        results.push({
+            success: false,
+            instrument: "N/A" as VolatilityInstrumentType,
+            error: `AI decided not to place any trades. Reasoning: ${aiSessionStrategy.overallReasoning || 'No specific reason provided.'}`,
+            aiReasoning: aiSessionStrategy.overallReasoning
+        });
+        console.log(`[TradeAction/Session] Finished. AI proposed no trades.`);
+        return results;
+    }
+
+    // 3. Loop through AI's proposed trades and execute them
+    for (const aiProposal of aiSessionStrategy.tradesToExecute) {
+      let tradeDetailsForApi: TradeDetails | null = null;
+      let currentApiSymbol: string | null = null;
+      const instrumentFromAI = aiProposal.instrument as VolatilityInstrumentType;
+      let aiReasoningForThisTrade = aiProposal.reasoning;
+
+      try {
+        currentApiSymbol = instrumentToDerivSymbol(instrumentFromAI);
+        console.log(`[TradeAction/SessionLoop] Processing AI proposed trade for: ${instrumentFromAI} (Deriv: ${currentApiSymbol})`);
+
+        let calculatedBarrier: string | number | undefined = aiProposal.barrier;
+
+        if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
+          // Use the pre-fetched latest spot and ATR for this instrument
+          const latestSpot = instrumentLatestSpot[instrumentFromAI];
+          const atr = instrumentATR[instrumentFromAI];
+
+          if (latestSpot !== undefined) {
+            const offsetFactor = userSelectedTradeType === 'HigherLower' ? 0.3 : 0.5;
+            // Use a very small percentage of spot as fallback if ATR is not available
+            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.0005;
+
+            let barrierValue = (aiProposal.derivContractType === 'CALL' || aiProposal.derivContractType === 'ONETOUCH')
+                               ? latestSpot + atrBasedOffset
+                               : latestSpot - atrBasedOffset;
+            const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
+            calculatedBarrier = barrierValue.toFixed(decimalPlaces);
+            console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier} (Spot: ${latestSpot}, ATR used: ${atr !== undefined}, Offset: ${atrBasedOffset.toFixed(decimalPlaces)})`);
+          } else {
+            // This means data fetching for this specific instrument (chosen by AI) failed earlier or yielded no spot price.
+            throw new Error(`Cannot determine current spot price for programmatic barrier for ${instrumentFromAI}. Data might have been insufficient.`);
+          }
+        }
+
+        tradeDetailsForApi = {
+          symbol: currentApiSymbol,
+          contract_type: aiProposal.derivContractType,
+          duration: aiProposal.duration,
+          duration_unit: aiProposal.durationUnit,
+          amount: aiProposal.stake,
+          currency: 'USD',
+          basis: 'stake',
+          token: userDerivApiToken,
+          barrier: calculatedBarrier,
+        };
+
+        console.log(`[TradeAction/SessionLoop] Constructing TradeDetails for ${instrumentFromAI}:`, JSON.stringify({ ...tradeDetailsForApi, token: '***REDACTED***' }, null, 2));
+        const derivTradeResponse = await placeTrade(tradeDetailsForApi, targetAccountId);
+        console.log(`[TradeAction/SessionLoop] Deriv API placeTrade response for ${instrumentFromAI}: Contract ID ${derivTradeResponse.contract_id}`);
+
+        const savedDbTrade = await prisma.trade.create({
+          data: {
+            userId: userId,
+            symbol: instrumentFromAI,
+            type: `${userSelectedTradeType} (${aiProposal.derivContractType})`,
+            amount: tradeDetailsForApi.amount,
+            price: derivTradeResponse.entry_spot,
+            totalValue: tradeDetailsForApi.amount,
+            status: 'OPEN',
+            openTime: new Date(),
+            derivContractId: derivTradeResponse.contract_id.toString(),
+            derivAccountId: targetAccountId,
+            accountType: selectedAccountType,
+            aiStrategyId: null,
+            metadata: {
+              reasoning: aiReasoningForThisTrade,
+              derivLongcode: derivTradeResponse.longcode,
+              barrier: calculatedBarrier,
+              duration: aiProposal.duration,
+              durationUnit: aiProposal.durationUnit,
+              userSelectedTradeType: userSelectedTradeType,
+              derivSymbol: currentApiSymbol,
+              totalSessionStake: totalStakeFromUser,
+              overallAIReasoning: aiSessionStrategy.overallReasoning,
+            }
+          },
+        });
+        console.log(`[TradeAction/SessionLoop] Trade for ${instrumentFromAI} saved to DB. DB ID: ${savedDbTrade.id}`);
+        results.push({ success: true, instrument: instrumentFromAI, tradeParams: tradeDetailsForApi, tradeResponse: derivTradeResponse, dbTradeId: savedDbTrade.id, aiReasoning: aiReasoningForThisTrade });
+
+      } catch (error: any) {
+        console.error(`[TradeAction/SessionLoop] CRITICAL ERROR during trade execution for ${instrumentFromAI} (Deriv: ${currentApiSymbol || 'N/A'}):`, error.message, error.stack);
+        results.push({ success: false, instrument: instrumentFromAI, tradeParams: tradeDetailsForApi || undefined, error: error.message || `Unknown error for ${instrumentFromAI}.`, aiReasoning: aiReasoningForThisTrade });
+      }
+    }
+  } catch (aiError: any) {
+      console.error(`[TradeAction/Session] CRITICAL ERROR during AI Session Strategy generation:`, aiError.message, aiError.stack);
+      results.push({ success: false, instrument: "N/A" as VolatilityInstrumentType, error: `AI Strategy Generation Failed: ${aiError.message}` });
+  }
+
+  console.log(`[TradeAction/Session] Finished Volatility AI session. Total results processed: ${results.length}`);
   return results;
 }
