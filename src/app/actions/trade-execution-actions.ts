@@ -208,44 +208,39 @@ export async function executeVolatilityAiTradeLoop(
 
       let priceTicksForAI: PriceTick[];
       let indicators: any = {}; // Initialize indicators object
+      let latestSpotPriceForBarrierCalc: number | undefined = undefined;
+      let atrValueForBarrierCalc: number | undefined = undefined;
 
       if (userSelectedTradeType.startsWith("Digits")) {
-          // For Digits, fetch actual ticks.
-          priceTicksForAI = await getTicks(instrument as any, 25, userDerivApiToken); // Fetch last 25 ticks
-          // Indicators might not be as relevant for very short-term Digit trades based on ticks,
-          // or would need to be calculated from tick data if meaningful.
-          // For now, we might skip complex indicators for Digits or use very short-term ones.
-          // Let's assume `calculateAllIndicators` can handle PriceTick[] or we adapt it.
-          // If calculateAllIndicators expects CandleData[], we cannot directly use it with ticks.
-          // For simplicity, we'll pass empty indicators for Digits if calculateAllIndicators can't process ticks.
-          // Or, pass priceTicksForAI to a modified calculateAllIndicators if it can handle PriceTick[].
-          // Assuming calculateAllIndicators needs candles, we'll have limited indicators for Digits from pure ticks.
-          // This part might need refinement based on how indicators are truly generated from ticks.
+          priceTicksForAI = await getTicks(instrument as any, 25, userDerivApiToken);
           console.log(`[TradeAction/Loop] Fetched ${priceTicksForAI.length} ticks for ${instrument} (Digits trade).`);
-          // For Digits, we primarily rely on recent tick patterns.
-          // If you have specific indicators for ticks, calculate them here.
-          // Otherwise, indicators object might remain sparse or empty for AI.
-          // For example, if RSI can be calculated from tick prices:
-          // if (priceTicksForAI.length > 14) {
-          //   const tickPrices = priceTicksForAI.map(t => t.price);
-          //   indicators.rsi = calculateRSI(tickPrices, 14); // Assuming calculateRSI can take prices directly
-          // }
-
+          if (priceTicksForAI.length > 0) {
+            latestSpotPriceForBarrierCalc = priceTicksForAI[priceTicksForAI.length - 1].price;
+          }
+          // Indicators for digits from ticks are minimal for now.
       } else {
-          // For other types, fetch 1-minute candles and calculate indicators from them.
-          const rawCandlesData = await getCandles(instrument as any, 60, 60, userDerivApiToken);
-          if (!rawCandlesData || rawCandlesData.length < 5) {
+          // For non-Digits (RiseFall, HigherLower, TouchNoTouch)
+          // Fetch fewer candles to reduce processing time, e.g., 30 instead of 60
+          const candleCount = 30;
+          const rawCandlesData = await getCandles(instrument as any, candleCount, 60, userDerivApiToken);
+          if (!rawCandlesData || rawCandlesData.length < 5) { // Still need a minimum for indicators
               const errorMsg = `Insufficient candle data for ${instrument} (needed 5, got ${rawCandlesData?.length}). Cannot calculate indicators or proceed.`;
               console.warn(`[TradeAction/Loop] ${errorMsg}`);
               results.push({ success: false, instrument, error: "Insufficient candle data.", aiReasoning: "Skipped due to insufficient candle data."});
               continue;
           }
           indicators = calculateAllIndicators(rawCandlesData);
+          if (indicators.atr) {
+            atrValueForBarrierCalc = indicators.atr;
+          }
           priceTicksForAI = rawCandlesData.map(c => ({
               epoch: c.epoch,
               price: c.close,
               time: c.time
           }));
+          if (priceTicksForAI.length > 0) {
+            latestSpotPriceForBarrierCalc = priceTicksForAI[priceTicksForAI.length - 1].price;
+          }
       }
 
       if (!priceTicksForAI || priceTicksForAI.length < 5) { // Check after fetching
@@ -259,7 +254,7 @@ export async function executeVolatilityAiTradeLoop(
         currentInstrument: instrument,
         userSelectedTradeType: userSelectedTradeType,
         stakePerTrade: STAKE_PER_TRADE,
-        instrumentTicks: priceTicksForAI.slice(-50), // Send last 50 data points to AI
+        instrumentTicks: priceTicksForAI.slice(-50),
         instrumentIndicators: indicators,
       };
       console.log(`[TradeAction/Loop] Calling AI for ${instrument} (Deriv: ${currentApiSymbol}), User Trade Type: ${userSelectedTradeType}. AI Input (Indicators):`, JSON.stringify(indicators, null, 2), `AI Input (Ticks): ${priceTicksForAI.length} points provided, sending last 50.`);
@@ -275,16 +270,48 @@ export async function executeVolatilityAiTradeLoop(
         continue;
       }
 
+      let calculatedBarrier: string | number | undefined = aiProposal.barrier; // Use AI barrier by default (for DigitsOverUnder)
+
+      // Programmatically set barrier for HigherLower and TouchNoTouch if AI didn't (or wasn't supposed to)
+      if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
+        if (latestSpotPriceForBarrierCalc !== undefined) {
+          const offsetFactor = userSelectedTradeType === 'HigherLower' ? 0.3 : 0.5; // Smaller offset for HL, wider for TNT
+          const atrBasedOffset = atrValueForBarrierCalc ? atrValueForBarrierCalc * offsetFactor : latestSpotPriceForBarrierCalc * 0.0005; // Fallback to 0.05% if ATR missing
+
+          let barrierValue: number;
+          if (aiProposal.derivContractType === 'CALL' || aiProposal.derivContractType === 'ONETOUCH') { // Assuming ONETOUCH implies barrier is touched from current price
+            barrierValue = latestSpotPriceForBarrierCalc + atrBasedOffset;
+          } else { // PUT or NOTOUCH
+            barrierValue = latestSpotPriceForBarrierCalc - atrBasedOffset;
+          }
+          // Deriv expects barrier as string, often relative or absolute.
+          // For simplicity, sending absolute calculated value as string.
+          // Or, calculate relative offset string:
+          // const offset = barrierValue - latestSpotPriceForBarrierCalc;
+          // calculatedBarrier = (offset > 0 ? "+" : "") + offset.toFixed(getInstrumentDecimalPlaces(instrument as any) || 2);
+          const decimalPlaces = getInstrumentDecimalPlaces(instrument as any);
+          calculatedBarrier = barrierValue.toFixed(decimalPlaces); // Send absolute barrier
+
+          console.log(`[TradeAction/Loop] Programmatically determined barrier for ${instrument} (${aiProposal.derivContractType}): ${calculatedBarrier} (Spot: ${latestSpotPriceForBarrierCalc}, ATR-Offset: ${atrBasedOffset.toFixed(decimalPlaces)})`);
+        } else {
+          const noSpotError = `Cannot programmatically determine barrier for ${instrument} due to missing spot price. Skipping.`;
+          console.error(`[TradeAction/Loop] ${noSpotError}`);
+          results.push({ success: false, instrument, error: noSpotError, aiReasoning });
+          continue;
+        }
+      }
+
+
       tradeDetailsForApi = {
         symbol: currentApiSymbol,
         contract_type: aiProposal.derivContractType,
         duration: aiProposal.duration,
         duration_unit: aiProposal.durationUnit,
-        amount: aiProposal.stake, // Use stake from AI proposal
+        amount: aiProposal.stake,
         currency: 'USD',
         basis: 'stake',
         token: userDerivApiToken,
-        barrier: aiProposal.barrier,
+        barrier: calculatedBarrier, // Use the potentially programmatically set barrier
       };
 
       console.log(`[TradeAction/Loop] Constructing TradeDetails for ${instrument} (Deriv: ${currentApiSymbol}):`, JSON.stringify({ ...tradeDetailsForApi, token: '***REDACTED***' }, null, 2));

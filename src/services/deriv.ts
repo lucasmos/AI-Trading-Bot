@@ -358,7 +358,7 @@ export async function getCandles(
 
   const ws = new WebSocket(DERIV_API_URL);
   let operationTimeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutDuration = 15000; // 15 seconds for candles
+  const timeoutDuration = 25000; // Increased to 25 seconds for candles
   const symbolForTimeoutLog = symbol; // Capture for timeout log
 
   const cleanup = (isError: boolean = false, message?: string) => {
@@ -510,7 +510,7 @@ export async function getTicks(
 
   const ws = new WebSocket(DERIV_API_URL);
   let operationTimeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutDuration = 15000; // 15 seconds for ticks history
+  const timeoutDuration = 25000; // Increased to 25 seconds for ticks history
   const symbolForTimeoutLog = symbol;
 
   const cleanup = (isError: boolean = false, message?: string) => {
