@@ -312,7 +312,10 @@ export default function VolatilityTradingPage() {
             console.log(`[VolatilityPage] Real trade loop results:`, loopResults);
 
             const newUiTrades: ActiveAutomatedVolatilityTrade[] = loopResults.map(result => ({
-                id: result.dbTradeId || uuidv4(),
+                // Use the actual Deriv contract ID for real trades, fallback to UUID for failed trades
+                id: result.success && result.tradeResponse?.contract_id
+                    ? result.tradeResponse.contract_id.toString()
+                    : (result.dbTradeId || uuidv4()),
                 instrument: result.instrument,
                 derivContractType: result.tradeParams?.contract_type || 'N/A',
                 userSelectedTradeType: selectedUserTradeTypeForLoop,
@@ -550,8 +553,9 @@ export default function VolatilityTradingPage() {
             return trade;
           }
 
-          // Skip trades without valid contract IDs
-          if (!trade.id || trade.id === uuidv4() || trade.id.startsWith('sim-')) {
+          // Skip trades without valid numeric contract IDs
+          if (!trade.id || isNaN(Number(trade.id)) || trade.id.length < 5) {
+            console.log(`[VolatilityPage] Skipping monitoring for trade with invalid contract ID: ${trade.id}`);
             return trade;
           }
 
