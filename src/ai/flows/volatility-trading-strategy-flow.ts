@@ -30,7 +30,8 @@ import {
   type VolatilityTradeProposal,
   VolatilityTradingStrategyOutputSchema,
   type VolatilityTradingStrategyOutput,
-  VolatilityStrategyPromptInputSchema
+  VolatilityStrategyPromptInputSchema,
+  type VolatilityStrategyPromptInput
 } from '@/types/ai-shared-types';
 
 

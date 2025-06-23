@@ -5,9 +5,9 @@ import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import type { VolatilityInstrumentType, TradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index';
 import {
-  generateVolatilityTradingStrategy, // Old AI flow for current page simulation
-  type VolatilityTradingStrategyInput // Type for the old flow (from main)
+  generateVolatilityTradingStrategy // Old AI flow for current page simulation
 } from '@/ai/flows/volatility-trading-strategy-flow';
+import { type VolatilityTradingStrategyInput } from '@/types/ai-shared-types';
 import {
   executeVolatilityAiTradeLoop, // New backend action for real trades
   VolatilityTradeExecutionResult
@@ -35,6 +35,21 @@ import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-bala
 
 const DEFAULT_PAPER_BALANCE = 10000;
 const DEFAULT_LIVE_BALANCE = 0;
+
+// Map Deriv API contract statuses to local trade statuses
+const mapDerivStatusToLocal = (derivStatus?: string): ActiveAutomatedVolatilityTrade['status'] => {
+  if (!derivStatus) return 'pending_execution';
+  switch (derivStatus) {
+    case 'open': return 'pending_execution';
+    case 'sold': return 'closed_manual';
+    case 'won': return 'won';
+    case 'lost': return 'lost_duration';
+    case 'cancelled': return 'failed_placement';
+    default:
+      console.warn(`[VolatilityPage] Unknown Deriv contract status: ${derivStatus}`);
+      return 'pending_execution';
+  }
+};
 
 export default function VolatilityTradingPage() {
   const router = useRouter();
@@ -90,21 +105,6 @@ export default function VolatilityTradingPage() {
     { value: 'DigitsOverUnder', label: 'Digits - Over/Under' },
     { value: 'DigitsEvenOdd', label: 'Digits - Even/Odd' },
   ];
-
-  // Map Deriv API contract statuses to local trade statuses
-  const mapDerivStatusToLocal = (derivStatus?: string): ActiveAutomatedVolatilityTrade['status'] => {
-    if (!derivStatus) return 'pending_execution';
-    switch (derivStatus) {
-      case 'open': return 'pending_execution';
-      case 'sold': return 'closed_manual';
-      case 'won': return 'won';
-      case 'lost': return 'lost_duration';
-      case 'cancelled': return 'failed_placement';
-      default:
-        console.warn(`[VolatilityPage] Unknown Deriv contract status: ${derivStatus}`);
-        return 'pending_execution';
-    }
-  };
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
@@ -625,7 +625,7 @@ export default function VolatilityTradingPage() {
     };
   }, [
     selectedUserTradeTypeForLoop, isAutoTradingActive, activeAutomatedTrades, isAiLoading,
-    userInfo, selectedDerivAccountType, setProfitsClaimable, toast, mapDerivStatusToLocal
+    userInfo, selectedDerivAccountType, setProfitsClaimable, toast
   ]);
 
   // Simulation trade monitoring useEffect (for page simulations)

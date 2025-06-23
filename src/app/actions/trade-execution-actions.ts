@@ -186,26 +186,51 @@ export async function executeVolatilityAiTradeLoop(
       }
 
       if (!priceData || priceData.length < 5) {
-        console.warn(`[TradeAction/Session] Insufficient data for ${instrument}. It will be passed to AI with limited info.`);
-        instrumentTicksForAI[instrument] = [];
-        instrumentIndicatorsForAI[instrument] = undefined;
+        console.warn(`[TradeAction/Session] Insufficient data for ${instrument}. Excluding from AI input to avoid schema issues.`);
+        // Don't add to instrumentTicksForAI or instrumentIndicatorsForAI - exclude entirely
       } else {
         instrumentTicksForAI[instrument] = priceData.slice(-50);
         instrumentIndicatorsForAI[instrument] = indicators;
       }
     } catch (dataFetchError: any) {
       console.error(`[TradeAction/Session] Failed to fetch data for ${instrument}: ${dataFetchError.message}`);
-      instrumentTicksForAI[instrument] = [];
-      instrumentIndicatorsForAI[instrument] = undefined;
+      // For instruments that fail to fetch data, we'll exclude them from the AI input entirely
+      // rather than including them with empty data, which can cause schema validation issues
+      console.warn(`[TradeAction/Session] Excluding ${instrument} from AI input due to data fetch failure.`);
+      // Don't add to instrumentTicksForAI or instrumentIndicatorsForAI
     }
   }
 
+  // Filter out undefined indicators to avoid schema validation issues
+  const cleanedInstrumentIndicators: Record<string, InstrumentIndicatorData> = {};
+  for (const [instrument, indicators] of Object.entries(instrumentIndicatorsForAI)) {
+    if (indicators !== undefined) {
+      cleanedInstrumentIndicators[instrument] = indicators;
+    }
+  }
+
+  // Only include instruments that have data available
+  const availableInstrumentsWithData = AVAILABLE_VOLATILITY_INDICES.filter(instrument =>
+    instrumentTicksForAI[instrument] && instrumentTicksForAI[instrument].length > 0
+  );
+
+  console.log(`[TradeAction/Session] Available instruments with data: ${availableInstrumentsWithData.join(', ')}`);
+
+  if (availableInstrumentsWithData.length === 0) {
+    console.error('[TradeAction/Session] No instruments have sufficient data for AI analysis.');
+    return [{
+      success: false,
+      instrument: "N/A" as VolatilityInstrumentType,
+      error: "No instruments have sufficient data for AI analysis. Please try again later."
+    }];
+  }
+
   const aiSessionInput: VolatilitySessionStrategyInput = {
-    availableInstruments: AVAILABLE_VOLATILITY_INDICES,
+    availableInstruments: availableInstrumentsWithData,
     userSelectedTradeType: userSelectedTradeType,
     totalSessionStake: totalStakeFromUser,
     instrumentTicks: instrumentTicksForAI,
-    instrumentIndicators: instrumentIndicatorsForAI,
+    instrumentIndicators: cleanedInstrumentIndicators,
   };
 
   console.log(`[TradeAction/Session] Calling AI for session strategy. TradeType: ${userSelectedTradeType}, TotalStake: ${totalStakeFromUser}`);
