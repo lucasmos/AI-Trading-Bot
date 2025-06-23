@@ -518,7 +518,7 @@ interface TradingChartProps {
 
 export function TradingChart({ instrument, onInstrumentChange, instrumentsToShow, isMarketOpen, marketStatusMessage }: TradingChartProps) {
   return (
-    <Card className="shadow-lg min-h-[900px]">
+    <Card className="shadow-lg min-h-[1200px]">
       <CardHeader>
         <CardTitle>Market Watch</CardTitle>
         <CardDescription>Live price action for selected instruments.</CardDescription>
