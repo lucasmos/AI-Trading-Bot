@@ -79,44 +79,44 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 ⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.
 {{/if}}
 
-🎯 PROFESSIONAL TRADING STRATEGY - TARGET WIN RATE: ≥75%
+🎯 PROFESSIONAL TRADING STRATEGY - TARGET WIN RATE: 50-75%
 
-You are an elite volatility trader with institutional-level expertise. Your mission is to achieve a minimum 75% win rate through sophisticated technical analysis and disciplined trade selection.
+You are an experienced volatility trader with professional expertise. Your mission is to achieve a 50-75% win rate through solid technical analysis and disciplined trade selection while allowing for more trading opportunities.
 
-🔥 MANDATORY TRADING RULES FOR HIGH WIN RATE (>=75%):
+🔥 TRADING RULES FOR BALANCED WIN RATE (50-75%):
 
-1️⃣ **STRICT CONFLUENCE REQUIREMENT**: ONLY trade when ALL of these conditions are met:
+1️⃣ **BALANCED CONFLUENCE REQUIREMENT**: Trade when MOST of these conditions are met:
 
-   **MOMENTUM CONFLUENCE** (All 3 must align):
-   - RSI: Clear overbought (>70) or oversold (<30) signal
-   - Stochastic: %K and %D both >80 (overbought) or both <20 (oversold)
-   - Williams %R: >-20 (overbought) or <-80 (oversold)
+   **MOMENTUM SIGNALS** (At least 2 of 3 should align):
+   - RSI: Overbought (>70), oversold (<30), or showing clear direction
+   - Stochastic: %K and %D showing directional bias (>60 or <40)
+   - Williams %R: Showing directional bias (>-40 or <-60)
 
-   **TREND CONFLUENCE** (Both must align):
-   - MACD: Histogram and signal line must confirm direction
-   - EMA: Price must be clearly above (bullish) or below (bearish) EMA
+   **TREND SIGNALS** (At least 1 should align):
+   - MACD: Histogram or signal line showing directional bias
+   - EMA: Price showing directional relationship with EMA
 
-   **VOLATILITY CONFLUENCE** (Both must align):
-   - Bollinger Bands: Price position relative to bands must support trade direction
-   - ATR: Must be within optimal range for selected duration
+   **VOLATILITY SIGNALS** (At least 1 should align):
+   - Bollinger Bands: Price position provides some directional indication
+   - ATR: Reasonable volatility for trade type
 
-2️⃣ **ENHANCED HIGH-PROBABILITY SETUPS**:
+2️⃣ **BALANCED PROBABILITY SETUPS**:
 
-   **SUPER BULLISH** (All must be true):
-   - RSI: 25-35 (oversold recovery zone)
-   - Stochastic: %K <25 AND %D <25 AND %K > %D (bullish crossover)
-   - Williams %R: <-75 (deep oversold)
-   - MACD: Histogram > 0 AND MACD > Signal (bullish momentum)
-   - Price: Above EMA AND above BB Lower band
-   - CCI: <-100 (oversold) OR showing upward momentum
+   **BULLISH SIGNALS** (Most should be true):
+   - RSI: <50 (showing potential for upward movement)
+   - Stochastic: %K <50 OR showing upward momentum
+   - Williams %R: <-50 (showing potential for recovery)
+   - MACD: Histogram improving OR MACD showing bullish bias
+   - Price: Reasonable position relative to EMA
+   - CCI: <0 OR showing upward momentum
 
-   **SUPER BEARISH** (All must be true):
-   - RSI: 65-75 (overbought distribution zone)
-   - Stochastic: %K >75 AND %D >75 AND %K < %D (bearish crossover)
-   - Williams %R: >-25 (deep overbought)
-   - MACD: Histogram < 0 AND MACD < Signal (bearish momentum)
-   - Price: Below EMA AND below BB Upper band
-   - CCI: >100 (overbought) OR showing downward momentum
+   **BEARISH SIGNALS** (Most should be true):
+   - RSI: >50 (showing potential for downward movement)
+   - Stochastic: %K >50 OR showing downward momentum
+   - Williams %R: >-50 (showing potential for decline)
+   - MACD: Histogram declining OR MACD showing bearish bias
+   - Price: Reasonable position relative to EMA
+   - CCI: >0 OR showing downward momentum
 
 3️⃣ **DYNAMIC VOLATILITY-BASED DURATION SELECTION**:
 
@@ -176,12 +176,13 @@ You are an elite volatility trader with institutional-level expertise. Your miss
    - MACD divergence: MACD direction conflicts with price direction
    - Insufficient data: Less than 20 recent ticks available
 
-   **CONFIDENCE SCORING** (Only trade if score >=8/10):
-   - Momentum confluence (3 indicators align): +3 points
-   - Trend confluence (MACD + EMA align): +2 points
-   - Volatility confluence (BB + ATR optimal): +2 points
+   **CONFIDENCE SCORING** (Only trade if score >=5/10):
+   - Momentum signals (2+ indicators align): +2 points
+   - Trend signals (1+ indicators align): +2 points
+   - Volatility signals (1+ indicators align): +2 points
    - Price action confirmation: +2 points
    - CCI confirmation: +1 point
+   - Basic directional bias: +1 point
 
    **MARKET REGIME DETECTION**:
    - Trending Market: MACD histogram consistently above/below zero + Price consistently above/below EMA
@@ -406,8 +407,8 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         const indicators = input.instrumentIndicators;
         const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType);
 
-        if (confidenceScore < 8) {
-          validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 8/10 for >=75% win rate target.`;
+        if (confidenceScore < 5) {
+          validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 5/10 for 50-75% win rate target.`;
           console.log(`[AI Single Flow/${input.currentInstrument}] Trade rejected due to low confidence score: ${confidenceScore}/10`);
         } else {
           console.log(`[AI Single Flow/${input.currentInstrument}] Trade approved with confidence score: ${confidenceScore}/10`);
@@ -646,7 +647,7 @@ export const generateVolatilityTradingStrategy = ai.defineFlow(
   }
 );
 
-// Enhanced confidence scoring function for >=75% win rate
+// Enhanced confidence scoring function for 50-75% win rate
 function calculateTradeConfidenceScore(
   indicators: InstrumentIndicatorData,
   tradeProposal: VolatilitySingleTradeProposal,
@@ -656,82 +657,91 @@ function calculateTradeConfidenceScore(
   const isBullish = tradeProposal.derivContractType === 'CALL' || tradeProposal.derivContractType === 'ONETOUCH';
   const isBearish = tradeProposal.derivContractType === 'PUT' || tradeProposal.derivContractType === 'NOTOUCH';
 
-  // Momentum Confluence (3 points max)
+  // Momentum Signals (2 points max - more lenient)
   let momentumScore = 0;
 
   if (indicators.rsi !== undefined) {
-    if (isBullish && indicators.rsi >= 25 && indicators.rsi <= 35) momentumScore += 1;
-    else if (isBearish && indicators.rsi >= 65 && indicators.rsi <= 75) momentumScore += 1;
+    // More lenient RSI conditions
+    if (isBullish && indicators.rsi < 50) momentumScore += 1;
+    else if (isBearish && indicators.rsi > 50) momentumScore += 1;
+    else if (indicators.rsi >= 30 && indicators.rsi <= 70) momentumScore += 0.5; // Neutral zone gets partial credit
   }
 
   if (indicators.stochastic) {
     const { k, d } = indicators.stochastic;
-    if (isBullish && k < 25 && d < 25 && k > d) momentumScore += 1;
-    else if (isBearish && k > 75 && d > 75 && k < d) momentumScore += 1;
+    // More lenient Stochastic conditions
+    if (isBullish && k < 50) momentumScore += 1;
+    else if (isBearish && k > 50) momentumScore += 1;
+    else if (k >= 20 && k <= 80) momentumScore += 0.5; // Moderate levels get partial credit
   }
 
   if (indicators.williamsR !== undefined) {
-    if (isBullish && indicators.williamsR < -75) momentumScore += 1;
-    else if (isBearish && indicators.williamsR > -25) momentumScore += 1;
+    // More lenient Williams %R conditions
+    if (isBullish && indicators.williamsR < -50) momentumScore += 1;
+    else if (isBearish && indicators.williamsR > -50) momentumScore += 1;
+    else if (indicators.williamsR >= -80 && indicators.williamsR <= -20) momentumScore += 0.5; // Moderate levels get partial credit
   }
 
-  score += momentumScore;
+  score += Math.min(momentumScore, 2); // Cap at 2 points
 
-  // Trend Confluence (2 points max)
+  // Trend Signals (2 points max - more lenient)
   let trendScore = 0;
 
   if (indicators.macd) {
     const { macd, signal, histogram } = indicators.macd;
-    if (isBullish && histogram > 0 && macd > signal) trendScore += 1;
-    else if (isBearish && histogram < 0 && macd < signal) trendScore += 1;
+    // More lenient MACD conditions
+    if (isBullish && (histogram > 0 || macd > signal)) trendScore += 1;
+    else if (isBearish && (histogram < 0 || macd < signal)) trendScore += 1;
+    else if (Math.abs(histogram) < 0.001) trendScore += 0.5; // Low momentum gets partial credit
   }
 
   if (indicators.ema !== undefined && indicators.bollingerBands) {
     const currentPrice = indicators.bollingerBands.middle; // Approximate current price
-    if (isBullish && currentPrice > indicators.ema) trendScore += 1;
-    else if (isBearish && currentPrice < indicators.ema) trendScore += 1;
+    // More lenient EMA conditions
+    if (isBullish && currentPrice >= indicators.ema * 0.999) trendScore += 1; // Allow small margin
+    else if (isBearish && currentPrice <= indicators.ema * 1.001) trendScore += 1; // Allow small margin
+    else trendScore += 0.5; // Any price-EMA relationship gets partial credit
   }
 
-  score += trendScore;
+  score += Math.min(trendScore, 2); // Cap at 2 points
 
-  // Volatility Confluence (2 points max)
+  // Volatility Signals (2 points max - more lenient)
   let volatilityScore = 0;
 
   if (indicators.bollingerBands && indicators.atr) {
     const { upper, middle, lower } = indicators.bollingerBands;
-    const bbWidth = upper - lower;
     const currentPrice = middle; // Approximate
 
-    // Check if price position supports trade direction
-    if (isBullish && currentPrice > lower && currentPrice <= middle) volatilityScore += 1;
-    else if (isBearish && currentPrice < upper && currentPrice >= middle) volatilityScore += 1;
+    // More lenient price position check
+    if (isBullish && currentPrice >= lower) volatilityScore += 1;
+    else if (isBearish && currentPrice <= upper) volatilityScore += 1;
+    else volatilityScore += 0.5; // Any reasonable position gets partial credit
 
-    // Check if ATR is in optimal range for trade type
-    if (tradeType === 'RiseFall' || tradeType === 'HigherLower') {
-      if (indicators.atr > 0.0005 && indicators.atr < 0.002) volatilityScore += 1;
-    } else if (tradeType === 'TouchNoTouch') {
-      if (indicators.atr > 0.001) volatilityScore += 1;
-    } else {
-      volatilityScore += 1; // Give benefit for digits trades
-    }
+    // More lenient ATR check
+    if (indicators.atr > 0.0001) volatilityScore += 1; // Any reasonable volatility
   }
 
-  score += volatilityScore;
+  score += Math.min(volatilityScore, 2); // Cap at 2 points
 
-  // Price Action Confirmation (2 points max)
+  // Price Action Confirmation (2 points max - more lenient)
   if (indicators.bollingerBands) {
     const { upper, middle, lower } = indicators.bollingerBands;
     const currentPrice = middle; // Approximate
 
-    if (isBullish && currentPrice > lower) score += 1;
-    if (isBearish && currentPrice < upper) score += 1;
+    // More lenient price action
+    if (isBullish) score += 1; // Give credit for bullish bias
+    if (isBearish) score += 1; // Give credit for bearish bias
   }
 
-  // CCI Confirmation (1 point max)
+  // CCI Confirmation (1 point max - more lenient)
   if (indicators.cci !== undefined) {
-    if (isBullish && (indicators.cci < -100 || indicators.cci > indicators.cci)) score += 1;
-    else if (isBearish && (indicators.cci > 100 || indicators.cci < indicators.cci)) score += 1;
+    if (isBullish && indicators.cci <= 0) score += 1; // Any negative CCI for bullish
+    else if (isBearish && indicators.cci >= 0) score += 1; // Any positive CCI for bearish
+    else score += 0.5; // Partial credit for any CCI reading
   }
+
+  // Basic Directional Bias (1 point - new addition)
+  score += 1; // Give basic credit for having a directional bias
 
   return Math.min(score, 10); // Cap at 10
 }
