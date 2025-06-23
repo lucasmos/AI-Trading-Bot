@@ -72,7 +72,10 @@ Your Task:
       - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set default barrier) or 'NOTOUCH' (price will not touch a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
       - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
       - For 'DigitsOverUnder': Output 'DIGITOVER' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit). YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without this digit 'barrier' is invalid.
-   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks). For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks. For other types, 'durationUnit' is usually 's' (seconds) or 'm' (minutes). Minimum duration is 1 tick or 1 second.
+   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
+      - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
+      - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
+      - For Rise/Fall and Higher/Lower contracts, 'durationUnit' can be 's' (seconds) or 'm' (minutes), with minimum duration of 15 seconds.
    c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
 3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'. In this case, do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
 4. Provide concise 'reasoning' for your decision. If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch', you can suggest barrier characteristics in your reasoning (e.g., "barrier should be significantly above current spot", "aim for a tight barrier").
@@ -104,6 +107,17 @@ Example for HigherLower (predicting LOWER with relative barrier):
   "durationUnit": "s",
   "stake": {{{stakePerTrade}}},
   "reasoning": "Price showing resistance, MACD declining. Barrier will be set slightly below current spot by system."
+}
+
+Example for TouchNoTouch (predicting TOUCH):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "ONETOUCH",
+  "duration": 10,
+  "durationUnit": "m",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Strong upward momentum with high volatility. Price likely to touch upper barrier within 10 minutes."
 }
 
 Example for DigitsOverUnder (predicting UNDER 3):
@@ -203,6 +217,11 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       }
       if (output.derivContractType?.startsWith("DIGIT") && output.durationUnit !== 't') {
         validationError = `Duration unit must be 't' for Digit contracts. Got '${output.durationUnit}'.`;
+      }
+      // Validate Touch/No Touch duration requirements
+      if ((output.derivContractType === "ONETOUCH" || output.derivContractType === "NOTOUCH") &&
+          (output.durationUnit !== 'm' || !output.duration || output.duration < 5)) {
+        validationError = `Touch/No Touch contracts require minimum 5 minutes duration. Got ${output.duration}${output.durationUnit}.`;
       }
       if (validationError) {
         console.error(`[AI Single Flow/${input.currentInstrument}] Invalid trade proposal: ${validationError}`, output);
