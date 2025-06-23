@@ -648,7 +648,21 @@ export default function VolatilityTradingPage() {
         console.log('[VolatilityPage] Refreshing balance after trade completion');
         refreshBalance();
 
-        toast({ title: "AI Session Complete", description: "All real trades are settled. Balance updated." });
+        // Calculate session summary
+        const settledTrades = updatedTrades.filter(t =>
+          t.status === 'won' || t.status === 'lost_duration' || t.status === 'closed_manual'
+        );
+        const totalPnL = settledTrades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+        const winCount = settledTrades.filter(t => t.status === 'won').length;
+        const lossCount = settledTrades.filter(t => t.status === 'lost_duration').length;
+        const winRate = settledTrades.length > 0 ? ((winCount / settledTrades.length) * 100).toFixed(1) : '0';
+
+        toast({
+          title: "AI Session Complete",
+          description: `${settledTrades.length} trades • ${winCount}W/${lossCount}L (${winRate}%) • P/L: ${totalPnL >= 0 ? '+' : ''}$${totalPnL.toFixed(2)}`,
+          variant: totalPnL >= 0 ? "default" : "destructive",
+          duration: 6000,
+        });
       }
     }, 5000); // Check every 5 seconds
 

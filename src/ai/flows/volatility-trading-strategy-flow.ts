@@ -71,10 +71,10 @@ Your Task:
       - For 'HigherLower': Output 'CALL' (price will be higher than a programmatically set default barrier) or 'PUT' (price will be lower than a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
       - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set barrier) or 'NOTOUCH' (price will not touch a programmatically set barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). IMPORTANT: In your reasoning, specify your barrier strategy (e.g., "barrier should be above current price to capture upward breakout" or "barrier should be well above current price to avoid being touched during normal volatility").
       - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
-      - For 'DigitsOverUnder': Output 'DIGITMATCH' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit).
+      - For 'DigitsOverUnder': Output 'DIGITOVER' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit).
         🚨 MANDATORY BARRIER FIELD: YOU MUST INCLUDE "barrier": "X" WHERE X IS A SINGLE DIGIT (0-9)
         🚨 FOR DIGITUNDER: If you predict under 5, use "barrier": "5"
-        🚨 FOR DIGITMATCH: If you predict over 4, use "barrier": "4"
+        🚨 FOR DIGITOVER: If you predict over 4, use "barrier": "4"
         🚨 NO BARRIER = TRADE REJECTED. ALWAYS INCLUDE THE BARRIER FIELD!
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
@@ -91,7 +91,7 @@ If userSelectedTradeType is 'DigitsOverUnder' and shouldTrade is true, your JSON
 {
   "instrument": "{{{currentInstrument}}}",
   "shouldTrade": true,
-  "derivContractType": "DIGITUNDER" or "DIGITMATCH",
+  "derivContractType": "DIGITUNDER" or "DIGITOVER",
   "duration": [number],
   "durationUnit": "t",
   "barrier": "[single digit 0-9]",  ← THIS IS MANDATORY!
@@ -160,7 +160,7 @@ Example for DigitsOverUnder (predicting OVER 6):
 {
   "instrument": "{{{currentInstrument}}}",
   "shouldTrade": true,
-  "derivContractType": "DIGITMATCH",
+  "derivContractType": "DIGITOVER",
   "duration": 5,
   "durationUnit": "t",
   "barrier": "6",
@@ -289,10 +289,10 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
             // For UNDER predictions, use a middle-high digit as barrier
             output.barrier = "5"; // Predict under 5 (digits 0,1,2,3,4 win)
             console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITUNDER, using smart default '5'.`);
-          } else if (output.derivContractType === 'DIGITMATCH') {
+          } else if (output.derivContractType === 'DIGITOVER') {
             // For OVER predictions, use a middle-low digit as barrier
             output.barrier = "4"; // Predict over 4 (digits 5,6,7,8,9 win)
-            console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITMATCH, using smart default '4'.`);
+            console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITOVER, using smart default '4'.`);
           } else {
             validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'. Contract type: ${output.derivContractType}`;
           }
@@ -351,6 +351,10 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
 
     console.log(`[AI Session Flow] Processing ${instrumentsToProcess.length} instruments for ${input.userSelectedTradeType}`);
 
+    // Calculate proper stake per trade based on number of instruments to process
+    const adjustedBaseStakePerTrade = input.totalSessionStake / Math.min(instrumentsToProcess.length, maxTradesPerSession);
+    console.log(`[AI Session Flow] Adjusted stake per trade: $${adjustedBaseStakePerTrade.toFixed(2)} (Total: $${input.totalSessionStake}, Instruments: ${instrumentsToProcess.length})`);
+
     for (const instrument of instrumentsToProcess) {
       // Early exit conditions
       if (tradesProposedCount >= maxTradesPerSession && totalStakeAllocated >= input.totalSessionStake * 0.95) {
@@ -373,7 +377,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
         continue;
       }
 
-      const currentStakeForThisTrade = Math.max(0.35, baseStakePerTrade);
+      const currentStakeForThisTrade = Math.max(0.35, adjustedBaseStakePerTrade);
 
       const singleTradeInput: VolatilitySingleTradeStrategyInput = {
         currentInstrument: instrument,
