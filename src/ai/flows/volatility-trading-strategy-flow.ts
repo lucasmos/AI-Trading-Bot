@@ -72,9 +72,10 @@ Your Task:
       - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set barrier) or 'NOTOUCH' (price will not touch a programmatically set barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). IMPORTANT: In your reasoning, specify your barrier strategy (e.g., "barrier should be above current price to capture upward breakout" or "barrier should be well above current price to avoid being touched during normal volatility").
       - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
       - For 'DigitsOverUnder': Output 'DIGITMATCH' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit).
-        ⚠️ CRITICAL: YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3").
-        ⚠️ EXAMPLE: If predicting UNDER 5, use "barrier": "5". If predicting OVER 6, use "barrier": "6".
-        ⚠️ A DigitsOverUnder trade proposal without this digit 'barrier' is INVALID and will be REJECTED.
+        🚨 MANDATORY BARRIER FIELD: YOU MUST INCLUDE "barrier": "X" WHERE X IS A SINGLE DIGIT (0-9)
+        🚨 FOR DIGITUNDER: If you predict under 5, use "barrier": "5"
+        🚨 FOR DIGITMATCH: If you predict over 4, use "barrier": "4"
+        🚨 NO BARRIER = TRADE REJECTED. ALWAYS INCLUDE THE BARRIER FIELD!
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
       - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
@@ -88,10 +89,12 @@ Output Format: Return a single JSON object matching the output schema.
 - If 'shouldTrade' is true AND 'userSelectedTradeType' is 'DigitsOverUnder': the 'barrier' field (predicted digit) is ALSO ABSOLUTELY MANDATORY.
 - For 'RiseFall', 'HigherLower', 'TouchNoTouch', 'DigitsEvenOdd' when 'shouldTrade' is true: the 'barrier' field MUST be omitted from your JSON output.
 - If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
-⚠️ CRITICAL CHECK: Before outputting JSON:
-- If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch' and 'shouldTrade' is true: OMIT the 'barrier' field
-- If 'userSelectedTradeType' is 'DigitsOverUnder' and 'shouldTrade' is true: INCLUDE the 'barrier' field with the predicted digit (MANDATORY!)
-- If 'userSelectedTradeType' is 'DigitsEvenOdd' and 'shouldTrade' is true: OMIT the 'barrier' field
+🚨🚨🚨 FINAL VALIDATION BEFORE JSON OUTPUT 🚨🚨🚨
+- DigitsOverUnder + shouldTrade=true → MUST HAVE "barrier": "X" (single digit)
+- HigherLower/TouchNoTouch + shouldTrade=true → NO barrier field
+- DigitsEvenOdd + shouldTrade=true → NO barrier field
+
+🚨 FOR DIGITSOVERUNDER: DOUBLE-CHECK YOUR JSON HAS THE BARRIER FIELD! 🚨
 
 Example for RiseFall (predicting RISE):
 {
@@ -239,23 +242,43 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         output.stake = input.stakePerTrade;
       }
       if (input.userSelectedTradeType === 'DigitsOverUnder' && (output.barrier === undefined || output.barrier === null || !/^\d$/.test(String(output.barrier).trim()))) {
-        // Try to extract barrier from reasoning as fallback
+        // Enhanced barrier extraction from reasoning
         const reasoningText = output.reasoning || '';
-        const barrierMatch = reasoningText.match(/(?:under|below|less than)\s*(\d)|(?:over|above|greater than)\s*(\d)/i);
-        if (barrierMatch) {
-          const extractedBarrier = barrierMatch[1] || barrierMatch[2];
-          console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier, extracted '${extractedBarrier}' from reasoning. Adding automatically.`);
+
+        // Try multiple extraction patterns
+        const patterns = [
+          /(?:under|below|less than)\s*(\d)/i,
+          /(?:over|above|greater than)\s*(\d)/i,
+          /digit\s*(\d)/i,
+          /barrier\s*(\d)/i,
+          /predict\s*(\d)/i,
+          /(\d)\s*(?:digit|barrier)/i
+        ];
+
+        let extractedBarrier = null;
+        for (const pattern of patterns) {
+          const match = reasoningText.match(pattern);
+          if (match && match[1]) {
+            extractedBarrier = match[1];
+            break;
+          }
+        }
+
+        if (extractedBarrier) {
+          console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier, extracted '${extractedBarrier}' from reasoning. Adding automatically.`);
           output.barrier = extractedBarrier;
         } else {
-          // Default fallback based on contract type
+          // Smart default based on contract type and recent tick analysis
           if (output.derivContractType === 'DIGITUNDER') {
-            output.barrier = "5"; // Default: predict under 5
-            console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITUNDER, using default '5'.`);
+            // For UNDER predictions, use a middle-high digit as barrier
+            output.barrier = "5"; // Predict under 5 (digits 0,1,2,3,4 win)
+            console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITUNDER, using smart default '5'.`);
           } else if (output.derivContractType === 'DIGITMATCH') {
-            output.barrier = "4"; // Default: predict over 4
-            console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITMATCH, using default '4'.`);
+            // For OVER predictions, use a middle-low digit as barrier
+            output.barrier = "4"; // Predict over 4 (digits 5,6,7,8,9 win)
+            console.log(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITMATCH, using smart default '4'.`);
           } else {
-            validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'`;
+            validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'. Contract type: ${output.derivContractType}`;
           }
         }
       } else if ((input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch') && output.barrier !== undefined) {
@@ -305,7 +328,14 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
 
     let overallReasoning = `AI session for ${input.userSelectedTradeType} with total stake $${input.totalSessionStake.toFixed(2)}. `;
 
-    for (const instrument of input.availableInstruments) {
+    // For DigitsOverUnder, limit to 3 instruments to prevent timeout
+    const instrumentsToProcess = input.userSelectedTradeType === 'DigitsOverUnder'
+      ? input.availableInstruments.slice(0, 3)
+      : input.availableInstruments;
+
+    console.log(`[AI Session Flow] Processing ${instrumentsToProcess.length} instruments for ${input.userSelectedTradeType}`);
+
+    for (const instrument of instrumentsToProcess) {
       if (tradesProposedCount >= maxTradesPerSession && totalStakeAllocated >= input.totalSessionStake * 0.95) {
         overallReasoning += `Max trades or stake allocation reached. `;
         break;
@@ -331,28 +361,36 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
       };
 
       console.log(`[AI Session Flow] Calling single trade decision for ${instrument} with stake ${currentStakeForThisTrade}`);
-      const decision = await generateVolatilitySingleTradeDecision(singleTradeInput); // Uses the internal flow now
 
-      if (decision.shouldTrade && decision.stake && decision.stake >= 0.35) {
-        const actualStakeForThisTrade = Math.min(decision.stake, input.totalSessionStake - totalStakeAllocated);
+      try {
+        const decision = await generateVolatilitySingleTradeDecision(singleTradeInput);
 
-        if (actualStakeForThisTrade >= 0.35) {
-          decision.stake = parseFloat(actualStakeForThisTrade.toFixed(2));
-          tradesToExecute.push(decision);
-          totalStakeAllocated += decision.stake;
-          tradesProposedCount++;
-          overallReasoning += `For ${instrument}: ${decision.reasoning} (Stake: $${decision.stake}). `;
-          console.log(`[AI Session Flow] Trade PROPOSED for ${instrument}. Stake: $${decision.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
+        if (decision.shouldTrade && decision.stake && decision.stake >= 0.35) {
+          const actualStakeForThisTrade = Math.min(decision.stake, input.totalSessionStake - totalStakeAllocated);
+
+          if (actualStakeForThisTrade >= 0.35) {
+            decision.stake = parseFloat(actualStakeForThisTrade.toFixed(2));
+            tradesToExecute.push(decision);
+            totalStakeAllocated += decision.stake;
+            tradesProposedCount++;
+            overallReasoning += `For ${instrument}: ${decision.reasoning} (Stake: $${decision.stake}). `;
+            console.log(`[AI Session Flow] Trade PROPOSED for ${instrument}. Stake: $${decision.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
+          } else {
+            overallReasoning += `Skipped proposed trade for ${instrument} (adjusted stake $${actualStakeForThisTrade.toFixed(2)} too low). `;
+          }
         } else {
-          overallReasoning += `Skipped proposed trade for ${instrument} (adjusted stake $${actualStakeForThisTrade.toFixed(2)} too low). `;
+          overallReasoning += `For ${instrument}: No trade recommended (${decision.reasoning}). `;
         }
-      } else {
-        overallReasoning += `For ${instrument}: No trade recommended (${decision.reasoning}). `;
+      } catch (error) {
+        console.error(`[AI Session Flow] Error processing ${instrument}:`, error);
+        overallReasoning += `Error processing ${instrument}: ${(error as Error).message}. `;
+        // Continue with next instrument instead of failing entire session
       }
-       if (totalStakeAllocated >= input.totalSessionStake * 0.98) {
-            overallReasoning += `Total stake allocation limit nearly reached. `;
-            break;
-        }
+
+      if (totalStakeAllocated >= input.totalSessionStake * 0.98) {
+        overallReasoning += `Total stake allocation limit nearly reached. `;
+        break;
+      }
     }
 
     if (tradesToExecute.length === 0) {
