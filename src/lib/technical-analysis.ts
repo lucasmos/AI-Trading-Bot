@@ -1,4 +1,4 @@
-import { RSI, MACD, BollingerBands, SMA, EMA, ATR } from 'technicalindicators';
+import { RSI, MACD, BollingerBands, SMA, EMA, ATR, Stochastic, WilliamsR, CCI } from 'technicalindicators';
 // Specific Input/Output types are not explicitly exported by the library for static calculate methods.
 // We rely on the structure the calculate methods expect.
 
@@ -188,6 +188,102 @@ export function calculateATR(
   return fullATR.length > 0 ? fullATR[fullATR.length - 1] : undefined;
 }
 
+/**
+ * Calculates Stochastic Oscillator for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param kPeriod %K period (default 14).
+ * @param dPeriod %D period (default 3).
+ * @returns Stochastic result object (%K and %D values).
+ */
+export function calculateStochastic(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  kPeriod: number = 14,
+  dPeriod: number = 3
+): { k: number; d: number } | undefined {
+  if (highPrices.length < kPeriod || lowPrices.length < kPeriod || closePrices.length < kPeriod) {
+    return undefined;
+  }
+
+  const stochInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: kPeriod,
+    signalPeriod: dPeriod,
+  };
+
+  const stochResults = Stochastic.calculate(stochInput);
+  if (stochResults.length === 0) return undefined;
+
+  const latest = stochResults[stochResults.length - 1];
+  return {
+    k: parseFloat(latest.k.toFixed(2)),
+    d: parseFloat(latest.d.toFixed(2)),
+  };
+}
+
+/**
+ * Calculates Williams %R for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param period Period for calculation (default 14).
+ * @returns Williams %R value.
+ */
+export function calculateWilliamsR(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  period: number = 14
+): number | undefined {
+  if (highPrices.length < period || lowPrices.length < period || closePrices.length < period) {
+    return undefined;
+  }
+
+  const wrInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: period,
+  };
+
+  const wrResults = WilliamsR.calculate(wrInput);
+  return wrResults.length > 0 ? parseFloat(wrResults[wrResults.length - 1].toFixed(2)) : undefined;
+}
+
+/**
+ * Calculates Commodity Channel Index (CCI) for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param period Period for calculation (default 20).
+ * @returns CCI value.
+ */
+export function calculateCCI(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  period: number = 20
+): number | undefined {
+  if (highPrices.length < period || lowPrices.length < period || closePrices.length < period) {
+    return undefined;
+  }
+
+  const cciInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: period,
+  };
+
+  const cciResults = CCI.calculate(cciInput);
+  return cciResults.length > 0 ? parseFloat(cciResults[cciResults.length - 1].toFixed(2)) : undefined;
+}
+
 // Import types needed for calculateAllIndicators - adjust path if your project structure is different
 import type { CandleData, InstrumentIndicatorData } from '@/types';
 
@@ -262,8 +358,26 @@ export function calculateAllIndicators(
         if (atrValue !== undefined) {
             indicators.atr = atrValue;
         }
+
+        // Stochastic Oscillator - requires high, low, and close prices
+        const stochasticValue = calculateStochastic(highPrices, lowPrices, prices);
+        if (stochasticValue !== undefined) {
+            indicators.stochastic = stochasticValue;
+        }
+
+        // Williams %R - requires high, low, and close prices
+        const williamsRValue = calculateWilliamsR(highPrices, lowPrices, prices);
+        if (williamsRValue !== undefined) {
+            indicators.williamsR = williamsRValue;
+        }
+
+        // CCI - requires high, low, and close prices
+        const cciValue = calculateCCI(highPrices, lowPrices, prices);
+        if (cciValue !== undefined) {
+            indicators.cci = cciValue;
+        }
     } else {
-        console.warn("[calculateAllIndicators] Not all candles have high, low, and close prices. Skipping ATR calculation.");
+        console.warn("[calculateAllIndicators] Not all candles have high, low, and close prices. Skipping ATR, Stochastic, Williams %R, and CCI calculations.");
     }
 
     return indicators;

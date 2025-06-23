@@ -9,7 +9,7 @@ import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getCandles } from '@/services/deriv';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
-import { calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
+import { calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR, calculateStochastic, calculateWilliamsR, calculateCCI } from '@/lib/technical-analysis';
 
 const chartConfig = {
   price: {
@@ -52,6 +52,22 @@ const chartConfig = {
   atr: {
     label: "ATR",
     color: "hsl(var(--chart-7))",
+  },
+  stochasticK: {
+    label: "Stochastic %K",
+    color: "hsl(var(--chart-8))",
+  },
+  stochasticD: {
+    label: "Stochastic %D",
+    color: "hsl(var(--chart-9))",
+  },
+  williamsR: {
+    label: "Williams %R",
+    color: "hsl(var(--chart-10))",
+  },
+  cci: {
+    label: "CCI",
+    color: "hsl(var(--chart-11))",
   }
 };
 
@@ -68,6 +84,10 @@ type ChartConfigType = {
   macdSignal: { label: string; color: string };
   macdHistogram: { label: string; colorPositive: string; colorNegative: string };
   atr: { label: string; color: string };
+  stochasticK: { label: string; color: string };
+  stochasticD: { label: string; color: string };
+  williamsR: { label: string; color: string };
+  cci: { label: string; color: string };
 };
 
 // Explicitly type chartConfig
@@ -94,6 +114,10 @@ interface ChartDataPoint {
   bbLower?: number;
   ema?: number;
   atr?: number;
+  stochasticK?: number;
+  stochasticD?: number;
+  williamsR?: number;
+  cci?: number;
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {

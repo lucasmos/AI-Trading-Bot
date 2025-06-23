@@ -55,6 +55,9 @@ export type InstrumentIndicatorData = {
   bollingerBands?: { upper: number; middle: number; lower: number };
   ema?: number;
   atr?: number;
+  stochastic?: { k: number; d: number };
+  williamsR?: number;
+  cci?: number;
 };
 
 export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Crypto/Commodity)

@@ -53,15 +53,66 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 {{/each}}
 
 {{#if formattedIndicators}}
-Calculated Technical Indicators for {{{currentInstrument}}}:
-  RSI: {{formattedIndicators.rsi}}
-  MACD: Line: {{formattedIndicators.macdLine}}, Signal: {{formattedIndicators.macdSignal}}, Hist: {{formattedIndicators.macdHist}}
-  Bollinger Bands: Upper: {{formattedIndicators.bbUpper}}, Middle: {{formattedIndicators.bbMiddle}}, Lower: {{formattedIndicators.bbLower}}
-  EMA (20): {{formattedIndicators.ema}}
-  ATR (14): {{formattedIndicators.atr}}
+📊 COMPREHENSIVE TECHNICAL ANALYSIS for {{{currentInstrument}}}:
+
+🔴 MOMENTUM INDICATORS:
+  • RSI (14): {{formattedIndicators.rsi}} [Overbought >70, Oversold <30]
+  • Stochastic: %K={{formattedIndicators.stochasticK}}, %D={{formattedIndicators.stochasticD}} [Overbought >80, Oversold <20]
+  • Williams %R: {{formattedIndicators.williamsR}} [Overbought >-20, Oversold <-80]
+  • CCI (20): {{formattedIndicators.cci}} [Overbought >100, Oversold <-100]
+
+🔵 TREND INDICATORS:
+  • MACD: Line={{formattedIndicators.macdLine}}, Signal={{formattedIndicators.macdSignal}}, Histogram={{formattedIndicators.macdHist}}
+  • EMA (20): {{formattedIndicators.ema}}
+
+🟡 VOLATILITY INDICATORS:
+  • Bollinger Bands: Upper={{formattedIndicators.bbUpper}}, Middle={{formattedIndicators.bbMiddle}}, Lower={{formattedIndicators.bbLower}}
+  • ATR (14): {{formattedIndicators.atr}} [Higher ATR = Higher Volatility]
+
+🎯 TRADING SIGNALS ANALYSIS:
+  • Price vs BB: Compare current price to BB bands for breakout/reversal signals
+  • MACD Crossover: MACD line vs Signal line for trend changes
+  • RSI Divergence: Look for momentum divergence with price action
+  • Multi-timeframe Confluence: Align multiple indicators for high-probability setups
 {{else}}
-No technical indicators provided. Base your decision on price action and trade type logic.
+⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.
 {{/if}}
+
+🎯 PROFESSIONAL TRADING STRATEGY - TARGET WIN RATE: ≥75%
+
+You are an elite volatility trader with institutional-level expertise. Your mission is to achieve a minimum 75% win rate through sophisticated technical analysis and disciplined trade selection.
+
+🔥 MANDATORY TRADING RULES FOR HIGH WIN RATE:
+
+1️⃣ **CONFLUENCE REQUIREMENT**: Only trade when AT LEAST 3 indicators align:
+   - RSI + Stochastic + Williams %R (momentum confluence)
+   - MACD + EMA (trend confluence)
+   - Bollinger Bands + ATR (volatility confluence)
+   - CCI + Price Action (reversal confluence)
+
+2️⃣ **HIGH-PROBABILITY SETUPS ONLY**:
+   - RSI Oversold (<30) + Stochastic <20 + Williams %R <-80 = STRONG BUY
+   - RSI Overbought (>70) + Stochastic >80 + Williams %R >-20 = STRONG SELL
+   - MACD Bullish Crossover + Price above EMA + BB Middle Break = TREND BUY
+   - MACD Bearish Crossover + Price below EMA + BB Middle Break = TREND SELL
+
+3️⃣ **VOLATILITY-BASED DURATION SELECTION**:
+   - High ATR (>0.001): Use shorter durations (1-3 minutes)
+   - Medium ATR (0.0005-0.001): Use medium durations (3-8 minutes)
+   - Low ATR (<0.0005): Use longer durations (8-15 minutes)
+
+4️⃣ **TRADE TYPE OPTIMIZATION**:
+   - **RiseFall**: Best for clear trend + momentum alignment. Duration: 1-5 minutes.
+   - **HigherLower**: Best for range-bound markets with clear support/resistance. Duration: 5-15 minutes.
+   - **TouchNoTouch**: Best for high volatility breakouts or strong consolidation. Duration: 10-15 minutes.
+   - **DigitsEvenOdd**: Best for sideways/choppy markets. Duration: 1-10 ticks.
+   - **DigitsOverUnder**: Best for digit pattern analysis + momentum. Duration: 1-10 ticks.
+
+5️⃣ **RISK MANAGEMENT**:
+   - NEVER trade against strong trends (MACD + EMA alignment)
+   - AVOID trading during extreme volatility spikes (ATR >2x average)
+   - SKIP trades with conflicting signals (indicators disagreeing)
+   - ONLY trade when confidence level is HIGH (multiple confirmations)
 
 Your Task:
 1. Based on the user's selected trade type ('{{{userSelectedTradeType}}}') and your analysis of the instrument data (price ticks and indicators if available), decide if a trade is viable.
@@ -223,6 +274,10 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         bbLower: ind.bollingerBands?.lower?.toFixed(4) ?? "N/A",
         ema: ind.ema?.toFixed(4) ?? "N/A",
         atr: ind.atr?.toFixed(4) ?? "N/A",
+        stochasticK: ind.stochastic?.k?.toFixed(2) ?? "N/A",
+        stochasticD: ind.stochastic?.d?.toFixed(2) ?? "N/A",
+        williamsR: ind.williamsR?.toFixed(2) ?? "N/A",
+        cci: ind.cci?.toFixed(2) ?? "N/A",
       };
     }
 

@@ -18,6 +18,9 @@ export const InstrumentIndicatorDataSchema = z.object({
   bollingerBands: z.object({ upper: z.number(), middle: z.number(), lower: z.number() }).optional(),
   ema: z.number().optional(),
   atr: z.number().optional(),
+  stochastic: z.object({ k: z.number(), d: z.number() }).optional(),
+  williamsR: z.number().optional(),
+  cci: z.number().optional(),
 }).describe("Calculated technical indicators for an instrument.");
 export type InstrumentIndicatorData = ExternalInstrumentIndicatorDataType; // Use from '@/types' if defined there
 
@@ -108,6 +111,10 @@ export const PromptFormattedInstrumentIndicatorSchema = z.object({
   bbLower: z.string().optional(),
   ema: z.string().optional(),
   atr: z.string().optional(),
+  stochasticK: z.string().optional(),
+  stochasticD: z.string().optional(),
+  williamsR: z.string().optional(),
+  cci: z.string().optional(),
 });
 export type PromptFormattedInstrumentIndicator = z.infer<typeof PromptFormattedInstrumentIndicatorSchema>;
 

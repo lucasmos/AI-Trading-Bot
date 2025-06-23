@@ -29,7 +29,7 @@ import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails } from '@/lib/ut
 import { useAuth } from '@/contexts/auth-context';
 import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
-import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR } from '@/lib/technical-analysis';
+import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateStochastic, calculateWilliamsR, calculateCCI } from '@/lib/technical-analysis';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { useRouter } from 'next/navigation';
 import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-balance-listener';
@@ -394,6 +394,9 @@ export default function VolatilityTradingPage() {
                     ...(calculateBollingerBands(closePrices) && { bollingerBands: calculateBollingerBands(closePrices) }),
                     ...(calculateEMA(closePrices) !== undefined && { ema: calculateEMA(closePrices) }),
                     ...(calculateATR(highPrices, lowPrices, closePrices) !== undefined && { atr: calculateATR(highPrices, lowPrices, closePrices) }),
+                    ...(calculateStochastic(highPrices, lowPrices, closePrices) && { stochastic: calculateStochastic(highPrices, lowPrices, closePrices) }),
+                    ...(calculateWilliamsR(highPrices, lowPrices, closePrices) !== undefined && { williamsR: calculateWilliamsR(highPrices, lowPrices, closePrices) }),
+                    ...(calculateCCI(highPrices, lowPrices, closePrices) !== undefined && { cci: calculateCCI(highPrices, lowPrices, closePrices) }),
                   };
                 } else { throw new Error("No candle data"); }
               } catch (err) {
