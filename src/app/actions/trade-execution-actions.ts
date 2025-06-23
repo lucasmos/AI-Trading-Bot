@@ -295,7 +295,7 @@ export async function executeVolatilityAiTradeLoop(
 
           if (latestSpot !== undefined) {
             // Enhanced barrier calculation for Higher/Lower trades
-            // Use larger offset factors to account for the nature of Higher/Lower contracts
+            // For Higher/Lower, Deriv expects RELATIVE barriers (e.g., "+0.37", "-0.25")
             let offsetFactor: number;
             let fallbackPercentage: number;
 
@@ -316,13 +316,16 @@ export async function executeVolatilityAiTradeLoop(
 
             const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * fallbackPercentage;
 
-            let barrierValue = (aiProposal.derivContractType === 'CALL')
-                               ? latestSpot + atrBasedOffset
-                               : latestSpot - atrBasedOffset;
+            // For Higher/Lower, use RELATIVE barrier format ("+X" or "-X")
+            const relativeOffset = (aiProposal.derivContractType === 'CALL')
+                                   ? atrBasedOffset  // Positive offset for CALL (Higher)
+                                   : -atrBasedOffset; // Negative offset for PUT (Lower)
 
             const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
-            calculatedBarrier = barrierValue.toFixed(decimalPlaces);
-            console.log(`[TradeAction/SessionLoop] Enhanced barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier} (offset: ${atrBasedOffset.toFixed(6)}, duration: ${aiProposal.duration}${aiProposal.durationUnit})`);
+            const sign = relativeOffset >= 0 ? '+' : '';
+            calculatedBarrier = `${sign}${relativeOffset.toFixed(decimalPlaces)}`;
+
+            console.log(`[TradeAction/SessionLoop] Enhanced RELATIVE barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier} (offset: ${atrBasedOffset.toFixed(6)}, duration: ${aiProposal.duration}${aiProposal.durationUnit})`);
           } else {
             throw new Error(`Cannot determine current spot price for programmatic barrier for ${instrumentFromAI}. Data might have been insufficient.`);
           }
