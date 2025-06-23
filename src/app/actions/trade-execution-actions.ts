@@ -160,7 +160,9 @@ export async function executeVolatilityAiTradeLoop(
 
       if (userSelectedTradeType.startsWith("Digits")) {
         // Fetch raw tick data and map into PriceTick[]
-        const tickData = await getTicks(instrument as VolatilityInstrumentType, 25, userDerivApiToken);
+        // Reduced tick count for DigitsOverUnder to speed up AI processing
+        const tickCount = userSelectedTradeType === 'DigitsOverUnder' ? 15 : 25;
+        const tickData = await getTicks(instrument as VolatilityInstrumentType, tickCount, userDerivApiToken);
         priceData = tickData.map(tick => ({
           epoch: tick.epoch,
           price: tick.price, // Fixed: use tick.price instead of tick.quote
@@ -236,9 +238,9 @@ export async function executeVolatilityAiTradeLoop(
   console.log(`[TradeAction/Session] Calling AI for session strategy. TradeType: ${userSelectedTradeType}, TotalStake: ${totalStakeFromUser}`);
 
   try {
-    // Add timeout to prevent Vercel timeout (max 55 seconds for AI processing)
-    // Increased timeout for DigitsOverUnder which requires more processing time
-    const timeoutDuration = userSelectedTradeType === 'DigitsOverUnder' ? 55000 : 45000;
+    // Add timeout to prevent Vercel timeout
+    // DigitsOverUnder needs more time due to complex tick analysis and barrier validation
+    const timeoutDuration = userSelectedTradeType === 'DigitsOverUnder' ? 58000 : 45000;
     const aiSessionStrategy = await Promise.race([
       generateVolatilitySessionStrategy(aiSessionInput),
       new Promise<never>((_, reject) => {

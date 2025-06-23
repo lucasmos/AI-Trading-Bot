@@ -85,10 +85,26 @@ Your Task:
 4. Provide concise 'reasoning' for your decision. If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch', you can suggest barrier characteristics in your reasoning (e.g., "barrier should be significantly above current spot", "aim for a tight barrier").
 
 Output Format: Return a single JSON object matching the output schema.
+
+🚨 SPECIAL RULE FOR DIGITSOVERUNDER 🚨
+If userSelectedTradeType is 'DigitsOverUnder' and shouldTrade is true, your JSON MUST include:
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "DIGITUNDER" or "DIGITMATCH",
+  "duration": [number],
+  "durationUnit": "t",
+  "barrier": "[single digit 0-9]",  ← THIS IS MANDATORY!
+  "stake": [number],
+  "reasoning": "[your analysis]"
+}
+
+General Rules:
 - If 'shouldTrade' is true: 'derivContractType', 'duration', 'durationUnit', and 'stake' are ALWAYS mandatory.
 - If 'shouldTrade' is true AND 'userSelectedTradeType' is 'DigitsOverUnder': the 'barrier' field (predicted digit) is ALSO ABSOLUTELY MANDATORY.
 - For 'RiseFall', 'HigherLower', 'TouchNoTouch', 'DigitsEvenOdd' when 'shouldTrade' is true: the 'barrier' field MUST be omitted from your JSON output.
 - If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
+
 🚨🚨🚨 FINAL VALIDATION BEFORE JSON OUTPUT 🚨🚨🚨
 - DigitsOverUnder + shouldTrade=true → MUST HAVE "barrier": "X" (single digit)
 - HigherLower/TouchNoTouch + shouldTrade=true → NO barrier field
@@ -237,7 +253,7 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       else if (!output.duration) validationError = "duration is missing.";
       else if (!output.durationUnit) validationError = "durationUnit is missing.";
       else if (!output.stake) validationError = "stake is missing.";
-      else if (output.stake !== input.stakePerTrade) {
+      else if (Math.abs(output.stake - input.stakePerTrade) > 0.01) { // Use floating point comparison
         console.warn(`[AI Single Flow] AI proposed stake ${output.stake} different from input ${input.stakePerTrade}. Overriding.`);
         output.stake = input.stakePerTrade;
       }
@@ -328,16 +344,23 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
 
     let overallReasoning = `AI session for ${input.userSelectedTradeType} with total stake $${input.totalSessionStake.toFixed(2)}. `;
 
-    // For DigitsOverUnder, limit to 3 instruments to prevent timeout
+    // For DigitsOverUnder, limit to 2 instruments to prevent timeout (each takes ~25-30 seconds)
     const instrumentsToProcess = input.userSelectedTradeType === 'DigitsOverUnder'
-      ? input.availableInstruments.slice(0, 3)
+      ? input.availableInstruments.slice(0, 2)
       : input.availableInstruments;
 
     console.log(`[AI Session Flow] Processing ${instrumentsToProcess.length} instruments for ${input.userSelectedTradeType}`);
 
     for (const instrument of instrumentsToProcess) {
+      // Early exit conditions
       if (tradesProposedCount >= maxTradesPerSession && totalStakeAllocated >= input.totalSessionStake * 0.95) {
         overallReasoning += `Max trades or stake allocation reached. `;
+        break;
+      }
+
+      // For DigitsOverUnder, exit early if we have enough trades to prevent timeout
+      if (input.userSelectedTradeType === 'DigitsOverUnder' && tradesProposedCount >= 2) {
+        overallReasoning += `DigitsOverUnder: Limiting to 2 trades to prevent timeout. `;
         break;
       }
 
