@@ -186,6 +186,43 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         const fullEMA = calculateFullEMA(prices, 20); // EMA 20
         const fullATR = calculateFullATR(candles.map(c => c.high), candles.map(c => c.low), candles.map(c => c.close), 14); // ATR 14
 
+        // Calculate new indicators
+        const highPrices = candles.map(c => c.high);
+        const lowPrices = candles.map(c => c.low);
+        const fullStochastic = [];
+        const fullWilliamsR = [];
+        const fullCCI = [];
+
+        // Calculate Stochastic for each data point (where possible)
+        for (let i = 13; i < candles.length; i++) { // Need at least 14 periods
+          const stochResult = calculateStochastic(
+            highPrices.slice(i - 13, i + 1),
+            lowPrices.slice(i - 13, i + 1),
+            prices.slice(i - 13, i + 1)
+          );
+          fullStochastic.push(stochResult);
+        }
+
+        // Calculate Williams %R for each data point (where possible)
+        for (let i = 13; i < candles.length; i++) { // Need at least 14 periods
+          const wrResult = calculateWilliamsR(
+            highPrices.slice(i - 13, i + 1),
+            lowPrices.slice(i - 13, i + 1),
+            prices.slice(i - 13, i + 1)
+          );
+          fullWilliamsR.push(wrResult);
+        }
+
+        // Calculate CCI for each data point (where possible)
+        for (let i = 19; i < candles.length; i++) { // Need at least 20 periods
+          const cciResult = calculateCCI(
+            highPrices.slice(i - 19, i + 1),
+            lowPrices.slice(i - 19, i + 1),
+            prices.slice(i - 19, i + 1)
+          );
+          fullCCI.push(cciResult);
+        }
+
         // Combine candle data with calculated indicators.
         // Technical indicators (like RSI, MACD, EMA, Bollinger Bands, ATR) require a certain number of initial data points (their 'period')
         // to compute their first value. For example, a 14-period RSI cannot be calculated for the first 13 data points.
@@ -212,6 +249,9 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           const bbIndex = index - (prices.length - fullBB.length);
           const emaIndex = index - (prices.length - fullEMA.length);
           const atrIndex = index - (prices.length - fullATR.length);
+          const stochasticIndex = index - (prices.length - fullStochastic.length);
+          const williamsRIndex = index - (prices.length - fullWilliamsR.length);
+          const cciIndex = index - (prices.length - fullCCI.length);
 
           // Construct the data point for the chart.
           // If `indicatorIndex` is negative (or if the indicator array was empty to begin with, making `indicatorIndex` always < 0 for valid candle `index`),
@@ -233,6 +273,10 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
             bbLower: bbIndex >= 0 ? fullBB[bbIndex]?.lower : undefined,
             ema: emaIndex >= 0 ? fullEMA[emaIndex] : undefined,
             atr: atrIndex >= 0 ? fullATR[atrIndex] : undefined,
+            stochasticK: stochasticIndex >= 0 ? fullStochastic[stochasticIndex]?.k : undefined,
+            stochasticD: stochasticIndex >= 0 ? fullStochastic[stochasticIndex]?.d : undefined,
+            williamsR: williamsRIndex >= 0 ? fullWilliamsR[williamsRIndex] : undefined,
+            cci: cciIndex >= 0 ? fullCCI[cciIndex] : undefined,
           };
         });
         
@@ -396,6 +440,68 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         </div>
         <p className="text-xs text-muted-foreground mt-1 px-2">
           <strong>Average True Range (ATR):</strong> Measures market volatility. Higher ATR indicates higher volatility, helping determine stop-loss levels and position sizing.
+        </p>
+
+        {/* Stochastic Oscillator Chart */}
+        <div style={{ width: '100%', height: '100px' }} className="mt-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
+              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+              <Legend content={<ChartLegendContent />} />
+              <Line type="monotone" dataKey="stochasticK" stroke={chartConfig.stochasticK.color} strokeWidth={2} dot={false} yAxisId="left" name="Stochastic %K" />
+              <Line type="monotone" dataKey="stochasticD" stroke={chartConfig.stochasticD.color} strokeWidth={2} dot={false} yAxisId="left" name="Stochastic %D" />
+              {/* Reference lines for overbought/oversold */}
+              <Line type="monotone" dataKey={() => 80} stroke="#ff6b6b" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Overbought (80)" />
+              <Line type="monotone" dataKey={() => 20} stroke="#51cf66" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Oversold (20)" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 px-2">
+          <strong>Stochastic Oscillator:</strong> Momentum indicator comparing closing price to price range. %K is fast line, %D is slow line. Values above 80 indicate overbought, below 20 oversold.
+        </p>
+
+        {/* Williams %R Chart */}
+        <div style={{ width: '100%', height: '100px' }} className="mt-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <YAxis yAxisId="left" orientation="left" domain={[-100, 0]} tick={{ fontSize: 10 }} tickMargin={5} />
+              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+              <Legend content={<ChartLegendContent />} />
+              <Line type="monotone" dataKey="williamsR" stroke={chartConfig.williamsR.color} strokeWidth={2} dot={false} yAxisId="left" name="Williams %R" />
+              {/* Reference lines for overbought/oversold */}
+              <Line type="monotone" dataKey={() => -20} stroke="#ff6b6b" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Overbought (-20)" />
+              <Line type="monotone" dataKey={() => -80} stroke="#51cf66" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Oversold (-80)" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 px-2">
+          <strong>Williams %R:</strong> Momentum oscillator measuring overbought/oversold levels. Values above -20 indicate overbought conditions, below -80 oversold conditions.
+        </p>
+
+        {/* CCI Chart */}
+        <div style={{ width: '100%', height: '100px' }} className="mt-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <YAxis yAxisId="left" orientation="left" domain={[-200, 200]} tick={{ fontSize: 10 }} tickMargin={5} />
+              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+              <Legend content={<ChartLegendContent />} />
+              <Line type="monotone" dataKey="cci" stroke={chartConfig.cci.color} strokeWidth={2} dot={false} yAxisId="left" name="CCI" />
+              {/* Reference lines for overbought/oversold */}
+              <Line type="monotone" dataKey={() => 100} stroke="#ff6b6b" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Overbought (100)" />
+              <Line type="monotone" dataKey={() => -100} stroke="#51cf66" strokeDasharray="2 2" strokeWidth={1} dot={false} yAxisId="left" name="Oversold (-100)" />
+              <Line type="monotone" dataKey={() => 0} stroke="#868e96" strokeDasharray="1 1" strokeWidth={1} dot={false} yAxisId="left" name="Zero Line" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1 px-2">
+          <strong>Commodity Channel Index (CCI):</strong> Identifies cyclical trends and reversal points. Values above +100 indicate overbought, below -100 oversold. Measures price deviation from statistical mean.
         </p>
       </>
     </ChartContainer>
