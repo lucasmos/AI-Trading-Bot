@@ -14,6 +14,7 @@ import {
   VolatilityInstrumentTypeSchema,
   PriceTickSchema,
   InstrumentIndicatorDataSchema,
+  type InstrumentIndicatorData,
   PromptFormattedInstrumentIndicatorSchema,
   type PromptFormattedInstrumentIndicator,
   VolatilitySingleTradeStrategyInputSchema,
@@ -82,39 +83,111 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 
 You are an elite volatility trader with institutional-level expertise. Your mission is to achieve a minimum 75% win rate through sophisticated technical analysis and disciplined trade selection.
 
-🔥 MANDATORY TRADING RULES FOR HIGH WIN RATE:
+🔥 MANDATORY TRADING RULES FOR HIGH WIN RATE (>=75%):
 
-1️⃣ **CONFLUENCE REQUIREMENT**: Only trade when AT LEAST 3 indicators align:
-   - RSI + Stochastic + Williams %R (momentum confluence)
-   - MACD + EMA (trend confluence)
-   - Bollinger Bands + ATR (volatility confluence)
-   - CCI + Price Action (reversal confluence)
+1️⃣ **STRICT CONFLUENCE REQUIREMENT**: ONLY trade when ALL of these conditions are met:
 
-2️⃣ **HIGH-PROBABILITY SETUPS ONLY**:
-   - RSI Oversold (<30) + Stochastic <20 + Williams %R <-80 = STRONG BUY
-   - RSI Overbought (>70) + Stochastic >80 + Williams %R >-20 = STRONG SELL
-   - MACD Bullish Crossover + Price above EMA + BB Middle Break = TREND BUY
-   - MACD Bearish Crossover + Price below EMA + BB Middle Break = TREND SELL
+   **MOMENTUM CONFLUENCE** (All 3 must align):
+   - RSI: Clear overbought (>70) or oversold (<30) signal
+   - Stochastic: %K and %D both >80 (overbought) or both <20 (oversold)
+   - Williams %R: >-20 (overbought) or <-80 (oversold)
 
-3️⃣ **VOLATILITY-BASED DURATION SELECTION**:
-   - High ATR (>0.001): Use shorter durations (1-3 minutes)
-   - Medium ATR (0.0005-0.001): Use medium durations (3-8 minutes)
-   - Low ATR (<0.0005): Use longer durations (8-15 minutes)
+   **TREND CONFLUENCE** (Both must align):
+   - MACD: Histogram and signal line must confirm direction
+   - EMA: Price must be clearly above (bullish) or below (bearish) EMA
 
-4️⃣ **TRADE TYPE OPTIMIZATION**:
-   - **RiseFall**: Best for clear trend + momentum alignment. Duration: 1-5 minutes.
-   - **HigherLower**: Best for range-bound markets with clear support/resistance.
-     * For Volatility Indices: Duration: 5-10 ticks OR 15 seconds to 5 minutes
-     * For other instruments: Duration: 1-7 days (minimum 1 day required by Deriv)
-   - **TouchNoTouch**: Best for high volatility breakouts or strong consolidation. Duration: 5-15 minutes.
-   - **DigitsEvenOdd**: Best for sideways/choppy markets. Duration: 1-10 ticks.
-   - **DigitsOverUnder**: Best for digit pattern analysis + momentum. Duration: 1-10 ticks.
+   **VOLATILITY CONFLUENCE** (Both must align):
+   - Bollinger Bands: Price position relative to bands must support trade direction
+   - ATR: Must be within optimal range for selected duration
 
-5️⃣ **RISK MANAGEMENT**:
-   - NEVER trade against strong trends (MACD + EMA alignment)
-   - AVOID trading during extreme volatility spikes (ATR >2x average)
-   - SKIP trades with conflicting signals (indicators disagreeing)
-   - ONLY trade when confidence level is HIGH (multiple confirmations)
+2️⃣ **ENHANCED HIGH-PROBABILITY SETUPS**:
+
+   **SUPER BULLISH** (All must be true):
+   - RSI: 25-35 (oversold recovery zone)
+   - Stochastic: %K <25 AND %D <25 AND %K > %D (bullish crossover)
+   - Williams %R: <-75 (deep oversold)
+   - MACD: Histogram > 0 AND MACD > Signal (bullish momentum)
+   - Price: Above EMA AND above BB Lower band
+   - CCI: <-100 (oversold) OR showing upward momentum
+
+   **SUPER BEARISH** (All must be true):
+   - RSI: 65-75 (overbought distribution zone)
+   - Stochastic: %K >75 AND %D >75 AND %K < %D (bearish crossover)
+   - Williams %R: >-25 (deep overbought)
+   - MACD: Histogram < 0 AND MACD < Signal (bearish momentum)
+   - Price: Below EMA AND below BB Upper band
+   - CCI: >100 (overbought) OR showing downward momentum
+
+3️⃣ **DYNAMIC VOLATILITY-BASED DURATION SELECTION**:
+
+   **For Volatility Indices (R_10, R_25, R_50, R_75, R_100)**:
+   - ATR >0.002: Use 5-7 ticks (high volatility = quick resolution)
+   - ATR 0.001-0.002: Use 15-30 seconds (medium volatility)
+   - ATR 0.0005-0.001: Use 1-3 minutes (low volatility)
+   - ATR <0.0005: Use 3-5 minutes (very low volatility)
+
+   **Instrument-Specific ATR Adjustments**:
+   - R_10: Multiply ATR thresholds by 0.5 (more sensitive)
+   - R_25: Use standard ATR thresholds
+   - R_50: Multiply ATR thresholds by 1.5
+   - R_75: Multiply ATR thresholds by 2.0
+   - R_100: Multiply ATR thresholds by 2.5
+
+4️⃣ **ADVANCED TRADE TYPE OPTIMIZATION**:
+
+   **RiseFall** - Use when:
+   - Strong trend confirmed by MACD + EMA alignment
+   - Momentum indicators (RSI, Stochastic, Williams %R) all confirm direction
+   - Price clearly above/below Bollinger Bands middle line
+   - Duration: 1-5 minutes based on ATR
+
+   **HigherLower** - Use when:
+   - Market is range-bound (price oscillating between BB upper/lower)
+   - RSI between 30-70 (not extreme)
+   - MACD histogram showing convergence (low momentum)
+   - Clear support/resistance levels identified
+   - For Volatility Indices: 5-10 ticks OR 15 seconds to 5 minutes
+   - For other instruments: 1-7 days minimum
+
+   **TouchNoTouch** - Use when:
+   - High volatility confirmed by ATR >1.5x recent average
+   - Strong breakout signals (price at BB bands + momentum confirmation)
+   - OR strong consolidation (low ATR + tight BB squeeze)
+   - Duration: 5-15 minutes
+
+   **DigitsEvenOdd** - Use when:
+   - Market is choppy/sideways (conflicting trend signals)
+   - RSI between 40-60 (neutral zone)
+   - Low momentum (MACD histogram near zero)
+   - Duration: 1-10 ticks
+
+   **DigitsOverUnder** - Use when:
+   - Clear digit patterns observed in recent ticks
+   - Momentum indicators support predicted direction
+   - Statistical edge identified in last digit distribution
+   - Duration: 1-10 ticks
+
+5️⃣ **ENHANCED RISK MANAGEMENT**:
+
+   **MANDATORY REJECTION CRITERIA** (Skip trade if ANY are true):
+   - Conflicting signals: Momentum indicators disagree with trend indicators
+   - Extreme volatility: ATR >3x recent average (unpredictable moves)
+   - Neutral zone: RSI between 45-55 AND Stochastic between 40-60
+   - MACD divergence: MACD direction conflicts with price direction
+   - Insufficient data: Less than 20 recent ticks available
+
+   **CONFIDENCE SCORING** (Only trade if score >=8/10):
+   - Momentum confluence (3 indicators align): +3 points
+   - Trend confluence (MACD + EMA align): +2 points
+   - Volatility confluence (BB + ATR optimal): +2 points
+   - Price action confirmation: +2 points
+   - CCI confirmation: +1 point
+
+   **MARKET REGIME DETECTION**:
+   - Trending Market: MACD histogram consistently above/below zero + Price consistently above/below EMA
+   - Ranging Market: Price oscillating between BB bands + RSI oscillating 30-70
+   - Breakout Market: Price at BB extremes + High ATR + Strong momentum
+   - Choose trade type based on detected regime
 
 Your Task:
 1. Based on the user's selected trade type ('{{{userSelectedTradeType}}}') and your analysis of the instrument data (price ticks and indicators if available), decide if a trade is viable.
@@ -326,6 +399,19 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       else if (Math.abs(output.stake - input.stakePerTrade) > 0.01) { // Use floating point comparison
         console.warn(`[AI Single Flow] AI proposed stake ${output.stake} different from input ${input.stakePerTrade}. Overriding.`);
         output.stake = input.stakePerTrade;
+      }
+
+      // Enhanced validation for >=75% win rate requirements
+      if (input.instrumentIndicators && !validationError) {
+        const indicators = input.instrumentIndicators;
+        const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType);
+
+        if (confidenceScore < 8) {
+          validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 8/10 for >=75% win rate target.`;
+          console.log(`[AI Single Flow/${input.currentInstrument}] Trade rejected due to low confidence score: ${confidenceScore}/10`);
+        } else {
+          console.log(`[AI Single Flow/${input.currentInstrument}] Trade approved with confidence score: ${confidenceScore}/10`);
+        }
       }
       if (input.userSelectedTradeType === 'DigitsOverUnder' && (output.barrier === undefined || output.barrier === null || !/^\d$/.test(String(output.barrier).trim()))) {
         // Enhanced barrier extraction from reasoning
@@ -559,3 +645,93 @@ export const generateVolatilityTradingStrategy = ai.defineFlow(
     };
   }
 );
+
+// Enhanced confidence scoring function for >=75% win rate
+function calculateTradeConfidenceScore(
+  indicators: InstrumentIndicatorData,
+  tradeProposal: VolatilitySingleTradeProposal,
+  tradeType: UserTradeType
+): number {
+  let score = 0;
+  const isBullish = tradeProposal.derivContractType === 'CALL' || tradeProposal.derivContractType === 'ONETOUCH';
+  const isBearish = tradeProposal.derivContractType === 'PUT' || tradeProposal.derivContractType === 'NOTOUCH';
+
+  // Momentum Confluence (3 points max)
+  let momentumScore = 0;
+
+  if (indicators.rsi !== undefined) {
+    if (isBullish && indicators.rsi >= 25 && indicators.rsi <= 35) momentumScore += 1;
+    else if (isBearish && indicators.rsi >= 65 && indicators.rsi <= 75) momentumScore += 1;
+  }
+
+  if (indicators.stochastic) {
+    const { k, d } = indicators.stochastic;
+    if (isBullish && k < 25 && d < 25 && k > d) momentumScore += 1;
+    else if (isBearish && k > 75 && d > 75 && k < d) momentumScore += 1;
+  }
+
+  if (indicators.williamsR !== undefined) {
+    if (isBullish && indicators.williamsR < -75) momentumScore += 1;
+    else if (isBearish && indicators.williamsR > -25) momentumScore += 1;
+  }
+
+  score += momentumScore;
+
+  // Trend Confluence (2 points max)
+  let trendScore = 0;
+
+  if (indicators.macd) {
+    const { macd, signal, histogram } = indicators.macd;
+    if (isBullish && histogram > 0 && macd > signal) trendScore += 1;
+    else if (isBearish && histogram < 0 && macd < signal) trendScore += 1;
+  }
+
+  if (indicators.ema !== undefined && indicators.bollingerBands) {
+    const currentPrice = indicators.bollingerBands.middle; // Approximate current price
+    if (isBullish && currentPrice > indicators.ema) trendScore += 1;
+    else if (isBearish && currentPrice < indicators.ema) trendScore += 1;
+  }
+
+  score += trendScore;
+
+  // Volatility Confluence (2 points max)
+  let volatilityScore = 0;
+
+  if (indicators.bollingerBands && indicators.atr) {
+    const { upper, middle, lower } = indicators.bollingerBands;
+    const bbWidth = upper - lower;
+    const currentPrice = middle; // Approximate
+
+    // Check if price position supports trade direction
+    if (isBullish && currentPrice > lower && currentPrice <= middle) volatilityScore += 1;
+    else if (isBearish && currentPrice < upper && currentPrice >= middle) volatilityScore += 1;
+
+    // Check if ATR is in optimal range for trade type
+    if (tradeType === 'RiseFall' || tradeType === 'HigherLower') {
+      if (indicators.atr > 0.0005 && indicators.atr < 0.002) volatilityScore += 1;
+    } else if (tradeType === 'TouchNoTouch') {
+      if (indicators.atr > 0.001) volatilityScore += 1;
+    } else {
+      volatilityScore += 1; // Give benefit for digits trades
+    }
+  }
+
+  score += volatilityScore;
+
+  // Price Action Confirmation (2 points max)
+  if (indicators.bollingerBands) {
+    const { upper, middle, lower } = indicators.bollingerBands;
+    const currentPrice = middle; // Approximate
+
+    if (isBullish && currentPrice > lower) score += 1;
+    if (isBearish && currentPrice < upper) score += 1;
+  }
+
+  // CCI Confirmation (1 point max)
+  if (indicators.cci !== undefined) {
+    if (isBullish && (indicators.cci < -100 || indicators.cci > indicators.cci)) score += 1;
+    else if (isBearish && (indicators.cci > 100 || indicators.cci < indicators.cci)) score += 1;
+  }
+
+  return Math.min(score, 10); // Cap at 10
+}
