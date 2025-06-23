@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getCandles } from '@/services/deriv';
+import { getCandles, getContractStatus } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid';
 import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
@@ -66,6 +66,7 @@ export default function VolatilityTradingPage() {
   });
   const [isAiLoading, setIsAiLoading] = useState(false);
   const tradeIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const realTradeMonitoringInterval = useRef<NodeJS.Timeout | null>(null);
 
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
@@ -89,6 +90,21 @@ export default function VolatilityTradingPage() {
     { value: 'DigitsOverUnder', label: 'Digits - Over/Under' },
     { value: 'DigitsEvenOdd', label: 'Digits - Even/Odd' },
   ];
+
+  // Map Deriv API contract statuses to local trade statuses
+  const mapDerivStatusToLocal = (derivStatus?: string): ActiveAutomatedVolatilityTrade['status'] => {
+    if (!derivStatus) return 'pending_execution';
+    switch (derivStatus) {
+      case 'open': return 'pending_execution';
+      case 'sold': return 'closed_manual';
+      case 'won': return 'won';
+      case 'lost': return 'lost_duration';
+      case 'cancelled': return 'failed_placement';
+      default:
+        console.warn(`[VolatilityPage] Unknown Deriv contract status: ${derivStatus}`);
+        return 'pending_execution';
+    }
+  };
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
@@ -434,6 +450,12 @@ export default function VolatilityTradingPage() {
     tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
     tradeIntervals.current.clear();
 
+    // Clear real trade monitoring interval
+    if (realTradeMonitoringInterval.current) {
+      clearInterval(realTradeMonitoringInterval.current);
+      realTradeMonitoringInterval.current = null;
+    }
+
     setActiveAutomatedTrades(prevTrades =>
       prevTrades.map(trade => {
         if (trade.status === 'active') {
@@ -497,6 +519,116 @@ export default function VolatilityTradingPage() {
     toast({ title: "AI Trading Stopped", description: `Session for ${selectedDerivAccountType} account has been stopped.`});
   };
 
+  // Real trade monitoring useEffect (for backend trades)
+  useEffect(() => {
+    if (!selectedUserTradeTypeForLoop || !isAutoTradingActive || activeAutomatedTrades.length === 0 || isAiLoading) {
+      if (realTradeMonitoringInterval.current) {
+        clearInterval(realTradeMonitoringInterval.current);
+        realTradeMonitoringInterval.current = null;
+      }
+      return;
+    }
+
+    const currentToken = selectedDerivAccountType === 'demo' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken;
+    const currentAccountId = selectedDerivAccountType === 'demo' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId;
+
+    if (!currentToken || !currentAccountId) {
+      console.error('[VolatilityPage] Missing token or account ID for real trade monitoring');
+      return;
+    }
+
+    console.log(`[VolatilityPage] Starting real trade monitoring for ${activeAutomatedTrades.length} trades`);
+
+    realTradeMonitoringInterval.current = setInterval(async () => {
+      console.log('[VolatilityPage] Monitoring real trades...');
+
+      let tradesUpdated = false;
+      const updatedTrades = await Promise.all(
+        activeAutomatedTrades.map(async (trade) => {
+          // Only monitor trades that are not settled and have valid contract IDs
+          if (trade.status === 'failed_placement' || trade.status === 'won' || trade.status === 'lost_duration' || trade.status === 'closed_manual') {
+            return trade;
+          }
+
+          // Skip trades without valid contract IDs
+          if (!trade.id || trade.id === uuidv4() || trade.id.startsWith('sim-')) {
+            return trade;
+          }
+
+          try {
+            console.log(`[VolatilityPage] Checking status for contract ID: ${trade.id}`);
+            const contractStatusData = await getContractStatus(Number(trade.id), currentToken, currentAccountId);
+            tradesUpdated = true;
+
+            const newLocalStatus = mapDerivStatusToLocal(contractStatusData.status);
+            const isSettled = newLocalStatus === 'won' || newLocalStatus === 'lost_duration' || newLocalStatus === 'closed_manual';
+
+            const updatedTrade: ActiveAutomatedVolatilityTrade = {
+              ...trade,
+              status: newLocalStatus,
+              currentPrice: contractStatusData.current_spot ?? trade.currentPrice,
+              pnl: isSettled ? contractStatusData.profit : undefined,
+            };
+
+            if (isSettled) {
+              console.log(`[VolatilityPage] Trade ${trade.id} settled with status: ${newLocalStatus}, P/L: ${contractStatusData.profit}`);
+
+              // Update profits
+              const pnl = contractStatusData.profit || 0;
+              setProfitsClaimable(prevProfits => ({
+                totalNetProfit: prevProfits.totalNetProfit + pnl,
+                tradeCount: prevProfits.tradeCount + 1,
+                winningTrades: newLocalStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                losingTrades: newLocalStatus === 'lost_duration' ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+              }));
+
+              toast({
+                title: `Real Trade Ended (${selectedDerivAccountType}): ${trade.instrument}`,
+                description: `Status: ${newLocalStatus}, P/L: $${pnl.toFixed(2)}`,
+                variant: pnl > 0 ? "default" : "destructive"
+              });
+            }
+
+            return updatedTrade;
+          } catch (error: any) {
+            console.error(`[VolatilityPage] Error monitoring trade ${trade.id}:`, error.message);
+            return trade; // Return unchanged trade on error
+          }
+        })
+      );
+
+      if (tradesUpdated) {
+        setActiveAutomatedTrades(updatedTrades);
+      }
+
+      // Check if all trades are settled to stop the session
+      const allSettled = updatedTrades.every(t =>
+        t.status === 'won' || t.status === 'lost_duration' || t.status === 'closed_manual' || t.status === 'failed_placement'
+      );
+
+      if (allSettled && updatedTrades.length > 0) {
+        console.log('[VolatilityPage] All real trades settled, stopping session');
+        setIsAutoTradingActive(false);
+        if (realTradeMonitoringInterval.current) {
+          clearInterval(realTradeMonitoringInterval.current);
+          realTradeMonitoringInterval.current = null;
+        }
+        toast({ title: "AI Session Complete", description: "All real trades are settled." });
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => {
+      if (realTradeMonitoringInterval.current) {
+        clearInterval(realTradeMonitoringInterval.current);
+        realTradeMonitoringInterval.current = null;
+      }
+    };
+  }, [
+    selectedUserTradeTypeForLoop, isAutoTradingActive, activeAutomatedTrades, isAiLoading,
+    userInfo, selectedDerivAccountType, setProfitsClaimable, toast, mapDerivStatusToLocal
+  ]);
+
+  // Simulation trade monitoring useEffect (for page simulations)
   useEffect(() => {
     if (selectedUserTradeTypeForLoop || !isAutoTradingActive || activeAutomatedTrades.length === 0 || isAiLoading) {
       if(!selectedUserTradeTypeForLoop && !isAutoTradingActive && tradeIntervals.current.size > 0) {
@@ -632,6 +764,19 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.clear();
     };
   }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
+
+  // Cleanup effect for component unmount
+  useEffect(() => {
+    return () => {
+      // Clear all intervals on unmount
+      tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
+      tradeIntervals.current.clear();
+      if (realTradeMonitoringInterval.current) {
+        clearInterval(realTradeMonitoringInterval.current);
+        realTradeMonitoringInterval.current = null;
+      }
+    };
+  }, []);
 
 
   return (

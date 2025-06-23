@@ -160,6 +160,7 @@ export interface ActiveAutomatedVolatilityTrade { // Removed 'extends Volatility
   userSelectedTradeType?: string; // e.g., "RiseFall", "DigitsEvenOdd" - if available from UI selection
   barrier?: string | number | null; // Store barrier if applicable (e.g. for DigitsOverUnder)
   error?: string; // To store placement errors for real trades
+  actionDirection?: 'CALL' | 'PUT'; // For simulation trades to track direction
 }
 
 export interface VolatilityTradingStrategyInput {
