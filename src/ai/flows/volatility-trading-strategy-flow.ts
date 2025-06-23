@@ -69,9 +69,9 @@ Your Task:
    a. Determine the precise Deriv API contract type ('derivContractType').
       - For 'RiseFall': Output 'CALL' (price up) or 'PUT' (price down). The 'barrier' field MUST NOT be present in your JSON output.
       - For 'HigherLower': Output 'CALL' (price will be higher than a programmatically set default barrier) or 'PUT' (price will be lower than a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
-      - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set default barrier) or 'NOTOUCH' (price will not touch a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
+      - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set barrier) or 'NOTOUCH' (price will not touch a programmatically set barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). IMPORTANT: In your reasoning, specify your barrier strategy (e.g., "barrier should be above current price to capture upward breakout" or "barrier should be well above current price to avoid being touched during normal volatility").
       - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
-      - For 'DigitsOverUnder': Output 'DIGITOVER' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit). YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without this digit 'barrier' is invalid.
+      - For 'DigitsOverUnder': Output 'DIGITMATCH' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit). YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without this digit 'barrier' is invalid.
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
       - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
@@ -117,7 +117,30 @@ Example for TouchNoTouch (predicting TOUCH):
   "duration": 10,
   "durationUnit": "m",
   "stake": {{{stakePerTrade}}},
-  "reasoning": "Strong upward momentum with high volatility. Price likely to touch upper barrier within 10 minutes."
+  "reasoning": "Strong upward momentum with high volatility and bullish indicators. Barrier should be placed above current price to capture expected breakout within 10 minutes."
+}
+
+Example for TouchNoTouch (predicting NO TOUCH):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "NOTOUCH",
+  "duration": 15,
+  "durationUnit": "m",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Price consolidating in range with low volatility. Barrier should be placed well above current price to avoid being touched during normal fluctuations over 15 minutes."
+}
+
+Example for DigitsOverUnder (predicting OVER 6):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "DIGITMATCH",
+  "duration": 5,
+  "durationUnit": "t",
+  "barrier": "6",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Recent ticks show high digits (7,8,9). Predicting next will be over 6."
 }
 
 Example for DigitsOverUnder (predicting UNDER 3):

@@ -163,7 +163,7 @@ export async function executeVolatilityAiTradeLoop(
         const tickData = await getTicks(instrument as VolatilityInstrumentType, 25, userDerivApiToken);
         priceData = tickData.map(tick => ({
           epoch: tick.epoch,
-          price: tick.quote,
+          price: tick.price, // Fixed: use tick.price instead of tick.quote
           time: new Date(tick.epoch * 1000).toISOString()
         }));
         if (priceData.length > 0) {
@@ -279,17 +279,49 @@ export async function executeVolatilityAiTradeLoop(
                 throw new Error(`Invalid barrier '${aiProposal.barrier}' for DigitsOverUnder on ${instrumentFromAI}. Must be a single digit string (0-9).`);
             }
             calculatedBarrier = barrierString;
-        } else if ((userSelectedTradeType === 'HigherLower' || userSelectedTradeType === 'TouchNoTouch')) {
+        } else if (userSelectedTradeType === 'HigherLower') {
           const latestSpot = instrumentLatestSpot[instrumentFromAI];
           const atr = instrumentATR[instrumentFromAI];
 
           if (latestSpot !== undefined) {
-            const offsetFactor = userSelectedTradeType === 'HigherLower' ? 0.3 : 0.5;
+            const offsetFactor = 0.3;
             const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.0005;
 
-            let barrierValue = (aiProposal.derivContractType === 'CALL' || aiProposal.derivContractType === 'ONETOUCH')
+            let barrierValue = (aiProposal.derivContractType === 'CALL')
                                ? latestSpot + atrBasedOffset
                                : latestSpot - atrBasedOffset;
+            const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
+            calculatedBarrier = barrierValue.toFixed(decimalPlaces);
+            console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier}`);
+          } else {
+            throw new Error(`Cannot determine current spot price for programmatic barrier for ${instrumentFromAI}. Data might have been insufficient.`);
+          }
+        } else if (userSelectedTradeType === 'TouchNoTouch') {
+          const latestSpot = instrumentLatestSpot[instrumentFromAI];
+          const atr = instrumentATR[instrumentFromAI];
+
+          if (latestSpot !== undefined) {
+            const offsetFactor = 0.5; // Larger offset for Touch/No Touch due to longer duration
+            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.001; // Slightly larger fallback for TouchNoTouch
+
+            // For TouchNoTouch, barrier placement should be strategic:
+            // - ONETOUCH: Place barrier where we expect price TO reach
+            // - NOTOUCH: Place barrier where we expect price NOT to reach
+            // The AI's reasoning should guide whether barrier goes above or below current price
+
+            let barrierValue: number;
+            if (aiProposal.derivContractType === 'ONETOUCH') {
+              // For ONETOUCH, place barrier at a reachable but challenging level
+              // Default to above current price, but could be adjusted based on trend analysis
+              barrierValue = latestSpot + atrBasedOffset;
+            } else { // NOTOUCH
+              // For NOTOUCH, place barrier at a level we expect price NOT to reach
+              // This should be based on volatility and trend analysis
+              // For now, use a larger offset to make it less likely to be touched
+              const notouch_offset = atr ? atr * 0.8 : latestSpot * 0.002; // Larger offset for NOTOUCH
+              barrierValue = latestSpot + notouch_offset; // Default above, but this should be smarter
+            }
+
             const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
             calculatedBarrier = barrierValue.toFixed(decimalPlaces);
             console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier}`);
