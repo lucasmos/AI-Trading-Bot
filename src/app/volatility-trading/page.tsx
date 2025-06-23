@@ -324,9 +324,9 @@ export default function VolatilityTradingPage() {
             toast({ title: "Volatility AI Loop Error", description: `Failed to execute trading loop: ${error.message}`, variant: "destructive" });
             console.error("[VolatilityPage] Error in real trade loop: ", error);
         } finally {
-            console.log("[VolatilityPage] Real trade loop finally: Resetting isAiLoading and isAutoTradingActive to false.");
+            console.log("[VolatilityPage] Real trade loop finally: Resetting isAiLoading to false. Keeping isAutoTradingActive true until trades complete.");
             setIsAiLoading(false);
-            setIsAutoTradingActive(false);
+            // Don't set isAutoTradingActive to false immediately - let it stay active until trades are monitored
         }
     } else {
         console.log(`[VolatilityPage] Initiating SIMULATED trade session. User: ${userInfo.id}, Account Type: ${selectedDerivAccountType}, Total Stake: ${autoTradeTotalStake}`);
@@ -409,8 +409,9 @@ export default function VolatilityTradingPage() {
             if (newTrades.length === 0) {
               toast({ title: "AI Sim Update", description: "No valid sim trades initiated.", duration: 7000 });
               setIsAutoTradingActive(false);
+            } else {
+              setActiveAutomatedTrades(newTrades);
             }
-            setActiveAutomatedTrades(newTrades);
       } catch (error) {
         toast({ title: "AI Sim Failed", description: `Sim strategy error: ${(error as Error).message}`, variant: "destructive" });
         setIsAutoTradingActive(false);
@@ -481,6 +482,7 @@ export default function VolatilityTradingPage() {
             .catch(error => console.error("[VolatilityPage] Error processing manually stopped sim trade:", error));
           }
 
+          // Update profits immediately without setTimeout
           setProfitsClaimable(prevProfits => ({
             totalNetProfit: prevProfits.totalNetProfit + pnl,
             tradeCount: prevProfits.tradeCount + 1,
@@ -523,6 +525,20 @@ export default function VolatilityTradingPage() {
               const priceChangeFactor = (Math.random() - 0.5) * (currentTrade.instrument.includes("100") ? 0.005 : 0.0005);
               newCurrentPrice += priceChangeFactor * newCurrentPrice;
               newCurrentPrice = parseFloat(newCurrentPrice.toFixed(decimalPlaces));
+
+              // Calculate running P/L for active trades
+              if (newStatus === 'active') {
+                if (currentTrade.actionDirection === 'CALL') {
+                  pnl = newCurrentPrice > currentTrade.entryPrice ?
+                    (newCurrentPrice - currentTrade.entryPrice) / currentTrade.entryPrice * currentTrade.stake * 0.85 :
+                    -(currentTrade.entryPrice - newCurrentPrice) / currentTrade.entryPrice * currentTrade.stake * 0.5;
+                } else { // PUT
+                  pnl = newCurrentPrice < currentTrade.entryPrice ?
+                    (currentTrade.entryPrice - newCurrentPrice) / currentTrade.entryPrice * currentTrade.stake * 0.85 :
+                    -(newCurrentPrice - currentTrade.entryPrice) / currentTrade.entryPrice * currentTrade.stake * 0.5;
+                }
+                pnl = parseFloat(pnl.toFixed(2));
+              }
 
               if (currentTrade.actionDirection === 'CALL' && newCurrentPrice <= currentTrade.stopLossPrice) {
                 newStatus = 'lost_stoploss'; pnl = -currentTrade.stake;
@@ -581,6 +597,7 @@ export default function VolatilityTradingPage() {
                   .catch(error => console.error("[VolatilityPage] Error processing sim trade DB:", error));
                 }
 
+                // Update profits immediately without setTimeout
                 setProfitsClaimable(prevProfits => ({
                   totalNetProfit: prevProfits.totalNetProfit + pnl,
                   tradeCount: prevProfits.tradeCount + 1,
@@ -599,11 +616,9 @@ export default function VolatilityTradingPage() {
             });
 
             if (allSimulatedTradesConcluded && isAutoTradingActive) {
-                 setTimeout(() => {
-                    console.log('[VolatilityPage] Simulation useEffect: All SIMULATED trades concluded, isAutoTradingActive set to false.');
-                    setIsAutoTradingActive(false);
-                    toast({ title: "AI Simulation Session Complete", description: `All simulated trades for ${selectedDerivAccountType} account concluded.`});
-                }, 100);
+              console.log('[VolatilityPage] Simulation useEffect: All SIMULATED trades concluded, isAutoTradingActive set to false.');
+              setIsAutoTradingActive(false);
+              toast({ title: "AI Simulation Session Complete", description: `All simulated trades for ${selectedDerivAccountType} account concluded.`});
             }
             return updatedTrades;
           });
@@ -771,7 +786,9 @@ export default function VolatilityTradingPage() {
                             <TableCell>
                                 <Badge variant={trade.status === 'pending_execution' ? 'secondary' : (trade.status === 'failed_placement' ? 'destructive' : 'default')}
                                        className={trade.status === 'pending_execution' ? 'bg-yellow-500 text-white' : (trade.status === 'failed_placement' ? 'bg-red-500' : 'bg-gray-500')}>
-                                {trade.status.replace('_', ' ')}
+                                {trade.status === 'pending_execution' ? 'Pending Execution' :
+                                 trade.status === 'failed_placement' ? 'Failed Placement' :
+                                 trade.status.replace('_', ' ')}
                                 </Badge>
                             </TableCell>
                             <TableCell className="text-xs max-w-[150px] truncate" title={trade.error || "No details"}>{trade.error || "Placed"}</TableCell>
@@ -785,11 +802,16 @@ export default function VolatilityTradingPage() {
                             <TableCell>
                                <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
                                       className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
-                                {trade.status}
+                                {trade.status === 'active' ? 'Active' :
+                                 trade.status === 'won' ? 'Won' :
+                                 trade.status === 'lost_duration' ? 'Lost (Duration)' :
+                                 trade.status === 'lost_stoploss' ? 'Lost (Stop Loss)' :
+                                 trade.status === 'closed_manual' ? 'Closed (Manual)' :
+                                 trade.status}
                                </Badge>
                             </TableCell>
                             <TableCell className={trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                              {trade.pnl ? `$${trade.pnl.toFixed(2)}` : '-'}
+                              {trade.pnl !== undefined ? `$${trade.pnl.toFixed(2)}` : '-'}
                             </TableCell>
                           </>
                         )}
