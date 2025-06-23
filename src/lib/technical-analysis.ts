@@ -14,7 +14,7 @@ export function calculateFullRSI(prices: number[], period: number = 14): number[
   }
   // The RSI.calculate method expects an object with period and values properties.
   const rsiResults = RSI.calculate({ period, values: prices });
-  return rsiResults.map(val => parseFloat(val.toFixed(2)));
+  return rsiResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -46,9 +46,9 @@ export function calculateFullMACD(
     .filter(val => val.MACD !== undefined && val.signal !== undefined && val.histogram !== undefined)
     .map(val => ({
       // At this point, val.MACD, val.signal, val.histogram are guaranteed to be numbers by the filter
-      macd: parseFloat((val.MACD!).toFixed(2)), 
-      signal: parseFloat((val.signal!).toFixed(2)),
-      histogram: parseFloat((val.histogram!).toFixed(2)),
+      macd: (val.MACD !== undefined && val.MACD !== null) ? parseFloat((val.MACD!).toFixed(2)) : 0,
+      signal: (val.signal !== undefined && val.signal !== null) ? parseFloat((val.signal!).toFixed(2)) : 0,
+      histogram: (val.histogram !== undefined && val.histogram !== null) ? parseFloat((val.histogram!).toFixed(2)) : 0,
     }));
 }
 
@@ -74,9 +74,9 @@ export function calculateFullBollingerBands(
   };
   const bbResults = BollingerBands.calculate(bbInput);
   return bbResults.map(val => ({
-    upper: parseFloat(val.upper.toFixed(2)),
-    middle: parseFloat(val.middle.toFixed(2)),
-    lower: parseFloat(val.lower.toFixed(2)),
+    upper: (val.upper !== undefined && val.upper !== null) ? parseFloat(val.upper.toFixed(2)) : 0,
+    middle: (val.middle !== undefined && val.middle !== null) ? parseFloat(val.middle.toFixed(2)) : 0,
+    lower: (val.lower !== undefined && val.lower !== null) ? parseFloat(val.lower.toFixed(2)) : 0,
   }));
 }
 
@@ -117,7 +117,7 @@ export function calculateFullSMA(prices: number[], period: number): number[] {
     return [];
   }
   const smaResults = SMA.calculate({ period, values: prices });
-  return smaResults.map(val => parseFloat(val.toFixed(2)));
+  return smaResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -142,7 +142,7 @@ export function calculateFullEMA(prices: number[], period: number = 20): number[
     return [];
   }
   const emaResults = EMA.calculate({ period, values: prices });
-  return emaResults.map(val => parseFloat(val.toFixed(2)));
+  return emaResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -169,7 +169,7 @@ export function calculateFullATR(
     period
   };
   const atrResults = ATR.calculate(atrInput);
-  return atrResults.map(val => parseFloat(val.toFixed(2)));
+  return atrResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 // Add single value calculation functions for latest values
@@ -220,6 +220,7 @@ export function calculateStochastic(
   if (stochResults.length === 0) return undefined;
 
   const latest = stochResults[stochResults.length - 1];
+  if (!latest || latest.k === undefined || latest.d === undefined) return undefined;
   return {
     k: parseFloat(latest.k.toFixed(2)),
     d: parseFloat(latest.d.toFixed(2)),
@@ -252,7 +253,9 @@ export function calculateWilliamsR(
   };
 
   const wrResults = WilliamsR.calculate(wrInput);
-  return wrResults.length > 0 ? parseFloat(wrResults[wrResults.length - 1].toFixed(2)) : undefined;
+  if (wrResults.length === 0) return undefined;
+  const latest = wrResults[wrResults.length - 1];
+  return (latest !== undefined && latest !== null) ? parseFloat(latest.toFixed(2)) : undefined;
 }
 
 /**
@@ -281,7 +284,9 @@ export function calculateCCI(
   };
 
   const cciResults = CCI.calculate(cciInput);
-  return cciResults.length > 0 ? parseFloat(cciResults[cciResults.length - 1].toFixed(2)) : undefined;
+  if (cciResults.length === 0) return undefined;
+  const latest = cciResults[cciResults.length - 1];
+  return (latest !== undefined && latest !== null) ? parseFloat(latest.toFixed(2)) : undefined;
 }
 
 // Import types needed for calculateAllIndicators - adjust path if your project structure is different
