@@ -606,6 +606,20 @@ export default function VolatilityTradingPage() {
             if (isSettled) {
               console.log(`[VolatilityPage] Trade ${trade.id} settled with status: ${newLocalStatus}, P/L: ${contractStatusData.profit}`);
 
+              // Enhanced logging for Higher/Lower trades
+              if (trade.userSelectedTradeType === 'HigherLower') {
+                console.log(`[VolatilityPage] Higher/Lower trade completed:`, {
+                  instrument: trade.instrument,
+                  contractType: trade.derivContractType,
+                  entryPrice: trade.entryPrice,
+                  exitPrice: contractStatusData.current_spot,
+                  barrier: contractStatusData.barrier,
+                  duration: trade.durationSeconds,
+                  pnl: contractStatusData.profit,
+                  status: newLocalStatus
+                });
+              }
+
               // Update profits
               const pnl = contractStatusData.profit || 0;
               setProfitsClaimable(prevProfits => ({
@@ -649,6 +663,15 @@ export default function VolatilityTradingPage() {
 
         // Refresh balance after all trades are completed
         console.log('[VolatilityPage] Refreshing balance after trade completion');
+
+        // Force immediate balance refresh through the listener
+        if (selectedDerivAccountType === 'demo' && demoBalanceListenerRef.current) {
+          demoBalanceListenerRef.current.forceBalanceRefresh();
+        } else if (selectedDerivAccountType === 'real' && realBalanceListenerRef.current) {
+          realBalanceListenerRef.current.forceBalanceRefresh();
+        }
+
+        // Also refresh through the API as backup
         refreshBalance();
 
         // Calculate session summary

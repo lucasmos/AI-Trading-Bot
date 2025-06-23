@@ -103,8 +103,10 @@ You are an elite volatility trader with institutional-level expertise. Your miss
 
 4️⃣ **TRADE TYPE OPTIMIZATION**:
    - **RiseFall**: Best for clear trend + momentum alignment. Duration: 1-5 minutes.
-   - **HigherLower**: Best for range-bound markets with clear support/resistance. Duration: 5-15 minutes.
-   - **TouchNoTouch**: Best for high volatility breakouts or strong consolidation. Duration: 10-15 minutes.
+   - **HigherLower**: Best for range-bound markets with clear support/resistance.
+     * For Volatility Indices: Duration: 5-10 ticks OR 15 seconds to 5 minutes
+     * For other instruments: Duration: 1-7 days (minimum 1 day required by Deriv)
+   - **TouchNoTouch**: Best for high volatility breakouts or strong consolidation. Duration: 5-15 minutes.
    - **DigitsEvenOdd**: Best for sideways/choppy markets. Duration: 1-10 ticks.
    - **DigitsOverUnder**: Best for digit pattern analysis + momentum. Duration: 1-10 ticks.
 
@@ -130,7 +132,9 @@ Your Task:
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
       - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
-      - For Rise/Fall and Higher/Lower contracts, 'durationUnit' can be 's' (seconds) or 'm' (minutes), with minimum duration of 15 seconds.
+      - For Rise/Fall contracts, 'durationUnit' can be 's' (seconds) or 'm' (minutes), with minimum duration of 15 seconds.
+      - For Higher/Lower contracts on Volatility Indices: 'durationUnit' can be 't' (minimum 5 ticks), 's' (minimum 15 seconds), or 'm' (minutes). Recommended: 5-10 ticks or 1-5 minutes.
+      - For Higher/Lower contracts on other instruments: 'durationUnit' MUST be 'days', with minimum 1 day duration.
    c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
 3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'. In this case, do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
 4. Provide concise 'reasoning' for your decision. If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch', you can suggest barrier characteristics in your reasoning (e.g., "barrier should be significantly above current spot", "aim for a tight barrier").
@@ -174,15 +178,26 @@ Example for RiseFall (predicting RISE):
   "reasoning": "Strong bullish momentum observed in recent ticks and RSI above 70."
 }
 
-Example for HigherLower (predicting LOWER with relative barrier):
+Example for HigherLower on Volatility Index (predicting LOWER):
 {
   "instrument": "{{{currentInstrument}}}",
   "shouldTrade": true,
   "derivContractType": "PUT",
-  "duration": 120,
-  "durationUnit": "s",
+  "duration": 5,
+  "durationUnit": "t",
   "stake": {{{stakePerTrade}}},
-  "reasoning": "Price showing resistance, MACD declining. Barrier will be set slightly below current spot by system."
+  "reasoning": "Price showing resistance, MACD declining. Using 5 ticks for quick resolution on volatility index."
+}
+
+Example for HigherLower on Volatility Index (predicting HIGHER, longer duration):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "CALL",
+  "duration": 3,
+  "durationUnit": "m",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Strong bullish momentum with high volatility. Using 3 minutes to allow trend development."
 }
 
 Example for TouchNoTouch (predicting TOUCH):
@@ -363,6 +378,26 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       if ((output.derivContractType === "ONETOUCH" || output.derivContractType === "NOTOUCH") &&
           (output.durationUnit !== 'm' || !output.duration || output.duration < 5)) {
         validationError = `Touch/No Touch contracts require minimum 5 minutes duration. Got ${output.duration}${output.durationUnit}.`;
+      }
+
+      // Validate Higher/Lower duration requirements
+      if ((output.derivContractType === "CALL" || output.derivContractType === "PUT") &&
+          input.userSelectedTradeType === 'HigherLower') {
+        // For volatility indices, allow ticks (min 5), seconds (min 15), or minutes
+        if (input.currentInstrument.startsWith('R_') || input.currentInstrument.includes('HZ')) {
+          if (output.durationUnit === 't' && (!output.duration || output.duration < 5)) {
+            validationError = `Higher/Lower on volatility indices requires minimum 5 ticks. Got ${output.duration}${output.durationUnit}.`;
+          } else if (output.durationUnit === 's' && (!output.duration || output.duration < 15)) {
+            validationError = `Higher/Lower on volatility indices requires minimum 15 seconds. Got ${output.duration}${output.durationUnit}.`;
+          } else if (!['t', 's', 'm'].includes(output.durationUnit || '')) {
+            validationError = `Higher/Lower on volatility indices supports 't', 's', or 'm' duration units. Got ${output.durationUnit}.`;
+          }
+        } else {
+          // For other instruments, require days (minimum 1)
+          if (output.durationUnit !== 'days' || !output.duration || output.duration < 1) {
+            validationError = `Higher/Lower on non-volatility instruments requires minimum 1 day duration. Got ${output.duration}${output.durationUnit}.`;
+          }
+        }
       }
       if (validationError) {
         console.error(`[AI Single Flow/${input.currentInstrument}] Invalid trade proposal: ${validationError}`, output);

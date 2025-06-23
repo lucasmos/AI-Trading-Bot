@@ -294,15 +294,35 @@ export async function executeVolatilityAiTradeLoop(
           const atr = instrumentATR[instrumentFromAI];
 
           if (latestSpot !== undefined) {
-            const offsetFactor = 0.3;
-            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.0005;
+            // Enhanced barrier calculation for Higher/Lower trades
+            // Use larger offset factors to account for the nature of Higher/Lower contracts
+            let offsetFactor: number;
+            let fallbackPercentage: number;
+
+            // Determine offset based on duration and instrument volatility
+            if (aiProposal.durationUnit === 't') {
+              // For tick-based durations (5-10 ticks), use smaller but meaningful offset
+              offsetFactor = atr ? 0.8 : 0; // Larger ATR multiplier for ticks
+              fallbackPercentage = 0.002; // 0.2% fallback for tick-based
+            } else if (aiProposal.durationUnit === 's' || aiProposal.durationUnit === 'm') {
+              // For time-based durations, use moderate offset
+              offsetFactor = atr ? 1.2 : 0; // Even larger for time-based
+              fallbackPercentage = 0.003; // 0.3% fallback
+            } else {
+              // For day-based durations, use larger offset
+              offsetFactor = atr ? 2.0 : 0; // Much larger for daily contracts
+              fallbackPercentage = 0.01; // 1% fallback for daily
+            }
+
+            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * fallbackPercentage;
 
             let barrierValue = (aiProposal.derivContractType === 'CALL')
                                ? latestSpot + atrBasedOffset
                                : latestSpot - atrBasedOffset;
+
             const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
             calculatedBarrier = barrierValue.toFixed(decimalPlaces);
-            console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier}`);
+            console.log(`[TradeAction/SessionLoop] Enhanced barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier} (offset: ${atrBasedOffset.toFixed(6)}, duration: ${aiProposal.duration}${aiProposal.durationUnit})`);
           } else {
             throw new Error(`Cannot determine current spot price for programmatic barrier for ${instrumentFromAI}. Data might have been insufficient.`);
           }
