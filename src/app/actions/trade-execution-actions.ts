@@ -236,7 +236,13 @@ export async function executeVolatilityAiTradeLoop(
   console.log(`[TradeAction/Session] Calling AI for session strategy. TradeType: ${userSelectedTradeType}, TotalStake: ${totalStakeFromUser}`);
 
   try {
-    const aiSessionStrategy = await generateVolatilitySessionStrategy(aiSessionInput);
+    // Add timeout to prevent Vercel timeout (max 45 seconds for AI processing)
+    const aiSessionStrategy = await Promise.race([
+      generateVolatilitySessionStrategy(aiSessionInput),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('AI session timed out after 45 seconds')), 45000);
+      })
+    ]);
     console.log(`[TradeAction/Session] AI Session Strategy received. Overall Reasoning: ${aiSessionStrategy.overallReasoning}`);
     console.log(`[TradeAction/Session] AI proposes ${aiSessionStrategy.tradesToExecute.length} trades.`);
 

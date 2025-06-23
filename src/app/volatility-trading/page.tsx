@@ -12,6 +12,7 @@ import {
   executeVolatilityAiTradeLoop, // New backend action for real trades
   VolatilityTradeExecutionResult
 } from '@/app/actions/trade-execution-actions';
+import { getUpdatedUserBalances } from '@/app/actions/balance-actions';
 import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types'; // For the new trade type selector
 
 import { useToast } from "@/hooks/use-toast";
@@ -223,6 +224,31 @@ export default function VolatilityTradingPage() {
     if (!isNaN(value) && value >= 0) { setAutoTradeTotalStake(value); }
     else if (event.target.value === "") { setAutoTradeTotalStake(0); }
   };
+
+  const refreshBalance = useCallback(async () => {
+    if (!userInfo) return;
+
+    try {
+      console.log('[VolatilityPage] Refreshing balance after trade completion');
+      const freshBalances = await getUpdatedUserBalances({
+        userId: userInfo.id,
+        demoAccountId: userInfo.derivDemoAccountId,
+        demoApiToken: userInfo.derivDemoApiToken,
+        realAccountId: userInfo.derivRealAccountId,
+        realApiToken: userInfo.derivRealApiToken,
+      });
+
+      if (selectedDerivAccountType === 'demo' && freshBalances.derivDemoBalance !== undefined) {
+        setFreshDemoBalance(freshBalances.derivDemoBalance);
+        console.log(`[VolatilityPage] Updated demo balance: ${freshBalances.derivDemoBalance}`);
+      } else if (selectedDerivAccountType === 'real' && freshBalances.derivRealBalance !== undefined) {
+        setFreshRealBalance(freshBalances.derivRealBalance);
+        console.log(`[VolatilityPage] Updated real balance: ${freshBalances.derivRealBalance}`);
+      }
+    } catch (error) {
+      console.error('[VolatilityPage] Error refreshing balance:', error);
+    }
+  }, [userInfo, selectedDerivAccountType]);
 
   const handleAccountTypeSwitch = async (newTypeFromControl: 'demo' | 'real' | null) => {
     const newApiType = newTypeFromControl;
@@ -617,7 +643,12 @@ export default function VolatilityTradingPage() {
           clearInterval(realTradeMonitoringInterval.current);
           realTradeMonitoringInterval.current = null;
         }
-        toast({ title: "AI Session Complete", description: "All real trades are settled." });
+
+        // Refresh balance after all trades are completed
+        console.log('[VolatilityPage] Refreshing balance after trade completion');
+        refreshBalance();
+
+        toast({ title: "AI Session Complete", description: "All real trades are settled. Balance updated." });
       }
     }, 5000); // Check every 5 seconds
 

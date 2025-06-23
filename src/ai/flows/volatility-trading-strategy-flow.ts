@@ -71,7 +71,10 @@ Your Task:
       - For 'HigherLower': Output 'CALL' (price will be higher than a programmatically set default barrier) or 'PUT' (price will be lower than a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
       - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set barrier) or 'NOTOUCH' (price will not touch a programmatically set barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). IMPORTANT: In your reasoning, specify your barrier strategy (e.g., "barrier should be above current price to capture upward breakout" or "barrier should be well above current price to avoid being touched during normal volatility").
       - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
-      - For 'DigitsOverUnder': Output 'DIGITMATCH' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit). YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3"). A DigitsOverUnder trade proposal without this digit 'barrier' is invalid.
+      - For 'DigitsOverUnder': Output 'DIGITMATCH' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit).
+        ⚠️ CRITICAL: YOU ABSOLUTELY MUST provide a 'barrier' field in your JSON output. This 'barrier' must be a single digit string (e.g., "7", "3").
+        ⚠️ EXAMPLE: If predicting UNDER 5, use "barrier": "5". If predicting OVER 6, use "barrier": "6".
+        ⚠️ A DigitsOverUnder trade proposal without this digit 'barrier' is INVALID and will be REJECTED.
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
       - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
@@ -85,7 +88,10 @@ Output Format: Return a single JSON object matching the output schema.
 - If 'shouldTrade' is true AND 'userSelectedTradeType' is 'DigitsOverUnder': the 'barrier' field (predicted digit) is ALSO ABSOLUTELY MANDATORY.
 - For 'RiseFall', 'HigherLower', 'TouchNoTouch', 'DigitsEvenOdd' when 'shouldTrade' is true: the 'barrier' field MUST be omitted from your JSON output.
 - If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
-CRITICAL CHECK: Before outputting JSON, if 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch' and 'shouldTrade' is true, ensure you have OMITTED the 'barrier' field. If 'userSelectedTradeType' is 'DigitsOverUnder' and 'shouldTrade' is true, ensure you have INCLUDED the 'barrier' field with the predicted digit.
+⚠️ CRITICAL CHECK: Before outputting JSON:
+- If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch' and 'shouldTrade' is true: OMIT the 'barrier' field
+- If 'userSelectedTradeType' is 'DigitsOverUnder' and 'shouldTrade' is true: INCLUDE the 'barrier' field with the predicted digit (MANDATORY!)
+- If 'userSelectedTradeType' is 'DigitsEvenOdd' and 'shouldTrade' is true: OMIT the 'barrier' field
 
 Example for RiseFall (predicting RISE):
 {
@@ -233,7 +239,25 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         output.stake = input.stakePerTrade;
       }
       if (input.userSelectedTradeType === 'DigitsOverUnder' && (output.barrier === undefined || output.barrier === null || !/^\d$/.test(String(output.barrier).trim()))) {
-        validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'`;
+        // Try to extract barrier from reasoning as fallback
+        const reasoningText = output.reasoning || '';
+        const barrierMatch = reasoningText.match(/(?:under|below|less than)\s*(\d)|(?:over|above|greater than)\s*(\d)/i);
+        if (barrierMatch) {
+          const extractedBarrier = barrierMatch[1] || barrierMatch[2];
+          console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier, extracted '${extractedBarrier}' from reasoning. Adding automatically.`);
+          output.barrier = extractedBarrier;
+        } else {
+          // Default fallback based on contract type
+          if (output.derivContractType === 'DIGITUNDER') {
+            output.barrier = "5"; // Default: predict under 5
+            console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITUNDER, using default '5'.`);
+          } else if (output.derivContractType === 'DIGITMATCH') {
+            output.barrier = "4"; // Default: predict over 4
+            console.warn(`[AI Single Flow/${input.currentInstrument}] AI forgot barrier for DIGITMATCH, using default '4'.`);
+          } else {
+            validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'`;
+          }
+        }
       } else if ((input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch') && output.barrier !== undefined) {
         console.warn(`[AI Single Flow/${input.currentInstrument}] AI provided unexpected barrier for ${input.userSelectedTradeType}. Ignoring.`);
         delete output.barrier;
