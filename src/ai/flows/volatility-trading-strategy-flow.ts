@@ -274,10 +274,10 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         bbLower: ind.bollingerBands?.lower?.toFixed(4) ?? "N/A",
         ema: ind.ema?.toFixed(4) ?? "N/A",
         atr: ind.atr?.toFixed(4) ?? "N/A",
-        stochasticK: ind.stochastic?.k?.toFixed(2) ?? "N/A",
-        stochasticD: ind.stochastic?.d?.toFixed(2) ?? "N/A",
-        williamsR: ind.williamsR?.toFixed(2) ?? "N/A",
-        cci: ind.cci?.toFixed(2) ?? "N/A",
+        stochasticK: (ind.stochastic?.k !== undefined) ? ind.stochastic.k.toFixed(2) : "N/A",
+        stochasticD: (ind.stochastic?.d !== undefined) ? ind.stochastic.d.toFixed(2) : "N/A",
+        williamsR: (ind.williamsR !== undefined) ? ind.williamsR.toFixed(2) : "N/A",
+        cci: (ind.cci !== undefined) ? ind.cci.toFixed(2) : "N/A",
       };
     }
 
