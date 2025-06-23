@@ -606,7 +606,7 @@ export default function VolatilityTradingPage() {
             if (isSettled) {
               console.log(`[VolatilityPage] Trade ${trade.id} settled with status: ${newLocalStatus}, P/L: ${contractStatusData.profit}`);
 
-              // Enhanced logging for Higher/Lower trades
+              // Enhanced logging for Higher/Lower and Touch/No Touch trades
               if (trade.userSelectedTradeType === 'HigherLower') {
                 console.log(`[VolatilityPage] Higher/Lower trade completed:`, {
                   instrument: trade.instrument,
@@ -617,6 +617,20 @@ export default function VolatilityTradingPage() {
                   duration: trade.durationSeconds,
                   pnl: contractStatusData.profit,
                   status: newLocalStatus
+                });
+              } else if (trade.userSelectedTradeType === 'TouchNoTouch') {
+                console.log(`[VolatilityPage] Touch/No Touch trade completed:`, {
+                  instrument: trade.instrument,
+                  contractType: trade.derivContractType,
+                  entryPrice: trade.entryPrice,
+                  exitPrice: contractStatusData.current_spot,
+                  barrier: contractStatusData.barrier,
+                  highBarrier: contractStatusData.high_barrier,
+                  lowBarrier: contractStatusData.low_barrier,
+                  duration: trade.durationSeconds,
+                  pnl: contractStatusData.profit,
+                  status: newLocalStatus,
+                  barrierTouched: contractStatusData.is_expired ? 'Contract expired' : 'Check barrier status'
                 });
               }
 

@@ -334,30 +334,46 @@ export async function executeVolatilityAiTradeLoop(
           const atr = instrumentATR[instrumentFromAI];
 
           if (latestSpot !== undefined) {
-            const offsetFactor = 0.5; // Larger offset for Touch/No Touch due to longer duration
-            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * 0.001; // Slightly larger fallback for TouchNoTouch
+            // Enhanced barrier calculation for Touch/No Touch trades
+            // For Touch/No Touch, Deriv expects RELATIVE barriers (e.g., "+1.37", "-0.25")
+            let offsetFactor: number;
+            let fallbackPercentage: number;
 
-            // For TouchNoTouch, barrier placement should be strategic:
-            // - ONETOUCH: Place barrier where we expect price TO reach
-            // - NOTOUCH: Place barrier where we expect price NOT to reach
-            // The AI's reasoning should guide whether barrier goes above or below current price
+            // Determine offset based on duration and instrument volatility
+            if (aiProposal.durationUnit === 't') {
+              // For tick-based durations (5+ ticks), use moderate offset
+              offsetFactor = atr ? 1.0 : 0; // Moderate ATR multiplier for ticks
+              fallbackPercentage = 0.003; // 0.3% fallback for tick-based
+            } else if (aiProposal.durationUnit === 'm' || aiProposal.durationUnit === 'h') {
+              // For time-based durations, use larger offset
+              offsetFactor = atr ? 1.5 : 0; // Larger for time-based
+              fallbackPercentage = 0.005; // 0.5% fallback
+            } else {
+              // For day-based durations, use much larger offset
+              offsetFactor = atr ? 3.0 : 0; // Much larger for daily contracts
+              fallbackPercentage = 0.02; // 2% fallback for daily
+            }
 
-            let barrierValue: number;
+            const atrBasedOffset = atr ? atr * offsetFactor : latestSpot * fallbackPercentage;
+
+            // For Touch/No Touch, use RELATIVE barrier format ("+X" or "-X")
+            let relativeOffset: number;
+
             if (aiProposal.derivContractType === 'ONETOUCH') {
               // For ONETOUCH, place barrier at a reachable but challenging level
-              // Default to above current price, but could be adjusted based on trend analysis
-              barrierValue = latestSpot + atrBasedOffset;
+              // Use positive offset (price needs to go up to touch)
+              relativeOffset = atrBasedOffset;
             } else { // NOTOUCH
               // For NOTOUCH, place barrier at a level we expect price NOT to reach
-              // This should be based on volatility and trend analysis
-              // For now, use a larger offset to make it less likely to be touched
-              const notouch_offset = atr ? atr * 0.8 : latestSpot * 0.002; // Larger offset for NOTOUCH
-              barrierValue = latestSpot + notouch_offset; // Default above, but this should be smarter
+              // Use larger offset to make it less likely to be touched
+              const notouchMultiplier = aiProposal.durationUnit === 'days' ? 1.5 : 1.2;
+              relativeOffset = atrBasedOffset * notouchMultiplier;
             }
 
             const decimalPlaces = getInstrumentDecimalPlaces(instrumentFromAI);
-            calculatedBarrier = barrierValue.toFixed(decimalPlaces);
-            console.log(`[TradeAction/SessionLoop] Programmatically determined barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier}`);
+            calculatedBarrier = `+${relativeOffset.toFixed(decimalPlaces)}`;
+
+            console.log(`[TradeAction/SessionLoop] Enhanced RELATIVE barrier for ${instrumentFromAI} (${aiProposal.derivContractType}): ${calculatedBarrier} (offset: ${atrBasedOffset.toFixed(6)}, duration: ${aiProposal.duration}${aiProposal.durationUnit})`);
           } else {
             throw new Error(`Cannot determine current spot price for programmatic barrier for ${instrumentFromAI}. Data might have been insufficient.`);
           }

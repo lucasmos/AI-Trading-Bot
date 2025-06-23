@@ -153,7 +153,9 @@ You are an experienced volatility trader with professional expertise. Your missi
    - High volatility confirmed by ATR >1.5x recent average
    - Strong breakout signals (price at BB bands + momentum confirmation)
    - OR strong consolidation (low ATR + tight BB squeeze)
-   - Duration: 5-15 minutes
+   - For Volatility Indices: 5+ ticks, 2+ minutes, 1+ hours, or 1+ days
+   - For Forex/Stock Indices: 7+ days minimum
+   - For Metals: 1+ days minimum
 
    **DigitsEvenOdd** - Use when:
    - Market is choppy/sideways (conflicting trend signals)
@@ -205,7 +207,10 @@ Your Task:
         🚨 NO BARRIER = TRADE REJECTED. ALWAYS INCLUDE THE BARRIER FIELD!
    b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
       - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
-      - For Touch/No Touch contracts ('TouchNoTouch'), 'durationUnit' MUST be 'm' (minutes), and 'duration' MUST be at least 5 minutes (minimum: 5m, recommended: 5m-30m).
+      - For Touch/No Touch contracts ('TouchNoTouch'):
+        * For Volatility Indices: 'durationUnit' can be 't' (minimum 5 ticks), 'm' (minimum 2 minutes), 'h' (minimum 1 hour), or 'days' (minimum 1 day)
+        * For Forex/Stock Indices: 'durationUnit' MUST be 'days' with minimum 7 days
+        * For Metals: 'durationUnit' MUST be 'days' with minimum 1 day
       - For Rise/Fall contracts, 'durationUnit' can be 's' (seconds) or 'm' (minutes), with minimum duration of 15 seconds.
       - For Higher/Lower contracts on Volatility Indices: 'durationUnit' can be 't' (minimum 5 ticks), 's' (minimum 15 seconds), or 'm' (minutes). Recommended: 5-10 ticks or 1-5 minutes.
       - For Higher/Lower contracts on other instruments: 'durationUnit' MUST be 'days', with minimum 1 day duration.
@@ -272,6 +277,28 @@ Example for HigherLower on Volatility Index (predicting HIGHER, longer duration)
   "durationUnit": "m",
   "stake": {{{stakePerTrade}}},
   "reasoning": "Strong bullish momentum with high volatility. Using 3 minutes to allow trend development."
+}
+
+Example for TouchNoTouch on Volatility Index (predicting TOUCH):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "ONETOUCH",
+  "duration": 5,
+  "durationUnit": "t",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "High volatility breakout expected. Using 5 ticks for quick resolution on volatility index."
+}
+
+Example for TouchNoTouch on Volatility Index (predicting NO TOUCH, longer duration):
+{
+  "instrument": "{{{currentInstrument}}}",
+  "shouldTrade": true,
+  "derivContractType": "NOTOUCH",
+  "duration": 1,
+  "durationUnit": "h",
+  "stake": {{{stakePerTrade}}},
+  "reasoning": "Market consolidating with low volatility. Barrier unlikely to be touched in 1 hour."
 }
 
 Example for TouchNoTouch (predicting TOUCH):
@@ -462,9 +489,32 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         validationError = `Duration unit must be 't' for Digit contracts. Got '${output.durationUnit}'.`;
       }
       // Validate Touch/No Touch duration requirements
-      if ((output.derivContractType === "ONETOUCH" || output.derivContractType === "NOTOUCH") &&
-          (output.durationUnit !== 'm' || !output.duration || output.duration < 5)) {
-        validationError = `Touch/No Touch contracts require minimum 5 minutes duration. Got ${output.duration}${output.durationUnit}.`;
+      if ((output.derivContractType === "ONETOUCH" || output.derivContractType === "NOTOUCH")) {
+        // For volatility indices, allow multiple duration types
+        if (input.currentInstrument.startsWith('R_') || input.currentInstrument.includes('HZ')) {
+          if (output.durationUnit === 't' && (!output.duration || output.duration < 5)) {
+            validationError = `Touch/No Touch on volatility indices requires minimum 5 ticks. Got ${output.duration}${output.durationUnit}.`;
+          } else if (output.durationUnit === 'm' && (!output.duration || output.duration < 2)) {
+            validationError = `Touch/No Touch on volatility indices requires minimum 2 minutes. Got ${output.duration}${output.durationUnit}.`;
+          } else if (output.durationUnit === 'h' && (!output.duration || output.duration < 1)) {
+            validationError = `Touch/No Touch on volatility indices requires minimum 1 hour. Got ${output.duration}${output.durationUnit}.`;
+          } else if (output.durationUnit === 'days' && (!output.duration || output.duration < 1)) {
+            validationError = `Touch/No Touch on volatility indices requires minimum 1 day. Got ${output.duration}${output.durationUnit}.`;
+          } else if (!['t', 'm', 'h', 'days'].includes(output.durationUnit || '')) {
+            validationError = `Touch/No Touch on volatility indices supports 't', 'm', 'h', or 'days' duration units. Got ${output.durationUnit}.`;
+          }
+        } else if (input.currentInstrument.startsWith('frxXAU') || input.currentInstrument.startsWith('frxXAG') ||
+                   input.currentInstrument.startsWith('frxXPT') || input.currentInstrument.startsWith('frxXPD')) {
+          // For metals, require days (minimum 1)
+          if (output.durationUnit !== 'days' || !output.duration || output.duration < 1) {
+            validationError = `Touch/No Touch on metals requires minimum 1 day duration. Got ${output.duration}${output.durationUnit}.`;
+          }
+        } else {
+          // For forex and stock indices, require days (minimum 7)
+          if (output.durationUnit !== 'days' || !output.duration || output.duration < 7) {
+            validationError = `Touch/No Touch on forex/indices requires minimum 7 days duration. Got ${output.duration}${output.durationUnit}.`;
+          }
+        }
       }
 
       // Validate Higher/Lower duration requirements
