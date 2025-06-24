@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { TradeControls } from '@/components/dashboard/trade-controls';
 import { AiRecommendationCard } from '@/components/dashboard/ai-recommendation-card';
-import type { TradingMode, TradeDuration, AiRecommendation, PaperTradingMode, ActiveAutomatedTrade, ProfitsClaimable, PriceTick, ForexCryptoCommodityInstrumentType, VolatilityInstrumentType, AuthStatus, MarketSentimentParams, InstrumentType, InstrumentIndicatorData, AutomatedTradingStrategyInput as TypesAutomatedTradingStrategyInput } from '@/types'; // Renamed to avoid conflict
+import type { TradingMode, TradeDuration, AiRecommendation, PaperTradingMode, ActiveAutomatedTrade, ProfitsClaimable, PriceTick, ForexCommodityInstrumentType, VolatilityInstrumentType, AuthStatus, MarketSentimentParams, InstrumentType, InstrumentIndicatorData, AutomatedTradingStrategyInput as TypesAutomatedTradingStrategyInput } from '@/types'; // Renamed to avoid conflict
 import { analyzeMarketSentiment, type AnalyzeMarketSentimentInput } from '@/ai/flows/analyze-market-sentiment';
 import { explainAiReasoning } from '@/ai/flows/explain-ai-reasoning';
 import { generateAutomatedTradingStrategy, AutomatedTradingStrategyInput as FlowAutomatedTradingStrategyInput } from '@/ai/flows/automated-trading-strategy-flow'; // Renamed to avoid conflict
@@ -26,10 +26,10 @@ import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useRouter } from 'next/navigation';
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR } from '@/lib/technical-analysis';
-import { 
-  SUPPORTED_INSTRUMENTS, 
+import {
+  SUPPORTED_INSTRUMENTS,
   DEFAULT_INSTRUMENT,
-  FOREX_CRYPTO_COMMODITY_INSTRUMENTS
+  FOREX_COMMODITY_INSTRUMENTS
 } from "@/config/instruments";
 // Old getMarketStatus will be removed, new ones imported
 import {
@@ -116,7 +116,7 @@ export default function DashboardPage() {
   } = useAuth();
   const { data: session, update: updateNextAuthSession } = useSession();
 
-  const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]);
+  const [currentInstrument, setCurrentInstrument] = useState<InstrumentType>(FOREX_COMMODITY_INSTRUMENTS[0]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
   const [tradeDuration, setTradeDuration] = useState<TradeDuration>('5m');
@@ -548,19 +548,19 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
   // REMOVED OLD useEffect for getMarketStatus
 
   const handleInstrumentChange = (instrument: InstrumentType) => {
-    if (FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(instrument as ForexCryptoCommodityInstrumentType)) {
-        setCurrentInstrument(instrument as ForexCryptoCommodityInstrumentType);
+    if (FOREX_COMMODITY_INSTRUMENTS.includes(instrument as ForexCommodityInstrumentType)) {
+        setCurrentInstrument(instrument as ForexCommodityInstrumentType);
     } else {
-        setCurrentInstrument(FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0] as ForexCryptoCommodityInstrumentType);
+        setCurrentInstrument(FOREX_COMMODITY_INSTRUMENTS[0] as ForexCommodityInstrumentType);
         toast({
             title: "Instrument Switch",
-            description: `${instrument} is a Volatility Index. Switched to ${FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0]}. Use Volatility Trading page for Volatility Indices.`,
+            description: `${instrument} is a Volatility Index. Switched to ${FOREX_COMMODITY_INSTRUMENTS[0]}. Use Volatility Trading page for Volatility Indices.`,
             variant: "default",
             duration: 5000
         });
     }
     // Old status update removed, new useEffects will handle it
-    setAiRecommendation(null); 
+    setAiRecommendation(null);
   };
 
   // OLD useEffect that fetched individual trading times for currentInstrument is REMOVED.
@@ -1041,9 +1041,9 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       return;
     }
 
-    // Check if the market for the selected instrument is open (some crypto might be 24/7).
+    // Check if the market for the selected instrument is open
     const { isOpen, statusMessage } = getMarketStatus(currentInstrument);
-    if (!isOpen && (FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCryptoCommodityInstrumentType) && !['BTC/USD', 'ETH/USD'].includes(currentInstrument as string))) {
+    if (!isOpen && FOREX_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCommodityInstrumentType)) {
       toast({ title: "Market Closed", description: statusMessage, variant: "destructive" });
       return;
     }
@@ -1131,7 +1131,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       router.push('/auth/login');
       return;
     }
-    if (!FOREX_CRYPTO_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCryptoCommodityInstrumentType)){
+    if (!FOREX_COMMODITY_INSTRUMENTS.includes(currentInstrument as ForexCommodityInstrumentType)){
       toast({title: "AI Support Note", description: `AI recommendations for ${currentInstrument} are on its specific trading page.`, variant: "default"});
       return;
     }
@@ -1250,14 +1250,11 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     setAutomatedTradingLog([]);
     logAutomatedTradingEvent(`Initializing AI Auto-Trading with $${autoTradeTotalStake} for ${selectedDerivAccountType} account (${currentTargetAccountId}) using strategy ${selectedAiStrategyId}.`);
 
-    let instrumentsToTrade: ForexCryptoCommodityInstrumentType[];
+    let instrumentsToTrade: ForexCommodityInstrumentType[];
 
     if (allTradingTimesData && !('error' in allTradingTimesData) && allTradingTimesData.markets) {
       logAutomatedTradingEvent("Using detailed trading times for pre-filtering instruments for AI session.");
-      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(instrument => {
-        if (['BTC/USD', 'ETH/USD'].includes(instrument as string)) {
-          return true; // Always include these crypto as 24/7
-        }
+      instrumentsToTrade = FOREX_COMMODITY_INSTRUMENTS.filter(instrument => {
         const derivSymbol = instrumentToDerivSymbol(instrument);
         let specificSymbolTimesData: DerivSymbolSpecificTradingData | null = null;
 
@@ -1296,7 +1293,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       if (allTradingTimesData && 'error' in allTradingTimesData) {
         logAutomatedTradingEvent(`Error in global trading times data: ${allTradingTimesData.error}`);
       }
-      instrumentsToTrade = FOREX_CRYPTO_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen || ['BTC/USD', 'ETH/USD'].includes(inst as string));
+      instrumentsToTrade = FOREX_COMMODITY_INSTRUMENTS.filter(inst => getMarketStatus(inst).isOpen);
     }
 
     if (instrumentsToTrade.length === 0) {
@@ -1539,16 +1536,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         let matchedContractTypeOffering = null;
 
         if (offeringsForSymbol && offeringsForSymbol.availableContracts) {
-          // Debug: Log available contract types for crypto instruments
-          if (derivSymbol.startsWith('cry')) {
-            logAutomatedTradingEvent(`Available contract types for ${derivSymbol}: ${offeringsForSymbol.availableContracts.map(c => c.tradeTypeName).join(', ')}`);
-          }
-
           // Try to find a direct match or a related match (e.g. CALL/PUT map to a rise_fall offering)
           matchedContractTypeOffering = offeringsForSymbol.availableContracts.find(c =>
             c.tradeTypeName === proposedTrade.tradeType ||
-            ( (proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'PUT') && c.tradeTypeName === 'rise_fall' ) ||
-            ( (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'MULTDOWN') && c.tradeTypeName === 'multiplier' )
+            ( (proposedTrade.tradeType === 'CALL' || proposedTrade.tradeType === 'PUT') && c.tradeTypeName === 'rise_fall' )
           );
         }
 
@@ -2073,7 +2064,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             isAutoTradingActive={isAutoTradingActive} 
             disableManualControls={isAutoTradingActive || isFetchingManualRecommendation || isPreparingAutoTrades} 
             currentBalance={currentBalance}
-            supportedInstrumentsForManualAi={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
+            supportedInstrumentsForManualAi={FOREX_COMMODITY_INSTRUMENTS}
             currentSelectedInstrument={currentInstrument}
             isMarketOpenForSelected={isCurrentInstrumentMarketOpen === true} // Use new state
             marketStatusMessage={isLoadingTradingTimes ? 'Loading trading hours...' : marketStatusDisplayMessage} // Use new state

@@ -1,4 +1,4 @@
-import type { ForexCryptoCommodityInstrumentType, InstrumentType } from '@/types';
+import type { ForexCommodityInstrumentType, InstrumentType } from '@/types';
 import type { DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData } from '../types/trading-times'; // Added imports
 
 // Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
@@ -454,7 +454,7 @@ export function getMarketStatus(
 
   // Fallback for any other unhandled but potentially valid InstrumentType
   // We'll assume they are Forex-like if not Volatility or known Crypto.
-  const isForexLike = !(instrument.startsWith('Volatility') || instrument.startsWith('Boom') || instrument.startsWith('Crash') || instrument.startsWith('Jump')) && !cryptoInstruments.includes(instrument as ForexCryptoCommodityInstrumentType);
+  const isForexLike = !(instrument.startsWith('Volatility') || instrument.startsWith('Boom') || instrument.startsWith('Crash') || instrument.startsWith('Jump'));
   if (isForexLike) {
     const isOpen = isGenerallyForexMarketOpen(currentDate);
      return {

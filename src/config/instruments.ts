@@ -1,19 +1,17 @@
-import type { 
-  ForexCryptoCommodityInstrumentType, 
+import type {
+  ForexCommodityInstrumentType,
   VolatilityInstrumentType,
   InstrumentType
 } from '../types'; // Adjust path if your types file is elsewhere relative to src/config
 
 /**
- * Array of supported Forex, Crypto, and Commodity instruments.
- * These should match the string literals defined in ForexCryptoCommodityInstrumentType.
+ * Array of supported Forex and Commodity instruments.
+ * These should match the string literals defined in ForexCommodityInstrumentType.
  */
-export const FOREX_CRYPTO_COMMODITY_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
-  'EUR/USD', 
-  'GBP/USD', 
-  'BTC/USD', 
-  'XAU/USD', 
-  'ETH/USD',
+export const FOREX_COMMODITY_INSTRUMENTS: ForexCommodityInstrumentType[] = [
+  'EUR/USD',
+  'GBP/USD',
+  'XAU/USD',
   'Palladium/USD',
   'Platinum/USD',
   'Silver/USD',
@@ -37,7 +35,7 @@ export const VOLATILITY_INSTRUMENTS: VolatilityInstrumentType[] = [
 export interface SupportedInstrument {
   id: InstrumentType;
   name: string; // User-friendly name
-  type: 'Forex' | 'Crypto' | 'Commodity' | 'Volatility';
+  type: 'Forex' | 'Commodity' | 'Volatility';
   defaultDecimalPlaces: number;
 }
 
@@ -50,9 +48,6 @@ export const SUPPORTED_INSTRUMENTS: SupportedInstrument[] = [
   // Forex
   { id: 'EUR/USD', name: 'EUR/USD', type: 'Forex', defaultDecimalPlaces: 5 },
   { id: 'GBP/USD', name: 'GBP/USD', type: 'Forex', defaultDecimalPlaces: 5 },
-  // Crypto
-  { id: 'BTC/USD', name: 'BTC/USD', type: 'Crypto', defaultDecimalPlaces: 2 },
-  { id: 'ETH/USD', name: 'ETH/USD', type: 'Crypto', defaultDecimalPlaces: 2 },
   // Commodities
   { id: 'XAU/USD', name: 'Gold (XAU/USD)', type: 'Commodity', defaultDecimalPlaces: 2 },
   { id: 'Palladium/USD', name: 'Palladium/USD', type: 'Commodity', defaultDecimalPlaces: 2 },
@@ -69,7 +64,7 @@ export const SUPPORTED_INSTRUMENTS: SupportedInstrument[] = [
 /**
  * Default instrument to be selected when the application loads or when an invalid instrument is chosen.
  */
-export const DEFAULT_INSTRUMENT: InstrumentType = FOREX_CRYPTO_COMMODITY_INSTRUMENTS[0];
+export const DEFAULT_INSTRUMENT: InstrumentType = FOREX_COMMODITY_INSTRUMENTS[0];
 
 /**
  * Helper function to get a specific supported instrument object.

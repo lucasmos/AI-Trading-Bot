@@ -15,7 +15,7 @@ import {
 } from '@/ai/flows/volatility-trading-strategy-flow';
 import { UserTradeType } from '@/types/ai-shared-types';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
-import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCryptoCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
+import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 // Kept for other parts of the application that might use it.

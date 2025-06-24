@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'; // For long reasoning or many trades
 
 import {
-  ForexCryptoCommodityInstrumentType,
+  ForexCommodityInstrumentType,
   TradingMode,
   AutomatedTradingStrategyOutput,
   CandleData,
@@ -33,13 +33,13 @@ import { calculateAllIndicators } from '@/lib/technical-analysis';
 import { getMarketStatus } from '@/lib/market-hours';
 import { getTradeMonitor, cleanupTradeMonitor, type TradeCompletionData } from '@/services/trade-monitor';
 
-const AVAILABLE_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
-  'EUR/USD', 'GBP/USD', 'BTC/USD', 'XAU/USD',
-  'ETH/USD', 'Palladium/USD', 'Platinum/USD', 'Silver/USD',
+const AVAILABLE_INSTRUMENTS: ForexCommodityInstrumentType[] = [
+  'EUR/USD', 'GBP/USD', 'XAU/USD',
+  'Palladium/USD', 'Platinum/USD', 'Silver/USD',
 ];
 const TRADING_MODES: TradingMode[] = ['conservative', 'balanced', 'aggressive'];
 
-type MarketDataState = Record<ForexCryptoCommodityInstrumentType, {
+type MarketDataState = Record<ForexCommodityInstrumentType, {
   candles: CandleData[];
   indicators?: InstrumentIndicatorData;
   error?: string;
@@ -58,7 +58,7 @@ export function AutomatedTradingControls() {
 
   const [apiToken, setApiToken] = useState<string>('');
   const [totalStake, setTotalStake] = useState<number>(10);
-  const [selectedInstruments, setSelectedInstruments] = useState<ForexCryptoCommodityInstrumentType[]>([]);
+  const [selectedInstruments, setSelectedInstruments] = useState<ForexCommodityInstrumentType[]>([]);
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [stopLossPercentage, setStopLossPercentage] = useState<number | undefined>(5);
   const [aiStrategyId, setAiStrategyId] = useState<string | undefined>(undefined);
@@ -114,7 +114,7 @@ export function AutomatedTradingControls() {
     { value: 'DigitsEvenOdd', label: 'Digits - Even/Odd (Volatility)' },
   ];
 
-  const handleInstrumentChange = (instrument: ForexCryptoCommodityInstrumentType) => {
+  const handleInstrumentChange = (instrument: ForexCommodityInstrumentType) => {
     setSelectedInstruments(prev =>
       prev.includes(instrument)
         ? prev.filter(item => item !== instrument)
@@ -124,8 +124,8 @@ export function AutomatedTradingControls() {
 
   interface FetchMarketDataResult {
     success: boolean;
-    successfulInstruments: ForexCryptoCommodityInstrumentType[];
-    failedInstruments: ForexCryptoCommodityInstrumentType[];
+    successfulInstruments: ForexCommodityInstrumentType[];
+    failedInstruments: ForexCommodityInstrumentType[];
   }
 
   const fetchMarketDataForSelectedInstruments = async (currentToken: string): Promise<FetchMarketDataResult> => {

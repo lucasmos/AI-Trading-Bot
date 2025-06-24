@@ -20,19 +20,17 @@ export type VolatilityInstrumentType =
   | 'Jump 75 Index'
   | 'Jump 100 Index';
 
-export type ForexCryptoCommodityInstrumentType =
+export type ForexCommodityInstrumentType =
   | 'EUR/USD'
   | 'GBP/USD'
-  | 'BTC/USD'
   | 'XAU/USD' // Gold
-  | 'ETH/USD'
   | 'Palladium/USD'
   | 'Platinum/USD'
   | 'Silver/USD';
 
 export type VolatilityIndexInstrumentType = string; // Refined later
 
-export type InstrumentType = ForexCryptoCommodityInstrumentType | VolatilityIndexInstrumentType;
+export type InstrumentType = ForexCommodityInstrumentType | VolatilityIndexInstrumentType;
 
 export type TradingMode = 'conservative' | 'balanced' | 'aggressive';
 
@@ -60,8 +58,8 @@ export type InstrumentIndicatorData = {
   cci?: number;
 };
 
-export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Crypto/Commodity)
-  instrument: ForexCryptoCommodityInstrumentType;
+export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Commodity)
+  instrument: ForexCommodityInstrumentType;
   action: 'CALL' | 'PUT';
   stake: number;
   durationString: string;
@@ -71,7 +69,7 @@ export interface AutomatedTradeProposal { // For binary options auto-trading (Fo
 
 export interface ActiveAutomatedTrade { // For binary options auto-trading
   id: string; // Deriv's contract_id (ensure it's a string if Deriv ID is number)
-  instrument: ForexCryptoCommodityInstrumentType;
+  instrument: ForexCommodityInstrumentType;
   derivSymbol: string;
   action: 'CALL' | 'PUT';
   stake: number;
@@ -110,15 +108,15 @@ export interface ProfitsClaimable {
   losingTrades: number;
 }
 
-// For AI Flow (Binary options auto-trading - Forex/Crypto/Commodity)
+// For AI Flow (Binary options auto-trading - Forex/Commodity)
 export type AutomatedTradingStrategyInput = {
   totalStake: number;
-  instruments: ForexCryptoCommodityInstrumentType[];
+  instruments: ForexCommodityInstrumentType[];
   tradingMode: TradingMode;
   aiStrategyId?: string; // The selected AI trading strategy ID.
   stopLossPercentage?: number; // User-defined stop-loss percentage (e.g., 1 to 50)
-  instrumentTicks: Record<ForexCryptoCommodityInstrumentType, PriceTick[]>; 
-  instrumentIndicators?: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData>;
+  instrumentTicks: Record<ForexCommodityInstrumentType, PriceTick[]>;
+  instrumentIndicators?: Record<ForexCommodityInstrumentType, InstrumentIndicatorData>;
   formattedIndicatorsString?: string;
   instrumentOfferings?: {
     [key: string]: { // Instrument symbol e.g., "frxEURUSD"
