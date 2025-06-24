@@ -1,91 +1,80 @@
-import { HfInference } from '@huggingface/inference';
+import OpenAI from 'openai';
 
-// DeepSeek AI Service using Hugging Face
+// DeepSeek AI Service using DeepSeek's Official API with OpenAI SDK
 export class DeepSeekService {
-  private client: HfInference;
-  private model = 'google/flan-t5-base'; // Using a reliable instruction-following model
+  private client: OpenAI;
+  private model = 'deepseek-reasoner'; // Using DeepSeek's reasoning model
 
   constructor() {
-    const hfToken = process.env.HF_DEEPSEEK_TOKEN;
-    if (!hfToken) {
-      throw new Error('HF_DEEPSEEK_TOKEN environment variable is required for DeepSeek integration');
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      throw new Error('DEEPSEEK_API_KEY environment variable is required for DeepSeek integration');
     }
 
-    this.client = new HfInference(hfToken);
+    this.client = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: apiKey
+    });
   }
 
   /**
-   * Generate a response using Hugging Face text generation
+   * Generate a response using DeepSeek's reasoning model via OpenAI SDK
    * @param prompt The prompt to send to the model
    * @param systemPrompt Optional system prompt
    * @returns The generated response
    */
   async generate(prompt: string, systemPrompt?: string): Promise<string> {
     try {
-      console.log('[DeepSeekService] Generating response with Hugging Face API');
+      console.log('[DeepSeekService] Generating response with DeepSeek Reasoning API via OpenAI SDK');
 
-      // Combine system prompt and user prompt for instruction-following models
-      const fullPrompt = systemPrompt
-        ? `${systemPrompt}\n\nTask: ${prompt}`
-        : prompt;
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
-      // Use text generation for FLAN-T5
-      const response = await this.client.textGeneration({
-        model: this.model,
-        inputs: fullPrompt,
-        parameters: {
-          max_new_tokens: 500,
-          temperature: 0.7,
-          do_sample: true,
-          return_full_text: false,
-        },
-      });
-
-      const content = response.generated_text;
-      if (!content) {
-        throw new Error('Hugging Face returned empty response');
+      if (systemPrompt) {
+        messages.push({
+          role: 'system',
+          content: systemPrompt
+        });
       }
 
-      console.log('[DeepSeekService] Successfully generated response via HF API');
+      messages.push({
+        role: 'user',
+        content: prompt
+      });
+
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        messages: messages,
+        max_tokens: 4000,
+        temperature: 0.7, // Adding temperature parameter as per DeepSeek docs
+        stream: false
+      });
+
+      if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+        throw new Error('Invalid response structure from DeepSeek API');
+      }
+
+      const content = completion.choices[0].message.content;
+      const reasoningContent = (completion.choices[0].message as any).reasoning_content;
+
+      if (!content) {
+        throw new Error('DeepSeek returned empty response');
+      }
+
+      // Log reasoning content for debugging (optional)
+      if (reasoningContent) {
+        console.log('[DeepSeekService] Reasoning process available (length:', reasoningContent.length, 'chars)');
+      }
+
+      console.log('[DeepSeekService] Successfully generated response via DeepSeek API');
       return content.trim();
     } catch (error) {
       console.error('[DeepSeekService] Error generating response:', error);
-
-      // Try fallback with text generation if conversational fails
-      try {
-        console.log('[DeepSeekService] Trying text generation fallback');
-
-        const fallbackPrompt = systemPrompt
-          ? `${systemPrompt}\n\n${prompt}`
-          : prompt;
-
-        const fallbackResponse = await this.client.textGeneration({
-          model: 'gpt2',
-          inputs: fallbackPrompt,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.7,
-            do_sample: true,
-            return_full_text: false,
-          },
-        });
-
-        const fallbackContent = fallbackResponse.generated_text;
-        if (!fallbackContent) {
-          throw new Error('Fallback text generation returned empty response');
-        }
-
-        console.log('[DeepSeekService] Successfully generated response via fallback');
-        return fallbackContent.trim();
-      } catch (fallbackError) {
-        console.error('[DeepSeekService] Fallback also failed:', fallbackError);
-        throw new Error(`HF generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
+      throw new Error(`DeepSeek generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
-   * Generate a structured JSON response using Hugging Face API
+   * Generate a structured JSON response using DeepSeek's reasoning model via OpenAI SDK
    * @param prompt The prompt to send to the model
    * @param schema Description of expected JSON schema
    * @param systemPrompt Optional system prompt
@@ -97,11 +86,47 @@ export class DeepSeekService {
     systemPrompt?: string
   ): Promise<T> {
     try {
-      console.log('[DeepSeekService] Generating structured response via HF API');
+      console.log('[DeepSeekService] Generating structured response via DeepSeek API with OpenAI SDK');
 
       const enhancedSystemPrompt = `${systemPrompt || ''}\n\nIMPORTANT: You must respond with valid JSON that matches this schema: ${schema}\n\nReturn ONLY the JSON object, no additional text or explanation.`;
 
-      const response = await this.generate(prompt, enhancedSystemPrompt);
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
+      if (enhancedSystemPrompt) {
+        messages.push({
+          role: 'system',
+          content: enhancedSystemPrompt
+        });
+      }
+
+      messages.push({
+        role: 'user',
+        content: prompt
+      });
+
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        messages: messages,
+        max_tokens: 4000,
+        temperature: 0.7, // Adding temperature parameter
+        stream: false
+      });
+
+      if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+        throw new Error('Invalid response structure from DeepSeek API');
+      }
+
+      const response = completion.choices[0].message.content;
+      const reasoningContent = (completion.choices[0].message as any).reasoning_content;
+
+      if (!response) {
+        throw new Error('DeepSeek returned empty response');
+      }
+
+      // Log reasoning content for debugging (optional)
+      if (reasoningContent) {
+        console.log('[DeepSeekService] Reasoning process available for structured response (length:', reasoningContent.length, 'chars)');
+      }
 
       // Extract JSON from response (in case there's extra text)
       let jsonString = response.trim();
@@ -165,12 +190,27 @@ export class DeepSeekService {
   }
 
   /**
-   * Test the Hugging Face service connection
+   * Test the DeepSeek API connection using OpenAI SDK
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.generate('Hello, respond with "working"');
-      return response.length > 0 && !response.toLowerCase().includes('error');
+      console.log('[DeepSeekService] Testing connection to DeepSeek API');
+
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: 'Hello, respond with "working"' }
+        ],
+        max_tokens: 100,
+        temperature: 0.7
+      });
+
+      const response = completion.choices[0]?.message?.content || '';
+      const isWorking = response.length > 0 && !response.toLowerCase().includes('error');
+
+      console.log('[DeepSeekService] Connection test result:', isWorking ? 'SUCCESS' : 'FAILED');
+      return isWorking;
     } catch (error) {
       console.error('[DeepSeekService] Connection test failed:', error);
       return false;
