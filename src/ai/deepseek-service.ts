@@ -13,8 +13,23 @@ export class DeepSeekService {
 
     this.client = new OpenAI({
       baseURL: 'https://api.deepseek.com',
-      apiKey: apiKey
+      apiKey: apiKey,
+      timeout: 30000, // 30 second timeout
+      maxRetries: 2, // Retry failed requests twice
     });
+  }
+
+  /**
+   * Create a timeout wrapper for API calls
+   */
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    return Promise.race([promise, timeoutPromise]);
   }
 
   /**
@@ -41,13 +56,18 @@ export class DeepSeekService {
         content: prompt
       });
 
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: messages,
-        max_tokens: 4000,
-        temperature: 0.7, // Adding temperature parameter as per DeepSeek docs
-        stream: false
-      });
+      // Wrap the API call with a timeout
+      const completion = await this.withTimeout(
+        this.client.chat.completions.create({
+          model: this.model,
+          messages: messages,
+          max_tokens: 2000, // Reduced for faster response
+          temperature: 0.7,
+          stream: false
+        }),
+        25000, // 25 second timeout (less than the 45s session timeout)
+        'DeepSeek API call'
+      );
 
       if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         throw new Error('Invalid response structure from DeepSeek API');
@@ -69,6 +89,12 @@ export class DeepSeekService {
       return content.trim();
     } catch (error) {
       console.error('[DeepSeekService] Error generating response:', error);
+
+      // Check if it's a timeout error
+      if (error instanceof Error && error.message.includes('timed out')) {
+        throw new Error(`DeepSeek API timeout: ${error.message}`);
+      }
+
       throw new Error(`DeepSeek generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -104,13 +130,18 @@ export class DeepSeekService {
         content: prompt
       });
 
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: messages,
-        max_tokens: 4000,
-        temperature: 0.7, // Adding temperature parameter
-        stream: false
-      });
+      // Wrap the API call with a timeout
+      const completion = await this.withTimeout(
+        this.client.chat.completions.create({
+          model: this.model,
+          messages: messages,
+          max_tokens: 2000, // Reduced for faster response
+          temperature: 0.7,
+          stream: false
+        }),
+        25000, // 25 second timeout
+        'DeepSeek structured API call'
+      );
 
       if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
         throw new Error('Invalid response structure from DeepSeek API');
@@ -196,15 +227,19 @@ export class DeepSeekService {
     try {
       console.log('[DeepSeekService] Testing connection to DeepSeek API');
 
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant.' },
-          { role: 'user', content: 'Hello, respond with "working"' }
-        ],
-        max_tokens: 100,
-        temperature: 0.7
-      });
+      const completion = await this.withTimeout(
+        this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            { role: 'user', content: 'Hello, respond with "working"' }
+          ],
+          max_tokens: 50, // Small response for quick test
+          temperature: 0.7
+        }),
+        15000, // 15 second timeout for connection test
+        'DeepSeek connection test'
+      );
 
       const response = completion.choices[0]?.message?.content || '';
       const isWorking = response.length > 0 && !response.toLowerCase().includes('error');
