@@ -487,7 +487,7 @@ Return ONLY a JSON object with this exact structure:
           reasoning: `All AI services failed. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}`,
         };
       }
-
+    }
 
     if (!output) {
       console.error(`[AI Single Flow/${input.currentInstrument}] AI failed to generate a trade proposal. Null output.`);
