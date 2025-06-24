@@ -234,12 +234,12 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     let output: ImportedAutomatedTradingStrategyOutput | null = null;
 
     try {
-      // Try DeepSeek first (now primary) with enhanced AI service
+      // Try Gemini first (now primary) with enhanced AI service
       const enhancedAI = getEnhancedAI();
 
-      console.log('[AI_FLOW_DEBUG] Attempting DeepSeek generation (primary) for automated trading');
+      console.log('[AI_FLOW_DEBUG] Attempting Gemini generation (primary) for automated trading');
 
-        // Build a simplified prompt for DeepSeek
+        // Build a simplified prompt for enhanced AI service
         const systemPrompt = `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Return a JSON response matching the exact schema for automated trading strategy.`;
 
         const userPrompt = `
@@ -273,30 +273,30 @@ Return ONLY a JSON object with this structure:
 
 Ensure total stakes don't exceed ${promptInput.totalStake}.`;
 
-        const deepSeekResponse = await enhancedAI.generateStructuredWithFallback<ImportedAutomatedTradingStrategyOutput>(
+        const enhancedResponse = await enhancedAI.generateStructuredWithFallback<ImportedAutomatedTradingStrategyOutput>(
           userPrompt,
           InferredAutomatedTradingStrategyOutputSchema,
           systemPrompt
         );
 
-        output = deepSeekResponse;
-        console.log('[AI_FLOW_DEBUG] DeepSeek generation successful (primary) for automated trading');
-    } catch (deepSeekError) {
-      console.warn('[AI_FLOW_DEBUG] DeepSeek failed for automated trading, falling back to Gemini:', deepSeekError instanceof Error ? deepSeekError.message : 'Unknown error');
+        output = enhancedResponse;
+        console.log('[AI_FLOW_DEBUG] Enhanced AI generation successful (Gemini primary) for automated trading');
+    } catch (geminiError) {
+      console.warn('[AI_FLOW_DEBUG] Gemini failed for automated trading, falling back to DeepSeek:', geminiError instanceof Error ? geminiError.message : 'Unknown error');
 
       try {
-        // Fallback to Gemini through the standard prompt
-        const geminiResult = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
-        output = geminiResult.output;
+        // Fallback to DeepSeek through the standard prompt
+        const deepSeekResult = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
+        output = deepSeekResult.output;
 
         if (output) {
-          console.log('[AI_FLOW_DEBUG] Gemini fallback successful for automated trading');
+          console.log('[AI_FLOW_DEBUG] DeepSeek fallback successful for automated trading');
         } else {
-          throw new Error('Gemini returned null output for automated trading');
+          throw new Error('DeepSeek returned null output for automated trading');
         }
-      } catch (geminiError) {
-        console.error('[AI_FLOW_DEBUG] Both DeepSeek and Gemini failed for automated trading:', geminiError);
-        throw new Error(`All AI services failed for automated trading. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}`);
+      } catch (deepSeekError) {
+        console.error('[AI_FLOW_DEBUG] Both Gemini and DeepSeek failed for automated trading:', deepSeekError);
+        throw new Error(`All AI services failed for automated trading. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`);
       }
     }
 
