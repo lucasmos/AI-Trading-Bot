@@ -83,6 +83,8 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 
 You are an expert AI trading model for volatility indices implementing comprehensive trading strategies. These strategies OVERRIDE all previous trading logic and become your primary decision framework.
 
+🚨 EXECUTION MODE: RELAXED FOR DIGIT TRADES, STRICT FOR TRADITIONAL TRADES 🚨
+
 🔥 STRATEGY 1: OVER/UNDER TRADING STRATEGY
 
 **Technical Indicators Required:**
@@ -499,36 +501,47 @@ ${(() => {
 🚨 MANDATORY STRATEGY IMPLEMENTATION 🚨
 
 STRATEGY SELECTION PRIORITY:
-1. DigitsOverUnder (PRIMARY) - Use when MACD signals are clear
-2. DigitsEvenOdd (SECONDARY) - Use when green/red bar patterns are strong
-3. Other types (TERTIARY) - Use only when digit strategies don't qualify
+1. DigitsOverUnder (PRIMARY) - RELAXED EXECUTION: Use when MACD signals present OR green bar detected
+2. DigitsEvenOdd (SECONDARY) - RELAXED EXECUTION: Use when probability patterns detected OR green bar present
+3. RiseFall/HigherLower/TouchNoTouch (TERTIARY) - STRICT EXECUTION: Require full technical confluence
 
 DECISION CRITERIA FOR ${input.userSelectedTradeType}:
 
-IF userSelectedTradeType is "DigitsOverUnder":
+IF userSelectedTradeType is "DigitsOverUnder" - RELAXED EXECUTION:
 ✅ Check MACD Line value: +1 and above (not >+40) → DIGITOVER | -1 and below (not <-40) → DIGITUNDER
-✅ Analyze digit probability: Apply specific digit rules (12%+ threshold)
-✅ Confirm green bar pattern in price action
+✅ Analyze digit probability: Apply specific digit rules (guidelines, not strict)
+✅ Green bar pattern OR MACD signal (at least one required)
 ✅ Set barrier based on digit analysis rules
+✅ EXECUTE MORE FREELY to test new strategy effectiveness
 
-IF userSelectedTradeType is "DigitsEvenOdd":
-✅ Check for green bar active on target market (Even/Odd)
-✅ Verify digit probability above 12.1%
-✅ Ensure 3+ consecutive numbers show 10%+ probability
-✅ Confirm red bar on opposite market
+IF userSelectedTradeType is "DigitsEvenOdd" - RELAXED EXECUTION:
+✅ Check for green bar active on target market (Even/Odd) OR strong probability signal
+✅ Digit probability above 10%+ (relaxed from 12.1%)
+✅ Even/odd bias analysis from recent ticks
 ✅ Choose DIGITEVEN or DIGITODD based on analysis
+✅ EXECUTE MORE FREELY to test new strategy effectiveness
 
-IF userSelectedTradeType is "RiseFall/HigherLower/TouchNoTouch":
+IF userSelectedTradeType is "RiseFall/HigherLower/TouchNoTouch" - STRICT EXECUTION:
 ✅ Apply traditional technical analysis with green/red bar principles
-✅ Require multiple indicator confluence
-✅ Use only when digit strategies don't meet criteria
+✅ REQUIRE multiple indicator confluence (3+ indicators)
+✅ MANDATORY green bar confirmation
+✅ Higher confidence threshold (60%+ minimum)
 
-🚨 MANDATORY REQUIREMENTS 🚨
-- NEVER trade without green bar confirmation
-- ALWAYS verify probability thresholds (12%+ minimum)
-- REQUIRE 3+ supporting indicators for non-digit trades
-- Maximum 2% position sizing
+🚨 TRADING REQUIREMENTS BY TYPE 🚨
+
+FOR DIGIT TRADES (DigitsOverUnder, DigitsEvenOdd) - RELAXED REQUIREMENTS:
+- MACD signal OR green bar confirmation (at least one required)
+- Probability thresholds are guidelines, not strict requirements
+- Allow more trading opportunities to test new strategies
 - Duration: 1-10 ticks for digit trades
+- Maximum 2% position sizing
+
+FOR TRADITIONAL TRADES (TouchNoTouch, RiseFall, HigherLower) - STRICT REQUIREMENTS:
+- MANDATORY green bar confirmation
+- REQUIRE 3+ supporting technical indicators
+- Higher confidence threshold (60%+ minimum)
+- Traditional duration rules apply
+- Maximum 2% position sizing
 
 Return ONLY a JSON object with this exact structure:
 {
@@ -967,27 +980,43 @@ function calculateTradeConfidenceScore(
 
   // 🚨 MANDATORY REQUIREMENTS CHECK 🚨
 
-  // Minimum score requirements based on new strategy
-  const minimumScore = 6; // Require 60% confidence minimum
+  // Different minimum score requirements based on trade type
+  let minimumScore = 6; // Default 60% confidence for traditional trades
 
-  // MACD requirement for digit over/under trades
-  if ((isDigitOver || isDigitUnder) && macdScore < 2) {
-    score = 0; // Fail trade if MACD doesn't support direction
+  // RELAXED REQUIREMENTS FOR NEW DIGIT STRATEGIES
+  if (isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) {
+    minimumScore = 3; // Reduced to 30% confidence for digit trades
+
+    // For digit trades, only require basic MACD or green bar confirmation
+    // Don't fail completely if one is missing - allow more trading opportunities
+    if (macdScore === 0 && greenBarScore === 0) {
+      score = 0; // Only fail if BOTH MACD and green bar are missing
+    }
+
+    // Don't enforce digit probability requirement strictly for now
+    // This allows the AI to learn and adapt the probability thresholds
+
+  } else {
+    // STRICT REQUIREMENTS FOR TRADITIONAL TRADES (Touch/NoTouch, RiseFall, HigherLower)
+    minimumScore = 6; // Keep 60% confidence minimum
+
+    // Traditional trades require multiple confirmations
+    if (greenBarScore === 0) {
+      score = 0; // Fail traditional trades without green bar confirmation
+    }
+
+    // Apply minimum score threshold for traditional trades
+    if (score < minimumScore) {
+      score = 0; // Fail trade if minimum confidence not met
+    }
   }
 
-  // Green bar requirement (simulated through momentum)
-  if (greenBarScore === 0) {
-    score = 0; // Fail trade if no green bar confirmation
-  }
-
-  // Probability threshold requirement
-  if ((isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && digitScore === 0) {
-    score = 0; // Fail trade if digit probability not met
-  }
-
-  // Apply minimum score threshold
-  if (score < minimumScore) {
-    score = 0; // Fail trade if minimum confidence not met
+  // Apply relaxed minimum score threshold for digit trades
+  if ((isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && score < minimumScore) {
+    // Allow digit trades with lower confidence to proceed
+    // This enables the new strategies to execute more freely
+  } else if (!(isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && score < minimumScore) {
+    score = 0; // Fail traditional trades if minimum confidence not met
   }
 
   return Math.min(score, 10); // Cap at 10
