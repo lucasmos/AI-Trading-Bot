@@ -89,8 +89,25 @@ export function getCurrentMarketStatus(
     return { isOpen: false, message: "Trading hours data unavailable or incomplete." };
   }
 
-  // Check for 24/7 market
   const { times, trading_days, events } = tradingTimesData;
+
+  // First check if today is a trading day
+  if (trading_days && trading_days.length > 0) {
+    const currentDayName = referenceDateUTC.toLocaleDateString('en-US', { weekday: 'short' }); // e.g., "Mon", "Tue"
+    const isTradingDay = trading_days.includes(currentDayName);
+
+    if (!isTradingDay) {
+      return {
+        isOpen: false,
+        message: `Market Closed (${currentDayName} is not a trading day)`,
+        nextEventTimeGMT: undefined,
+        nextEventType: 'open',
+        eventDescription: 'Market closed on weekends'
+      };
+    }
+  }
+
+  // Check for 24/7 market (only if trading_days includes all 7 days)
   if (
     times.opens.length === 1 && times.opens[0] === "00:00:00" &&
     times.closes.length === 1 && (times.closes[0] === "23:59:59" || times.closes[0] === "23:59:59.999" || times.closes[0] === "24:00:00") && // Adjusted for potential variations
@@ -117,11 +134,36 @@ export function getCurrentMarketStatus(
     }
   }
 
+  // Check if current time falls within any trading session
   let isOpen = false;
+
   for (let i = 0; i < tradingTimesData.times.opens.length; i++) {
     if (isTimeInSession(referenceDateUTC, tradingTimesData.times.opens[i], tradingTimesData.times.closes[i], referenceDateUTC)) {
       isOpen = true;
       break;
+    }
+  }
+
+  // Check for Friday early close events if market appears open
+  if (isOpen && events && events.length > 0) {
+    const currentDayNameLower = referenceDateUTC.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const isFriday = currentDayNameLower === 'friday';
+
+    if (isFriday) {
+      const fridayEarlyCloseEvent = events.find(event =>
+        event.dates.toLowerCase().includes('friday') &&
+        event.descrip.toLowerCase().includes('closes early') &&
+        event.times
+      );
+
+      if (fridayEarlyCloseEvent && fridayEarlyCloseEvent.times) {
+        const [eventH, eventM, eventS] = fridayEarlyCloseEvent.times.split(':').map(Number);
+        const earlyCloseTime = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate(), eventH, eventM, eventS || 0));
+
+        if (referenceDateUTC >= earlyCloseTime) {
+          isOpen = false;
+        }
+      }
     }
   }
 
@@ -181,11 +223,15 @@ function isTimeInSession(currentTimeUTC: Date, sessionOpenGMT: string, sessionCl
     const startOfNextDay = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate() + 1, 0, 0, 0, 0));
 
     // If current time is within the part of session on referenceDateUTC
-    if (currentTimeUTC >= sessionOpenDateUTC && currentTimeUTC <= endOfReferenceDay) return true;
+    if (currentTimeUTC >= sessionOpenDateUTC && currentTimeUTC <= endOfReferenceDay) {
+      return true;
+    }
     // If current time is within the part of session on the next day
     // Update sessionCloseDateUTC to be on the next day for this check
     sessionCloseDateUTC.setUTCDate(sessionCloseDateUTC.getUTCDate() + 1);
-    if (currentTimeUTC >= startOfNextDay && currentTimeUTC < sessionCloseDateUTC) return true;
+    if (currentTimeUTC >= startOfNextDay && currentTimeUTC < sessionCloseDateUTC) {
+      return true;
+    }
 
     return false;
 
