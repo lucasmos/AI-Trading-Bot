@@ -258,6 +258,17 @@ const automatedTradingStrategyFlow = ai.defineFlow(
         const adjustedStakePerInstrument = openMarketInstruments.length > 0 ?
           promptInput.totalStake / openMarketInstruments.length : 0;
 
+        // Categorize instruments by type for AI guidance
+        const cryptoInstruments = openMarketInstruments.filter(inst =>
+          inst.includes('BTC') || inst.includes('ETH') || inst.includes('crypto') || inst.includes('Crypto')
+        );
+        const forexInstruments = openMarketInstruments.filter(inst =>
+          inst.includes('EUR') || inst.includes('GBP') || inst.includes('USD') && !cryptoInstruments.includes(inst) && !inst.includes('XAU') && !inst.includes('Silver') && !inst.includes('Palladium') && !inst.includes('Platinum')
+        );
+        const commodityInstruments = openMarketInstruments.filter(inst =>
+          inst.includes('XAU') || inst.includes('Silver') || inst.includes('Palladium') || inst.includes('Platinum') || inst.includes('Gold')
+        );
+
         const userPrompt = `
 Analyze the provided data and generate trading strategy:
 
@@ -270,6 +281,11 @@ ${marketStatusInfo}
 
 TRADEABLE INSTRUMENTS (Markets Currently Open): ${openMarketInstruments.join(', ')}
 ${openMarketInstruments.length === 0 ? 'WARNING: No markets are currently open for trading!' : ''}
+
+INSTRUMENT CATEGORIZATION:
+- CRYPTO (use MULTUP/MULTDOWN): ${cryptoInstruments.join(', ') || 'None'}
+- FOREX (use CALL/PUT): ${forexInstruments.join(', ') || 'None'}
+- COMMODITIES (use CALL/PUT): ${commodityInstruments.join(', ') || 'None'}
 
 Suggested Stake Per Open Market: $${adjustedStakePerInstrument.toFixed(2)}
 
@@ -285,6 +301,16 @@ IMPORTANT TRADING RULES:
 2. If no markets are open, return empty tradesToExecute array
 3. Distribute the total stake evenly among open market instruments
 4. Focus your analysis on instruments with open markets
+
+CONTRACT TYPE SELECTION RULES:
+- For CRYPTO instruments (BTC/USD, ETH/USD): Use "MULTUP" or "MULTDOWN" with multiplier (e.g., 100-1000)
+- For FOREX instruments (EUR/USD, GBP/USD): Use "CALL" or "PUT" with duration (e.g., "15m", "30m")
+- For COMMODITY instruments (XAU/USD, Silver/USD, etc.): Use "CALL" or "PUT" with duration (e.g., "15m", "30m")
+
+MULTIPLIER GUIDELINES:
+- For crypto MULTUP/MULTDOWN trades, include "multiplier" field with value between 100-1000
+- For crypto trades, do NOT include "durationString" (multipliers don't use duration)
+- For forex/commodity CALL/PUT trades, include "durationString" but do NOT include "multiplier"
 
 Return ONLY a JSON object with this structure:
 {

@@ -1539,6 +1539,11 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         let matchedContractTypeOffering = null;
 
         if (offeringsForSymbol && offeringsForSymbol.availableContracts) {
+          // Debug: Log available contract types for crypto instruments
+          if (derivSymbol.startsWith('cry')) {
+            logAutomatedTradingEvent(`Available contract types for ${derivSymbol}: ${offeringsForSymbol.availableContracts.map(c => c.tradeTypeName).join(', ')}`);
+          }
+
           // Try to find a direct match or a related match (e.g. CALL/PUT map to a rise_fall offering)
           matchedContractTypeOffering = offeringsForSymbol.availableContracts.find(c =>
             c.tradeTypeName === proposedTrade.tradeType ||
