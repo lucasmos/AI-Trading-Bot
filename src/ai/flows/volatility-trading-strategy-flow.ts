@@ -606,16 +606,31 @@ Return ONLY a JSON object with this exact structure:
         output.stake = input.stakePerTrade;
       }
 
-      // Enhanced validation for >=75% win rate requirements
+      // Enhanced validation with different requirements for digit vs traditional trades
       if (input.instrumentIndicators && !validationError) {
         const indicators = input.instrumentIndicators;
         const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType, input.instrumentTicks);
 
-        if (confidenceScore < 5) {
-          validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 5/10 for 50-75% win rate target.`;
-          console.log(`[AI Single Flow/${input.currentInstrument}] Trade rejected due to low confidence score: ${confidenceScore}/10`);
+        // Different thresholds for different trade types
+        const isDigitTrade = output.derivContractType === 'DIGITOVER' || output.derivContractType === 'DIGITUNDER' ||
+                            output.derivContractType === 'DIGITEVEN' || output.derivContractType === 'DIGITODD';
+
+        if (isDigitTrade) {
+          // RELAXED REQUIREMENTS FOR DIGIT TRADES - NO WIN RATE CONDITIONS
+          if (confidenceScore < 1) { // Very minimal threshold - just ensure basic validation
+            validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 1/10 for digit trades (relaxed execution).`;
+            console.log(`[AI Single Flow/${input.currentInstrument}] Digit trade rejected due to extremely low confidence score: ${confidenceScore}/10`);
+          } else {
+            console.log(`[AI Single Flow/${input.currentInstrument}] Digit trade approved with confidence score: ${confidenceScore}/10 (relaxed execution)`);
+          }
         } else {
-          console.log(`[AI Single Flow/${input.currentInstrument}] Trade approved with confidence score: ${confidenceScore}/10`);
+          // STRICT REQUIREMENTS FOR TRADITIONAL TRADES - MAINTAIN WIN RATE CONDITIONS
+          if (confidenceScore < 5) {
+            validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 5/10 for 50-75% win rate target (traditional trades).`;
+            console.log(`[AI Single Flow/${input.currentInstrument}] Traditional trade rejected due to low confidence score: ${confidenceScore}/10`);
+          } else {
+            console.log(`[AI Single Flow/${input.currentInstrument}] Traditional trade approved with confidence score: ${confidenceScore}/10`);
+          }
         }
       }
       if (input.userSelectedTradeType === 'DigitsOverUnder' && (output.barrier === undefined || output.barrier === null || !/^\d$/.test(String(output.barrier).trim()))) {
@@ -978,45 +993,36 @@ function calculateTradeConfidenceScore(
 
   score += supportScore;
 
-  // 🚨 MANDATORY REQUIREMENTS CHECK 🚨
+  // 🚨 REQUIREMENTS CHECK - DIFFERENT FOR DIGIT VS TRADITIONAL TRADES 🚨
 
-  // Different minimum score requirements based on trade type
-  let minimumScore = 6; // Default 60% confidence for traditional trades
-
-  // RELAXED REQUIREMENTS FOR NEW DIGIT STRATEGIES
+  // RELAXED REQUIREMENTS FOR DIGIT STRATEGIES - NO WIN RATE CONDITIONS
   if (isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) {
-    minimumScore = 3; // Reduced to 30% confidence for digit trades
+    // For digit trades, ensure minimum score of 1 (very relaxed)
+    // Allow trades to proceed even with minimal technical confirmation
+    // This enables the new strategies to execute freely and learn
 
-    // For digit trades, only require basic MACD or green bar confirmation
-    // Don't fail completely if one is missing - allow more trading opportunities
-    if (macdScore === 0 && greenBarScore === 0) {
-      score = 0; // Only fail if BOTH MACD and green bar are missing
+    // Only fail if absolutely no signals present
+    if (score === 0) {
+      score = 1; // Give minimum score to allow execution
     }
 
-    // Don't enforce digit probability requirement strictly for now
-    // This allows the AI to learn and adapt the probability thresholds
+    // Don't enforce strict MACD or green bar requirements
+    // Don't enforce digit probability requirements
+    // Let the AI learn and adapt through actual trading
 
   } else {
     // STRICT REQUIREMENTS FOR TRADITIONAL TRADES (Touch/NoTouch, RiseFall, HigherLower)
-    minimumScore = 6; // Keep 60% confidence minimum
+    const minimumScore = 6; // Keep 60% confidence minimum for traditional trades
 
     // Traditional trades require multiple confirmations
     if (greenBarScore === 0) {
       score = 0; // Fail traditional trades without green bar confirmation
     }
 
-    // Apply minimum score threshold for traditional trades
+    // Apply minimum score threshold for traditional trades only
     if (score < minimumScore) {
-      score = 0; // Fail trade if minimum confidence not met
+      score = 0; // Fail traditional trade if minimum confidence not met
     }
-  }
-
-  // Apply relaxed minimum score threshold for digit trades
-  if ((isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && score < minimumScore) {
-    // Allow digit trades with lower confidence to proceed
-    // This enables the new strategies to execute more freely
-  } else if (!(isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && score < minimumScore) {
-    score = 0; // Fail traditional trades if minimum confidence not met
   }
 
   return Math.min(score, 10); // Cap at 10
