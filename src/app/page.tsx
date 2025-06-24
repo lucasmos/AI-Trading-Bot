@@ -634,12 +634,76 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
                   trading_days: symbolData.trading_days,
                   events: symbolData.events
                 });
-                foundSymbolData = {
+
+                // Detailed debugging of times structure
+                console.log(`[Market Status Debug] Detailed times structure for ${derivSymbol}:`, {
                   times: symbolData.times,
+                  timesType: typeof symbolData.times,
+                  timesKeys: symbolData.times ? Object.keys(symbolData.times) : [],
+                  opens: symbolData.times?.opens,
+                  closes: symbolData.times?.closes,
+                  opensLength: symbolData.times?.opens?.length,
+                  closesLength: symbolData.times?.closes?.length
+                });
+
+                // Also log to AI Trading Log for visibility
+                logAutomatedTradingEvent(`Times structure for ${derivSymbol}: ${JSON.stringify({
+                  timesKeys: symbolData.times ? Object.keys(symbolData.times) : [],
+                  hasOpens: !!(symbolData.times?.opens),
+                  hasCloses: !!(symbolData.times?.closes)
+                })}`);
+
+                // Test market status calculation immediately
+                const testStatus = getCurrentMarketStatus({
+                  times: symbolData.times,
+                  events: symbolData.events,
+                  feed_license: symbolData.feed_license,
+                  trading_days: symbolData.trading_days
+                }, new Date());
+                console.log(`[Market Status Debug] Test market status for ${derivSymbol}:`, testStatus);
+                // Transform the data to match our expected structure
+                let transformedTimes = symbolData.times;
+
+                // Handle different possible API response formats
+                if (symbolData.times && typeof symbolData.times === 'object') {
+                  // If API returns 'open'/'close' instead of 'opens'/'closes'
+                  if (symbolData.times.open && symbolData.times.close && !symbolData.times.opens && !symbolData.times.closes) {
+                    transformedTimes = {
+                      opens: Array.isArray(symbolData.times.open) ? symbolData.times.open : [symbolData.times.open],
+                      closes: Array.isArray(symbolData.times.close) ? symbolData.times.close : [symbolData.times.close]
+                    };
+                    console.log(`[Market Status Debug] Transformed times from open/close to opens/closes for ${derivSymbol}`);
+                  }
+                  // If API returns array of session objects
+                  else if (Array.isArray(symbolData.times)) {
+                    const opens = [];
+                    const closes = [];
+                    for (const session of symbolData.times) {
+                      if (session.open && session.close) {
+                        opens.push(session.open);
+                        closes.push(session.close);
+                      }
+                    }
+                    if (opens.length > 0 && closes.length > 0) {
+                      transformedTimes = { opens, closes };
+                      console.log(`[Market Status Debug] Transformed times from session array for ${derivSymbol}`);
+                    }
+                  }
+                }
+
+                foundSymbolData = {
+                  times: transformedTimes,
                   events: symbolData.events,
                   feed_license: symbolData.feed_license,
                   trading_days: symbolData.trading_days // Ensure trading_days is included
                 };
+
+                // Validate the transformed data
+                if (!foundSymbolData.times?.opens || !foundSymbolData.times?.closes || foundSymbolData.times.opens.length === 0) {
+                  console.warn(`[Market Status Debug] Transformed data still invalid for ${derivSymbol}, will use fallback`);
+                  logAutomatedTradingEvent(`Warning: Invalid times data for ${derivSymbol} after transformation, will use fallback`);
+                  foundSymbolData = null; // This will trigger the fallback logic
+                }
                 break;
               }
             }
@@ -756,7 +820,14 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       // Type guard to ensure currentInstrumentTradingTimes is DerivSymbolSpecificTradingData
       // The check for `.times` is important because an empty object might be passed if symbol not found in global allTradingTimesData
       if (currentInstrumentTradingTimes && currentInstrumentTradingTimes.times) {
+        console.log(`[Market Status Debug] Calculating status for ${currentInstrument} with data:`, {
+          times: currentInstrumentTradingTimes.times,
+          trading_days: currentInstrumentTradingTimes.trading_days,
+          events: currentInstrumentTradingTimes.events,
+          currentTime: new Date().toISOString()
+        });
         const status = getCurrentMarketStatus(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, new Date());
+        console.log(`[Market Status Debug] Market status result for ${currentInstrument}:`, status);
         setIsCurrentInstrumentMarketOpen(status.isOpen);
 
         const formattedTimes = formatTradingHoursForDisplay(currentInstrumentTradingTimes as DerivSymbolSpecificTradingData, ['GMT', 'UTC', 'Africa/Nairobi']);

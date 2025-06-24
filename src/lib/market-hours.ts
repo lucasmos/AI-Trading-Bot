@@ -85,7 +85,19 @@ export function getCurrentMarketStatus(
   tradingTimesData: DerivSymbolSpecificTradingData | null | undefined,
   referenceDateUTC: Date
 ): { isOpen: boolean; message: string; nextEventTimeGMT?: string; nextEventType?: 'open' | 'close', eventDescription?: string } {
+  // console.log(`[getCurrentMarketStatus] Input validation:`, {
+  //   hasTradingTimesData: !!tradingTimesData,
+  //   hasTimes: !!(tradingTimesData?.times),
+  //   hasOpens: !!(tradingTimesData?.times?.opens),
+  //   hasCloses: !!(tradingTimesData?.times?.closes),
+  //   opensLength: tradingTimesData?.times?.opens?.length,
+  //   closesLength: tradingTimesData?.times?.closes?.length,
+  //   opensEqualsCloses: tradingTimesData?.times?.opens?.length === tradingTimesData?.times?.closes?.length,
+  //   fullData: tradingTimesData
+  // });
+
   if (!tradingTimesData || !tradingTimesData.times || !tradingTimesData.times.opens || !tradingTimesData.times.closes || tradingTimesData.times.opens.length === 0 || tradingTimesData.times.opens.length !== tradingTimesData.times.closes.length) {
+    console.log(`[getCurrentMarketStatus] Validation failed - returning closed`);
     return { isOpen: false, message: "Trading hours data unavailable or incomplete." };
   }
 
