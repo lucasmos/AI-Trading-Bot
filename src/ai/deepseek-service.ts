@@ -6,9 +6,9 @@ export class DeepSeekService {
   private model = 'deepseek-ai/DeepSeek-R1-0528';
 
   constructor() {
-    const hfToken = process.env.HF_TOKEN;
+    const hfToken = process.env.HF_DEEPSEEK_TOKEN;
     if (!hfToken) {
-      throw new Error('HF_TOKEN environment variable is required for DeepSeek integration');
+      throw new Error('HF_DEEPSEEK_TOKEN environment variable is required for DeepSeek integration');
     }
 
     this.client = new InferenceClient({
