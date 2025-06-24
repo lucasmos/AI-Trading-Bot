@@ -456,14 +456,16 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             setGlobalOfferingsError(errorMsg);
             setGlobalOfferingsData(null);
             logAutomatedTradingEvent(`[DashboardPage] Error fetching global trading offerings: ${errorMsg}`);
-            // toast({ title: "Offerings Load Error", description: errorMsg, variant: "destructive" }); // Optionally toast here or rely on other UI
+            // Don't show immediate toast - let the UI handle it gracefully
           }
         } catch (err: any) {
-          const errorMsg = err.message || 'Exception while fetching global offerings.';
-          setGlobalOfferingsError(errorMsg);
+          const errorMsg = err?.message || err?.toString() || 'Exception while fetching global offerings.';
+          // Avoid setting "null" as error message
+          const cleanErrorMsg = errorMsg === 'null' ? 'Network error while fetching global offerings.' : errorMsg;
+          setGlobalOfferingsError(cleanErrorMsg);
           setGlobalOfferingsData(null);
-          logAutomatedTradingEvent(`[DashboardPage] Error fetching global trading offerings: ${errorMsg}`);
-          // toast({ title: "Offerings Load Error", description: errorMsg, variant: "destructive" }); // Optionally toast here
+          logAutomatedTradingEvent(`[DashboardPage] Error fetching global trading offerings: ${cleanErrorMsg}`);
+          // Don't show immediate toast - let the UI handle it gracefully
         } finally {
           setIsLoadingGlobalOfferings(false);
         }
@@ -498,7 +500,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     if (userInfo) { // Only run if userInfo is available
       fetchInitialGlobalData();
     }
-  }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, isLoadingGlobalOfferings, logAutomatedTradingEvent, toast]); // isLoadingAllTradingTimes removed from deps
+  }, [userInfo, selectedDerivAccountType, allTradingTimesData, globalOfferingsData, isLoadingGlobalOfferings]); // Removed logAutomatedTradingEvent and toast to prevent unnecessary re-runs
 
   const currentBalance = useMemo(() => {
     // If AuthContext is still pending, or no user info yet, balance is not determined.
@@ -569,7 +571,10 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     }
     if (!allTradingTimesData) {
       setCurrentInstrumentTradingTimes(null);
-      logAutomatedTradingEvent("All trading times data is not available to derive current instrument times.");
+      // Only log once when data is not available (avoid spam)
+      if (!isLoadingAllTradingTimes) {
+        logAutomatedTradingEvent("All trading times data is not available to derive current instrument times.");
+      }
       return;
     }
     if ('error' in allTradingTimesData) {
@@ -715,10 +720,21 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         return;
       }
 
-      if (globalOfferingsError || (!globalOfferingsData && !isLoadingGlobalOfferings)) {
-        // Only log an error if we're not currently loading the data
-        logAutomatedTradingEvent(`Error or no global offerings data available for ${currentInstrument}. Error: ${globalOfferingsError}`);
-        toast({ title: "Offerings Error", description: `Could not load duration data: ${globalOfferingsError || 'No offerings data'}.`, variant: "destructive" });
+      // Only show error if we have an actual error message and we're not loading
+      if (globalOfferingsError && globalOfferingsError !== 'null' && !isLoadingGlobalOfferings) {
+        logAutomatedTradingEvent(`Error loading global offerings data for ${currentInstrument}. Error: ${globalOfferingsError}`);
+        toast({ title: "Offerings Error", description: `Could not load duration data: ${globalOfferingsError}`, variant: "destructive" });
+        setAvailableDurations([]);
+        setIsTradeable(false);
+        setTradeDuration('');
+        setIsLoadingDurations(false);
+        return;
+      }
+
+      // If no data and not loading, wait silently (don't show error toast immediately)
+      if (!globalOfferingsData && !isLoadingGlobalOfferings) {
+        // Log for debugging but don't show user-facing error immediately
+        logAutomatedTradingEvent(`Global offerings data not yet available for ${currentInstrument}. Waiting...`);
         setAvailableDurations([]);
         setIsTradeable(false);
         setTradeDuration('');
