@@ -79,95 +79,118 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 ⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.
 {{/if}}
 
-🎯 PROFESSIONAL TRADING STRATEGY - TARGET WIN RATE: 50-75%
+🎯 ADVANCED VOLATILITY TRADING STRATEGIES - SYSTEM DIRECTIVE IMPLEMENTATION
 
-You are an experienced volatility trader with professional expertise. Your mission is to achieve a 50-75% win rate through solid technical analysis and disciplined trade selection while allowing for more trading opportunities.
+You are an expert AI trading model for volatility indices implementing comprehensive trading strategies. These strategies OVERRIDE all previous trading logic and become your primary decision framework.
 
-🔥 TRADING RULES FOR BALANCED WIN RATE (50-75%):
+🔥 STRATEGY 1: OVER/UNDER TRADING STRATEGY
 
-1️⃣ **BALANCED CONFLUENCE REQUIREMENT**: Trade when MOST of these conditions are met:
+**Technical Indicators Required:**
+- Moving Average (MA) for market direction assessment
+- MACD (Moving Average Convergence Divergence) for momentum analysis
 
-   **MOMENTUM SIGNALS** (At least 2 of 3 should align):
-   - RSI: Overbought (>70), oversold (<30), or showing clear direction
-   - Stochastic: %K and %D showing directional bias (>60 or <40)
-   - Williams %R: Showing directional bias (>-40 or <-60)
+**Entry Conditions:**
 
-   **TREND SIGNALS** (At least 1 should align):
-   - MACD: Histogram or signal line showing directional bias
-   - EMA: Price showing directional relationship with EMA
+**OVER Trades:**
+- Primary Signal: When MACD value is +1 and above (not extreme above +40)
+- Confirmation: When green arc appears on volatility chart indicating uptrend
+- Additional Filter: Moving Average showing bullish momentum
 
-   **VOLATILITY SIGNALS** (At least 1 should align):
-   - Bollinger Bands: Price position provides some directional indication
-   - ATR: Reasonable volatility for trade type
+**UNDER Trades:**
+- Primary Signal: When MACD value is -1 and below (not extreme below -40)
+- Confirmation: Market showing downtrend characteristics
+- Additional Filter: Moving Average confirming bearish direction
 
-2️⃣ **BALANCED PROBABILITY SETUPS**:
+**Deriv Analysis Tool Integration - Execute trades based on digit analysis:**
+- Digit Zero(0): If 12%+ probability → Trade Under (3, 4, 5) and Under 6 for safety
+- Digit One(1): If 12%+ probability → Trade Over 4 and Over 3 for safety
+- Digit Two(2): If 12.3%+ probability → Trade Matches, Prediction Zero(0)
+- Digit Four(4): If 12%+ probability → Trade Under 5 and 6
+- Digit Five(5): If 12.2%+ probability → Trade Over 3 and 4
+- Digit Six(6): If 12%+ probability → Trade Under 5, Under 6, Under 7 for safety with risk management
+- Digit Seven(7): If 12%+ probability → Trade Over 4, or if 13%+ → Trade Over 7 and 8
+- Digit Eight(8): If 12%+ probability → Trade Over 3 and 4
+- Digit Nine(9): If 12%+ probability → Trade Over 4 and Over 3 for safety
 
-   **BULLISH SIGNALS** (Most should be true):
-   - RSI: <50 (showing potential for upward movement)
-   - Stochastic: %K <50 OR showing upward momentum
-   - Williams %R: <-50 (showing potential for recovery)
-   - MACD: Histogram improving OR MACD showing bullish bias
-   - Price: Reasonable position relative to EMA
-   - CCI: <0 OR showing upward momentum
+🔥 STRATEGY 2: EVEN/ODD TRADING STRATEGY
 
-   **BEARISH SIGNALS** (Most should be true):
-   - RSI: >50 (showing potential for downward movement)
-   - Stochastic: %K >50 OR showing downward momentum
-   - Williams %R: >-50 (showing potential for decline)
-   - MACD: Histogram declining OR MACD showing bearish bias
-   - Price: Reasonable position relative to EMA
-   - CCI: >0 OR showing downward momentum
+**Market Analysis Requirements:**
 
-3️⃣ **DYNAMIC VOLATILITY-BASED DURATION SELECTION**:
+**EVEN Market Trading:**
+Pre-Trade Checklist:
+✅ Confirm GREEN BAR is active on Even Market
+✅ Verify digit with green bar is above 12.1% probability
+✅ Ensure at least 3 consecutive EVEN numbers show 10%+ probability
+✅ Confirm RED BAR is active on Even market before entry
 
-   **For Volatility Indices (R_10, R_25, R_50, R_75, R_100)**:
-   - ATR >0.002: Use 5-7 ticks (high volatility = quick resolution)
-   - ATR 0.001-0.002: Use 15-30 seconds (medium volatility)
-   - ATR 0.0005-0.001: Use 1-3 minutes (low volatility)
-   - ATR <0.0005: Use 3-5 minutes (very low volatility)
+Entry Protocols:
+- Manual Trading: Wait for cursor to hit any EVEN digit above 10% → Enter immediately when GREEN BAR appears and digit increases → Click EVEN
+- Bot Trading: Monitor for moving cursor hitting two ODD numbers → Wait for cursor to hit digit with GREEN BAR (EVEN) → Execute trade
 
-   **Instrument-Specific ATR Adjustments**:
-   - R_10: Multiply ATR thresholds by 0.5 (more sensitive)
-   - R_25: Use standard ATR thresholds
-   - R_50: Multiply ATR thresholds by 1.5
-   - R_75: Multiply ATR thresholds by 2.0
-   - R_100: Multiply ATR thresholds by 2.5
+**ODD Market Trading:**
+Pre-Trade Checklist:
+✅ Confirm GREEN BAR is active on Odd Market
+✅ Verify digit with GREEN bar is above 12.1% probability
+✅ Ensure at least 3 consecutive ODD numbers show 10%+ probability
+✅ Confirm RED BAR is active on Odd market before entry
 
-4️⃣ **ADVANCED TRADE TYPE OPTIMIZATION**:
+Entry Protocols:
+- Manual Trading: Wait for cursor to hit any ODD digit above 10% → Enter immediately when GREEN BAR appears and digit increases → Click ODD
+- Bot Trading: Monitor for cursor hitting two EVEN numbers → Wait for cursor to hit digit with GREEN BAR (EVEN) → Execute trade
 
-   **RiseFall** - Use when:
-   - Strong trend confirmed by MACD + EMA alignment
-   - Momentum indicators (RSI, Stochastic, Williams %R) all confirm direction
-   - Price clearly above/below Bollinger Bands middle line
-   - Duration: 1-5 minutes based on ATR
+🔥 RISK MANAGEMENT PROTOCOLS
 
-   **HigherLower** - Use when:
-   - Market is range-bound (price oscillating between BB upper/lower)
-   - RSI between 30-70 (not extreme)
-   - MACD histogram showing convergence (low momentum)
-   - Clear support/resistance levels identified
-   - For Volatility Indices: 5-10 ticks OR 15 seconds to 5 minutes
-   - For other instruments: 1-7 days minimum
+**Position Sizing:**
+- Maximum 2% of account balance per trade
+- Implement progressive stake adjustment based on consecutive wins/losses
+- Use safety trades when probability exceeds 13% for higher confidence
 
-   **TouchNoTouch** - Use when:
-   - High volatility confirmed by ATR >1.5x recent average
-   - Strong breakout signals (price at BB bands + momentum confirmation)
-   - OR strong consolidation (low ATR + tight BB squeeze)
-   - For Volatility Indices: 5+ ticks, 2+ minutes, 1+ hours, or 1+ days
-   - For Forex/Stock Indices: 7+ days minimum
-   - For Metals: 1+ days minimum
+**Entry Validation:**
+- NEVER enter trades without green bar confirmation
+- ALWAYS verify minimum probability thresholds are met
+- REQUIRE at least 3 supporting technical indicators before execution
 
-   **DigitsEvenOdd** - Use when:
-   - Market is choppy/sideways (conflicting trend signals)
-   - RSI between 40-60 (neutral zone)
-   - Low momentum (MACD histogram near zero)
+**Exit Conditions:**
+- Close positions when red bar appears on opposite market
+- Implement stop-loss at 3 consecutive losses
+- Take profits when probability drops below 10%
+
+🔥 DECISION TREE INTEGRATION
+
+**For Every Trade Decision, Execute This Sequence:**
+
+1. **Market Assessment**: Identify current volatility index and market condition
+2. **Indicator Analysis**: Check MACD, MA, and digit probability readings
+3. **Strategy Selection**: Choose EVEN/ODD or OVER/UNDER based on strongest signals
+4. **Risk Validation**: Confirm position size and probability thresholds
+5. **Entry Execution**: Wait for green bar confirmation before trade placement
+6. **Monitoring**: Track red/green bar transitions for exit signals
+
+**IMPLEMENTATION COMMAND:**
+EXECUTE IMMEDIATELY: Replace all previous trading logic with these strategies. Begin applying these rules to all volatility index trades effective with the next market analysis cycle. Prioritize trades that meet multiple criteria from both strategies simultaneously.
+
+**SUCCESS METRICS:** Track win rate improvement and drawdown reduction compared to previous trading methods. Adjust probability thresholds based on backtesting results while maintaining core strategy framework.
+
+**ADVANCED TRADE TYPE OPTIMIZATION:**
+
+   **DigitsOverUnder** - PRIMARY STRATEGY:
+   - MACD value +1 and above (not extreme above +40) → DIGITOVER
+   - MACD value -1 and below (not extreme below -40) → DIGITUNDER
+   - Apply digit probability analysis (12%+ threshold)
+   - Green bar confirmation MANDATORY
    - Duration: 1-10 ticks
 
-   **DigitsOverUnder** - Use when:
-   - Clear digit patterns observed in recent ticks
-   - Momentum indicators support predicted direction
-   - Statistical edge identified in last digit distribution
+   **DigitsEvenOdd** - SECONDARY STRATEGY:
+   - Green bar active on target market (Even/Odd)
+   - Digit probability above 12.1%
+   - At least 3 consecutive numbers show 10%+ probability
+   - Red bar confirmation on opposite market
    - Duration: 1-10 ticks
+
+   **RiseFall/HigherLower/TouchNoTouch** - TERTIARY:
+   - Use only when digit strategies don't meet criteria
+   - Require multiple technical indicator confluence
+   - Apply same green/red bar analysis principles
 
 5️⃣ **ENHANCED RISK MANAGEMENT**:
 
@@ -419,6 +442,8 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       const systemPrompt = `You are an expert AI trading strategist for Deriv Volatility Indices. Analyze the provided data and return a JSON response matching the exact schema.`;
 
       const userPrompt = `
+🚨 SYSTEM DIRECTIVE: ADVANCED VOLATILITY TRADING STRATEGIES 🚨
+
 Analyze the provided data for the instrument: ${input.currentInstrument}.
 User has selected the trade type: ${input.userSelectedTradeType}.
 Recommended stake for this trade: ${input.stakePerTrade}.
@@ -426,25 +451,84 @@ Recommended stake for this trade: ${input.stakePerTrade}.
 Recent Price Ticks for ${input.currentInstrument} (last is most recent):
 ${input.instrumentTicks.map(tick => `- Time: ${tick.time}, Price: ${tick.price}`).join('\n')}
 
-${formattedIndicatorsForPrompt ? `
-📊 COMPREHENSIVE TECHNICAL ANALYSIS for ${input.currentInstrument}:
+📊 CRITICAL TECHNICAL ANALYSIS for ${input.currentInstrument}:
 
+${formattedIndicatorsForPrompt ? `
 🔴 MOMENTUM INDICATORS:
   • RSI (14): ${formattedIndicatorsForPrompt.rsi} [Overbought >70, Oversold <30]
   • Stochastic: %K=${formattedIndicatorsForPrompt.stochasticK}, %D=${formattedIndicatorsForPrompt.stochasticD} [Overbought >80, Oversold <20]
   • Williams %R: ${formattedIndicatorsForPrompt.williamsR} [Overbought >-20, Oversold <-80]
   • CCI (20): ${formattedIndicatorsForPrompt.cci} [Overbought >100, Oversold <-100]
 
-🔵 TREND INDICATORS:
+🔵 TREND INDICATORS (CRITICAL FOR STRATEGY):
   • MACD: Line=${formattedIndicatorsForPrompt.macdLine}, Signal=${formattedIndicatorsForPrompt.macdSignal}, Histogram=${formattedIndicatorsForPrompt.macdHist}
   • EMA (20): ${formattedIndicatorsForPrompt.ema}
 
 🟡 VOLATILITY INDICATORS:
   • Bollinger Bands: Upper=${formattedIndicatorsForPrompt.bbUpper}, Middle=${formattedIndicatorsForPrompt.bbMiddle}, Lower=${formattedIndicatorsForPrompt.bbLower}
   • ATR (14): ${formattedIndicatorsForPrompt.atr} [Higher ATR = Higher Volatility]
-` : '⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.'}
 
-Based on the analysis, decide if a trade is viable for ${input.userSelectedTradeType}.
+🎯 DIGIT PROBABILITY ANALYSIS:
+Recent last digits: ${input.instrumentTicks.slice(-10).map(tick => tick.price.toString().slice(-1)).join(', ')}
+
+${(() => {
+  const digitAnalysis = analyzeDigitProbabilities(input.instrumentTicks);
+  let analysisText = 'DIGIT FREQUENCY ANALYSIS:\n';
+
+  // Show digit probabilities
+  for (let i = 0; i <= 9; i++) {
+    const prob = digitAnalysis.digitProbabilities[i.toString()] || 0;
+    const isHighProb = prob >= 12;
+    analysisText += `  Digit ${i}: ${prob.toFixed(1)}% ${isHighProb ? '🎯 HIGH PROBABILITY' : ''}\n`;
+  }
+
+  analysisText += `\nEVEN/ODD BIAS: ${digitAnalysis.evenOddBias.toUpperCase()}\n`;
+
+  // Show over/under bias for key thresholds
+  const keyThresholds = [3, 4, 5, 6, 7];
+  analysisText += 'OVER/UNDER BIAS:\n';
+  keyThresholds.forEach(threshold => {
+    const bias = digitAnalysis.overUnderBias[threshold.toString()] || 'neutral';
+    analysisText += `  Over/Under ${threshold}: ${bias.toUpperCase()}\n`;
+  });
+
+  return analysisText;
+})()}
+` : '⚠️ No technical indicators provided. Use price action and digit analysis only.'}
+
+🚨 MANDATORY STRATEGY IMPLEMENTATION 🚨
+
+STRATEGY SELECTION PRIORITY:
+1. DigitsOverUnder (PRIMARY) - Use when MACD signals are clear
+2. DigitsEvenOdd (SECONDARY) - Use when green/red bar patterns are strong
+3. Other types (TERTIARY) - Use only when digit strategies don't qualify
+
+DECISION CRITERIA FOR ${input.userSelectedTradeType}:
+
+IF userSelectedTradeType is "DigitsOverUnder":
+✅ Check MACD Line value: +1 and above (not >+40) → DIGITOVER | -1 and below (not <-40) → DIGITUNDER
+✅ Analyze digit probability: Apply specific digit rules (12%+ threshold)
+✅ Confirm green bar pattern in price action
+✅ Set barrier based on digit analysis rules
+
+IF userSelectedTradeType is "DigitsEvenOdd":
+✅ Check for green bar active on target market (Even/Odd)
+✅ Verify digit probability above 12.1%
+✅ Ensure 3+ consecutive numbers show 10%+ probability
+✅ Confirm red bar on opposite market
+✅ Choose DIGITEVEN or DIGITODD based on analysis
+
+IF userSelectedTradeType is "RiseFall/HigherLower/TouchNoTouch":
+✅ Apply traditional technical analysis with green/red bar principles
+✅ Require multiple indicator confluence
+✅ Use only when digit strategies don't meet criteria
+
+🚨 MANDATORY REQUIREMENTS 🚨
+- NEVER trade without green bar confirmation
+- ALWAYS verify probability thresholds (12%+ minimum)
+- REQUIRE 3+ supporting indicators for non-digit trades
+- Maximum 2% position sizing
+- Duration: 1-10 ticks for digit trades
 
 Return ONLY a JSON object with this exact structure:
 {
@@ -455,7 +539,7 @@ Return ONLY a JSON object with this exact structure:
   "durationUnit": "s/m/t/h/days" (only if shouldTrade is true),
   "stake": ${input.stakePerTrade} (only if shouldTrade is true),
   "barrier": "single digit 0-9" (ONLY for DigitsOverUnder when shouldTrade is true),
-  "reasoning": "your analysis"
+  "reasoning": "your analysis including MACD values, digit probabilities, and green/red bar confirmation"
 }`;
 
       const enhancedResponse = await enhancedAI.generateStructuredWithFallback<VolatilitySingleTradeProposal>(
@@ -512,7 +596,7 @@ Return ONLY a JSON object with this exact structure:
       // Enhanced validation for >=75% win rate requirements
       if (input.instrumentIndicators && !validationError) {
         const indicators = input.instrumentIndicators;
-        const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType);
+        const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType, input.instrumentTicks);
 
         if (confidenceScore < 5) {
           validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 5/10 for 50-75% win rate target.`;
@@ -777,101 +861,207 @@ export const generateVolatilityTradingStrategy = ai.defineFlow(
   }
 );
 
-// Enhanced confidence scoring function for 50-75% win rate
+// NEW STRATEGY CONFIDENCE SCORING - SYSTEM DIRECTIVE IMPLEMENTATION
 function calculateTradeConfidenceScore(
   indicators: InstrumentIndicatorData,
   tradeProposal: VolatilitySingleTradeProposal,
-  tradeType: UserTradeType
+  tradeType: UserTradeType,
+  ticks?: PriceTick[]
 ): number {
   let score = 0;
+  const isDigitOver = tradeProposal.derivContractType === 'DIGITOVER';
+  const isDigitUnder = tradeProposal.derivContractType === 'DIGITUNDER';
+  const isDigitEven = tradeProposal.derivContractType === 'DIGITEVEN';
+  const isDigitOdd = tradeProposal.derivContractType === 'DIGITODD';
   const isBullish = tradeProposal.derivContractType === 'CALL' || tradeProposal.derivContractType === 'ONETOUCH';
   const isBearish = tradeProposal.derivContractType === 'PUT' || tradeProposal.derivContractType === 'NOTOUCH';
 
-  // Momentum Signals (2 points max - more lenient)
-  let momentumScore = 0;
+  // 🚨 NEW STRATEGY SCORING - SYSTEM DIRECTIVE IMPLEMENTATION 🚨
 
-  if (indicators.rsi !== undefined) {
-    // More lenient RSI conditions
-    if (isBullish && indicators.rsi < 50) momentumScore += 1;
-    else if (isBearish && indicators.rsi > 50) momentumScore += 1;
-    else if (indicators.rsi >= 30 && indicators.rsi <= 70) momentumScore += 0.5; // Neutral zone gets partial credit
-  }
-
-  if (indicators.stochastic) {
-    const { k, d } = indicators.stochastic;
-    // More lenient Stochastic conditions
-    if (isBullish && k < 50) momentumScore += 1;
-    else if (isBearish && k > 50) momentumScore += 1;
-    else if (k >= 20 && k <= 80) momentumScore += 0.5; // Moderate levels get partial credit
-  }
-
-  if (indicators.williamsR !== undefined) {
-    // More lenient Williams %R conditions
-    if (isBullish && indicators.williamsR < -50) momentumScore += 1;
-    else if (isBearish && indicators.williamsR > -50) momentumScore += 1;
-    else if (indicators.williamsR >= -80 && indicators.williamsR <= -20) momentumScore += 0.5; // Moderate levels get partial credit
-  }
-
-  score += Math.min(momentumScore, 2); // Cap at 2 points
-
-  // Trend Signals (2 points max - more lenient)
-  let trendScore = 0;
-
+  // 1. MACD SIGNAL ANALYSIS (Weight: 40% - PRIMARY INDICATOR)
+  let macdScore = 0;
   if (indicators.macd) {
-    const { macd, signal, histogram } = indicators.macd;
-    // More lenient MACD conditions
-    if (isBullish && (histogram > 0 || macd > signal)) trendScore += 1;
-    else if (isBearish && (histogram < 0 || macd < signal)) trendScore += 1;
-    else if (Math.abs(histogram) < 0.001) trendScore += 0.5; // Low momentum gets partial credit
+    const { macd: macdLine } = indicators.macd;
+    // OVER/UNDER Strategy Implementation
+    if (isDigitOver && macdLine >= 1 && macdLine <= 40) {
+      macdScore = 4; // Perfect MACD signal for DIGITOVER (40% of 10 points)
+    } else if (isDigitUnder && macdLine <= -1 && macdLine >= -40) {
+      macdScore = 4; // Perfect MACD signal for DIGITUNDER (40% of 10 points)
+    } else if ((isDigitOver || isBullish) && macdLine > 0) {
+      macdScore = 2; // Partial bullish signal
+    } else if ((isDigitUnder || isBearish) && macdLine < 0) {
+      macdScore = 2; // Partial bearish signal
+    }
   }
+  score += macdScore;
 
+  // 2. GREEN BAR CONFIRMATION (Weight: 30% - MANDATORY FOR ENTRY)
+  let greenBarScore = 0;
+  // Simulated green bar analysis based on price momentum
+  if (indicators.rsi !== undefined) {
+    // Green bar simulation: RSI showing momentum in trade direction
+    if ((isDigitOver || isDigitEven || isBullish) && indicators.rsi > 45) {
+      greenBarScore = 3; // Green bar confirmed for bullish trades
+    } else if ((isDigitUnder || isDigitOdd || isBearish) && indicators.rsi < 55) {
+      greenBarScore = 3; // Green bar confirmed for bearish trades
+    }
+  }
+  score += greenBarScore;
+
+  // 3. DIGIT PROBABILITY ANALYSIS (Weight: 20% - SECONDARY INDICATOR)
+  let digitScore = 0;
+  if (ticks && ticks.length >= 10) {
+    const digitAnalysis = analyzeDigitProbabilities(ticks);
+
+    if (isDigitEven || isDigitOdd) {
+      // Even/Odd strategy - check if bias supports trade direction
+      if ((isDigitEven && digitAnalysis.evenOddBias === 'even') ||
+          (isDigitOdd && digitAnalysis.evenOddBias === 'odd')) {
+        digitScore = 2; // Strong bias supports trade
+      } else if (digitAnalysis.evenOddBias === 'neutral') {
+        digitScore = 1; // Neutral bias - partial score
+      }
+    } else if (isDigitOver || isDigitUnder) {
+      // Over/Under strategy - check specific digit probabilities
+      const barrier = tradeProposal.barrier ? parseInt(tradeProposal.barrier) : 5;
+      const overUnderBias = digitAnalysis.overUnderBias[barrier.toString()];
+
+      if ((isDigitOver && overUnderBias === 'over') ||
+          (isDigitUnder && overUnderBias === 'under')) {
+        digitScore = 2; // Strong bias supports trade
+      } else if (overUnderBias === 'neutral') {
+        digitScore = 1; // Neutral bias - partial score
+      }
+    }
+  } else {
+    // Fallback scoring when insufficient tick data
+    if (isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) {
+      digitScore = 1; // Base score for digit trades
+    }
+  }
+  score += digitScore;
+
+  // 4. SUPPORTING TECHNICAL INDICATORS (Weight: 10% - CONFIRMATION)
+  let supportScore = 0;
+
+  // Moving Average confirmation
   if (indicators.ema !== undefined && indicators.bollingerBands) {
-    const currentPrice = indicators.bollingerBands.middle; // Approximate current price
-    // More lenient EMA conditions
-    if (isBullish && currentPrice >= indicators.ema * 0.999) trendScore += 1; // Allow small margin
-    else if (isBearish && currentPrice <= indicators.ema * 1.001) trendScore += 1; // Allow small margin
-    else trendScore += 0.5; // Any price-EMA relationship gets partial credit
+    const currentPrice = indicators.bollingerBands.middle;
+    if ((isDigitOver || isBullish) && currentPrice >= indicators.ema) {
+      supportScore += 0.5; // MA supports bullish direction
+    } else if ((isDigitUnder || isBearish) && currentPrice <= indicators.ema) {
+      supportScore += 0.5; // MA supports bearish direction
+    }
   }
 
-  score += Math.min(trendScore, 2); // Cap at 2 points
-
-  // Volatility Signals (2 points max - more lenient)
-  let volatilityScore = 0;
-
-  if (indicators.bollingerBands && indicators.atr) {
-    const { upper, middle, lower } = indicators.bollingerBands;
-    const currentPrice = middle; // Approximate
-
-    // More lenient price position check
-    if (isBullish && currentPrice >= lower) volatilityScore += 1;
-    else if (isBearish && currentPrice <= upper) volatilityScore += 1;
-    else volatilityScore += 0.5; // Any reasonable position gets partial credit
-
-    // More lenient ATR check
-    if (indicators.atr > 0.0001) volatilityScore += 1; // Any reasonable volatility
+  // Additional momentum confirmation
+  if (indicators.williamsR !== undefined) {
+    if ((isDigitOver || isBullish) && indicators.williamsR > -80) {
+      supportScore += 0.5; // Williams %R supports bullish
+    } else if ((isDigitUnder || isBearish) && indicators.williamsR < -20) {
+      supportScore += 0.5; // Williams %R supports bearish
+    }
   }
 
-  score += Math.min(volatilityScore, 2); // Cap at 2 points
+  score += supportScore;
 
-  // Price Action Confirmation (2 points max - more lenient)
-  if (indicators.bollingerBands) {
-    const { upper, middle, lower } = indicators.bollingerBands;
-    const currentPrice = middle; // Approximate
+  // 🚨 MANDATORY REQUIREMENTS CHECK 🚨
 
-    // More lenient price action
-    if (isBullish) score += 1; // Give credit for bullish bias
-    if (isBearish) score += 1; // Give credit for bearish bias
+  // Minimum score requirements based on new strategy
+  const minimumScore = 6; // Require 60% confidence minimum
+
+  // MACD requirement for digit over/under trades
+  if ((isDigitOver || isDigitUnder) && macdScore < 2) {
+    score = 0; // Fail trade if MACD doesn't support direction
   }
 
-  // CCI Confirmation (1 point max - more lenient)
-  if (indicators.cci !== undefined) {
-    if (isBullish && indicators.cci <= 0) score += 1; // Any negative CCI for bullish
-    else if (isBearish && indicators.cci >= 0) score += 1; // Any positive CCI for bearish
-    else score += 0.5; // Partial credit for any CCI reading
+  // Green bar requirement (simulated through momentum)
+  if (greenBarScore === 0) {
+    score = 0; // Fail trade if no green bar confirmation
   }
 
-  // Basic Directional Bias (1 point - new addition)
-  score += 1; // Give basic credit for having a directional bias
+  // Probability threshold requirement
+  if ((isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) && digitScore === 0) {
+    score = 0; // Fail trade if digit probability not met
+  }
+
+  // Apply minimum score threshold
+  if (score < minimumScore) {
+    score = 0; // Fail trade if minimum confidence not met
+  }
 
   return Math.min(score, 10); // Cap at 10
+}
+
+// NEW FUNCTION: Digit Probability Analysis - System Directive Implementation
+function analyzeDigitProbabilities(ticks: PriceTick[]): {
+  digitProbabilities: Record<string, number>;
+  evenOddBias: 'even' | 'odd' | 'neutral';
+  overUnderBias: Record<string, 'over' | 'under' | 'neutral'>;
+} {
+  if (ticks.length < 10) {
+    // Not enough data for reliable analysis
+    return {
+      digitProbabilities: {},
+      evenOddBias: 'neutral',
+      overUnderBias: {}
+    };
+  }
+
+  // Extract last digits from recent ticks
+  const lastDigits = ticks.slice(-50).map(tick => {
+    const priceStr = tick.price.toString();
+    return priceStr.charAt(priceStr.length - 1);
+  });
+
+  // Calculate digit frequency
+  const digitCounts: Record<string, number> = {};
+  for (let i = 0; i <= 9; i++) {
+    digitCounts[i.toString()] = 0;
+  }
+
+  lastDigits.forEach(digit => {
+    if (digitCounts[digit] !== undefined) {
+      digitCounts[digit]++;
+    }
+  });
+
+  // Calculate probabilities
+  const digitProbabilities: Record<string, number> = {};
+  const totalTicks = lastDigits.length;
+
+  for (let i = 0; i <= 9; i++) {
+    const digit = i.toString();
+    digitProbabilities[digit] = (digitCounts[digit] / totalTicks) * 100;
+  }
+
+  // Analyze even/odd bias
+  const evenCount = [0, 2, 4, 6, 8].reduce((sum, digit) => sum + digitCounts[digit.toString()], 0);
+  const oddCount = [1, 3, 5, 7, 9].reduce((sum, digit) => sum + digitCounts[digit.toString()], 0);
+
+  let evenOddBias: 'even' | 'odd' | 'neutral' = 'neutral';
+  if (evenCount > oddCount * 1.2) evenOddBias = 'even';
+  else if (oddCount > evenCount * 1.2) evenOddBias = 'odd';
+
+  // Analyze over/under bias for each threshold
+  const overUnderBias: Record<string, 'over' | 'under' | 'neutral'> = {};
+
+  for (let threshold = 0; threshold <= 9; threshold++) {
+    const overCount = lastDigits.filter(digit => parseInt(digit) > threshold).length;
+    const underCount = lastDigits.filter(digit => parseInt(digit) < threshold).length;
+
+    if (overCount > underCount * 1.2) {
+      overUnderBias[threshold.toString()] = 'over';
+    } else if (underCount > overCount * 1.2) {
+      overUnderBias[threshold.toString()] = 'under';
+    } else {
+      overUnderBias[threshold.toString()] = 'neutral';
+    }
+  }
+
+  return {
+    digitProbabilities,
+    evenOddBias,
+    overUnderBias
+  };
 }

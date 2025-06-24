@@ -1302,8 +1302,8 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       setIsAutoTradingActive(false); setIsPreparingAutoTrades(false); return;
     }
 
-    const instrumentTicksData: Record<ForexCryptoCommodityInstrumentType, PriceTick[]> = {} as any;
-    const instrumentIndicatorsData: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData> = {} as any;
+    const instrumentTicksData: Record<ForexCommodityInstrumentType, PriceTick[]> = {} as any;
+    const instrumentIndicatorsData: Record<ForexCommodityInstrumentType, InstrumentIndicatorData> = {} as any;
 
     logAutomatedTradingEvent(`Fetching market data for ${instrumentsToTrade.join(', ')}...`);
     for (const inst of instrumentsToTrade) {
@@ -1480,21 +1480,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         }
         instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = marketCurrentlyOpen;
 
-        // Override for known 24/7 instruments like BTC/USD, ETH/USD
-        const knownTwentyFourSevenSymbols = ['cryBTCUSD', 'cryETHUSD'];
-        // Potentially add Deriv's synthetic Volatility Index symbols here if they are part of instrumentsToTrade
-        // and if their tradingTimesData is also sparse leading to incorrect 'CLOSED' status.
-        // For now, focusing on the explicitly mentioned cryBTCUSD and cryETHUSD.
-
-        if (knownTwentyFourSevenSymbols.includes(derivSymbol)) {
-          if (instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen === false) {
-            logAutomatedTradingEvent(`OVERRIDE: Forcing market status to OPEN for 24/7 instrument ${derivSymbol} as ` +
-                                     `getCurrentMarketStatus initially reported it closed (likely due to sparse trading_times data for 24/7 markets).`);
-          } else {
-            logAutomatedTradingEvent(`INFO: Market status for 24/7 instrument ${derivSymbol} correctly determined as OPEN or was already true.`);
-          }
-          instrumentOfferingsDataForAI[derivSymbol].isMarketCurrentlyOpen = true;
-        }
+        // No crypto overrides needed since crypto instruments have been removed
         logAutomatedTradingEvent(specificSymbolTimesData && !('error' in specificSymbolTimesData) ? `Using cached trading times for ${derivSymbol}.` : `Trading times for ${derivSymbol}: ${(specificSymbolTimesData as {error: string}).error}`);
       }
     }
@@ -1597,7 +1583,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           if (!isValidProposal) {
             newActiveTradesBatch.push({
               id: `error_validation_${uuidv4()}`,
-              instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+              instrument: proposedTrade.instrument as ForexCommodityInstrumentType,
               derivSymbol,
               action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
               tradeType: proposedTrade.tradeType,
@@ -1657,7 +1643,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
           newActiveTradesBatch.push({
             id: String(tradeResult.contract_id),
-            instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+            instrument: proposedTrade.instrument as ForexCommodityInstrumentType,
             derivSymbol: tradeDetails.symbol,
             action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
             tradeType: proposedTrade.tradeType,
@@ -1684,7 +1670,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           toast({ title: `Trade Processing Error (${proposedTrade.instrument})`, description: error.message, variant: "destructive" });
           newActiveTradesBatch.push({
             id: `error_processing_${uuidv4()}`,
-            instrument: proposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+            instrument: proposedTrade.instrument as ForexCommodityInstrumentType,
             derivSymbol,
             action: (proposedTrade.tradeType === 'MULTUP' || proposedTrade.tradeType === 'CALL') ? 'CALL' : 'PUT', // Map for display
             tradeType: proposedTrade.tradeType,
@@ -1953,7 +1939,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           <TradingChart
                 instrument={currentInstrument}
                 onInstrumentChange={handleInstrumentChange}
-                instrumentsToShow={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
+                instrumentsToShow={FOREX_COMMODITY_INSTRUMENTS}
                 isMarketOpen={isCurrentInstrumentMarketOpen === true}
                 marketStatusMessage={isLoadingTradingTimes ? 'Loading trading hours...' : marketStatusDisplayMessage}
             />
