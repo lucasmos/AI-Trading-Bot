@@ -3,7 +3,7 @@
  * @fileOverview This file defines Genkit flows for generating trading strategies for Volatility Indices.
  */
 
-import { ai } from '@/ai/genkit';
+import { ai, getEnhancedAI } from '@/ai/genkit';
 import * as z from 'zod'; // For z.infer if needed locally, though types are imported.
 import type { VolatilityInstrumentType as ExternalVolatilityInstrumentType } from '@/types';
 
@@ -407,7 +407,85 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         instrumentTicks: input.instrumentTicks, // Pass directly for template
     };
 
-    const { output } = await determineDerivContractTypePrompt(promptGenerationInput) as { output: VolatilitySingleTradeProposal | null };
+    let output: VolatilitySingleTradeProposal | null = null;
+
+    try {
+      // Try Gemini first through the standard prompt
+      const geminiResult = await determineDerivContractTypePrompt(promptGenerationInput) as { output: VolatilitySingleTradeProposal | null };
+      output = geminiResult.output;
+
+      if (output) {
+        console.log(`[AI Single Flow/${input.currentInstrument}] Gemini generation successful`);
+      } else {
+        throw new Error('Gemini returned null output');
+      }
+    } catch (geminiError) {
+      console.warn(`[AI Single Flow/${input.currentInstrument}] Gemini failed, falling back to DeepSeek:`, geminiError instanceof Error ? geminiError.message : 'Unknown error');
+
+      try {
+        // Fallback to DeepSeek with enhanced AI service
+        const enhancedAI = getEnhancedAI();
+
+        // Build the prompt manually for DeepSeek
+        const systemPrompt = `You are an expert AI trading strategist for Deriv Volatility Indices. Analyze the provided data and return a JSON response matching the exact schema.`;
+
+        const userPrompt = `
+Analyze the provided data for the instrument: ${input.currentInstrument}.
+User has selected the trade type: ${input.userSelectedTradeType}.
+Recommended stake for this trade: ${input.stakePerTrade}.
+
+Recent Price Ticks for ${input.currentInstrument} (last is most recent):
+${input.instrumentTicks.map(tick => `- Time: ${tick.time}, Price: ${tick.price}`).join('\n')}
+
+${formattedIndicatorsForPrompt ? `
+📊 COMPREHENSIVE TECHNICAL ANALYSIS for ${input.currentInstrument}:
+
+🔴 MOMENTUM INDICATORS:
+  • RSI (14): ${formattedIndicatorsForPrompt.rsi} [Overbought >70, Oversold <30]
+  • Stochastic: %K=${formattedIndicatorsForPrompt.stochasticK}, %D=${formattedIndicatorsForPrompt.stochasticD} [Overbought >80, Oversold <20]
+  • Williams %R: ${formattedIndicatorsForPrompt.williamsR} [Overbought >-20, Oversold <-80]
+  • CCI (20): ${formattedIndicatorsForPrompt.cci} [Overbought >100, Oversold <-100]
+
+🔵 TREND INDICATORS:
+  • MACD: Line=${formattedIndicatorsForPrompt.macdLine}, Signal=${formattedIndicatorsForPrompt.macdSignal}, Histogram=${formattedIndicatorsForPrompt.macdHist}
+  • EMA (20): ${formattedIndicatorsForPrompt.ema}
+
+🟡 VOLATILITY INDICATORS:
+  • Bollinger Bands: Upper=${formattedIndicatorsForPrompt.bbUpper}, Middle=${formattedIndicatorsForPrompt.bbMiddle}, Lower=${formattedIndicatorsForPrompt.bbLower}
+  • ATR (14): ${formattedIndicatorsForPrompt.atr} [Higher ATR = Higher Volatility]
+` : '⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.'}
+
+Based on the analysis, decide if a trade is viable for ${input.userSelectedTradeType}.
+
+Return ONLY a JSON object with this exact structure:
+{
+  "instrument": "${input.currentInstrument}",
+  "shouldTrade": true/false,
+  "derivContractType": "CALL/PUT/ONETOUCH/NOTOUCH/DIGITEVEN/DIGITODD/DIGITOVER/DIGITUNDER" (only if shouldTrade is true),
+  "duration": number (only if shouldTrade is true),
+  "durationUnit": "s/m/t/h/days" (only if shouldTrade is true),
+  "stake": ${input.stakePerTrade} (only if shouldTrade is true),
+  "barrier": "single digit 0-9" (ONLY for DigitsOverUnder when shouldTrade is true),
+  "reasoning": "your analysis"
+}`;
+
+        const deepSeekResponse = await enhancedAI.generateStructuredWithFallback<VolatilitySingleTradeProposal>(
+          userPrompt,
+          VolatilitySingleTradeProposalSchema,
+          systemPrompt
+        );
+
+        output = deepSeekResponse;
+        console.log(`[AI Single Flow/${input.currentInstrument}] DeepSeek fallback successful`);
+      } catch (deepSeekError) {
+        console.error(`[AI Single Flow/${input.currentInstrument}] Both Gemini and DeepSeek failed:`, deepSeekError);
+        return {
+          instrument: input.currentInstrument as ExternalVolatilityInstrumentType,
+          shouldTrade: false,
+          reasoning: `All AI services failed. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`,
+        };
+      }
+    }
 
     if (!output) {
       console.error(`[AI Single Flow/${input.currentInstrument}] AI failed to generate a trade proposal. Null output.`);

@@ -7,7 +7,7 @@
  * - AutomatedTradingStrategyOutput - The return type.
  */
 
-import { ai } from '@/ai/genkit';
+import { ai, getEnhancedAI } from '@/ai/genkit';
 import * as zod from 'zod'; // Use 'zod' to avoid conflict if 'z' is used elsewhere
 import type { 
   ForexCryptoCommodityInstrumentType, 
@@ -231,12 +231,77 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     };
     // stopLossPercentage will be passed through via ...input if present
 
-    const result = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
-    console.log('[AI_FLOW_DEBUG] Raw AI Output:', JSON.stringify(result?.output, null, 2));
-    if (!result || !result.output) {
+    let output: ImportedAutomatedTradingStrategyOutput | null = null;
+
+    try {
+      // Try Gemini first through the standard prompt
+      const geminiResult = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
+      output = geminiResult.output;
+
+      if (output) {
+        console.log('[AI_FLOW_DEBUG] Gemini generation successful for automated trading');
+      } else {
+        throw new Error('Gemini returned null output for automated trading');
+      }
+    } catch (geminiError) {
+      console.warn('[AI_FLOW_DEBUG] Gemini failed for automated trading, falling back to DeepSeek:', geminiError instanceof Error ? geminiError.message : 'Unknown error');
+
+      try {
+        // Fallback to DeepSeek with enhanced AI service
+        const enhancedAI = getEnhancedAI();
+
+        // Build a simplified prompt for DeepSeek
+        const systemPrompt = `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Return a JSON response matching the exact schema for automated trading strategy.`;
+
+        const userPrompt = `
+Analyze the provided data and generate trading strategy:
+
+Total Stake: ${promptInput.totalStake}
+Available Instruments: ${promptInput.instruments.join(', ')}
+Trading Mode: ${promptInput.tradingMode}
+
+Recent Price Data:
+${Object.entries(promptInput.instrumentTicks).map(([instrument, ticks]) =>
+  `${instrument}: ${ticks.map(tick => `${tick.time}: ${tick.price}`).join(', ')}`
+).join('\n')}
+
+${promptInput.formattedIndicatorsString}
+
+Return ONLY a JSON object with this structure:
+{
+  "overallReasoning": "your strategy explanation",
+  "tradesToExecute": [
+    {
+      "instrument": "instrument_name",
+      "action": "CALL/PUT/MULTUP/MULTDOWN",
+      "stake": number,
+      "durationString": "duration_if_applicable",
+      "multiplier": number_if_applicable,
+      "reasoning": "trade reasoning"
+    }
+  ]
+}
+
+Ensure total stakes don't exceed ${promptInput.totalStake}.`;
+
+        const deepSeekResponse = await enhancedAI.generateStructuredWithFallback<ImportedAutomatedTradingStrategyOutput>(
+          userPrompt,
+          InferredAutomatedTradingStrategyOutputSchema,
+          systemPrompt
+        );
+
+        output = deepSeekResponse;
+        console.log('[AI_FLOW_DEBUG] DeepSeek fallback successful for automated trading');
+      } catch (deepSeekError) {
+        console.error('[AI_FLOW_DEBUG] Both Gemini and DeepSeek failed for automated trading:', deepSeekError);
+        throw new Error(`All AI services failed for automated trading. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`);
+      }
+    }
+
+    console.log('[AI_FLOW_DEBUG] Raw AI Output:', JSON.stringify(output, null, 2));
+    if (!output) {
       throw new Error("AI failed to generate an automated trading strategy for Forex/Crypto/Commodities.");
     }
-    const output = result.output;
 
     output.tradesToExecute = output.tradesToExecute.filter(trade => {
       const isStakeValid = typeof trade.stake === 'number' && trade.stake >= 0.01;
