@@ -103,6 +103,13 @@ export async function executeAiTradingStrategy(
           metadata: {
             reasoning: tradeProposal.reasoning,
             derivLongcode: derivTradeResponse.longcode,
+            tradeCategory: 'forexCrypto',
+            automated: true,
+            tradingMode: strategy.tradingMode || 'balanced',
+            durationString: tradeProposal.durationString,
+            multiplier: tradeProposal.multiplier,
+            stopLoss: tradeProposal.stop_loss,
+            takeProfit: tradeProposal.take_profit
           }
         },
       });

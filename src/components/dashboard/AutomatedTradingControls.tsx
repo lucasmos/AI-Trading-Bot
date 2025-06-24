@@ -31,6 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getCandles, getTradingTimes, getFullContractDetails, DerivFullContractDetails } from '@/services/deriv';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
 import { getMarketStatus } from '@/lib/market-hours';
+import { getTradeMonitor, cleanupTradeMonitor, type TradeCompletionData } from '@/services/trade-monitor';
 
 const AVAILABLE_INSTRUMENTS: ForexCryptoCommodityInstrumentType[] = [
   'EUR/USD', 'GBP/USD', 'BTC/USD', 'XAU/USD',
@@ -72,6 +73,8 @@ export function AutomatedTradingControls() {
   const [executionResults, setExecutionResults] = useState<(TradeExecutionResult | VolatilityTradeExecutionResult)[]>([]);
   const [aiReasoning, setAiReasoning] = useState<string>('');
   const [isTokenFromSession, setIsTokenFromSession] = useState<boolean>(false);
+  const [sessionProfitLoss, setSessionProfitLoss] = useState<number>(0);
+  const [completedTrades, setCompletedTrades] = useState<number>(0);
 
   // New state for Volatility AI Trading
   const [selectedUserTradeType, setSelectedUserTradeType] = useState<UserTradeTypeValue | undefined>(undefined);
@@ -91,6 +94,13 @@ export function AutomatedTradingControls() {
       }
     }
   }, [session, sessionStatus, apiToken, isTokenFromSession]); // Rerun if session, status, or local token state changes.
+
+  // Cleanup trade monitor on unmount
+  useEffect(() => {
+    return () => {
+      cleanupTradeMonitor();
+    };
+  }, []);
 
   // Combined busy state for disabling UI elements during critical operations.
   const isBusy = isFetchingData || isProcessingAi || isExecutingTrades || sessionStatus === 'loading';
@@ -208,7 +218,7 @@ export function AutomatedTradingControls() {
     }
 
     // Use only instruments for which data was successfully fetched.
-    const activeInstruments = fetchResult.successfulInstruments;
+    let activeInstruments = fetchResult.successfulInstruments;
 
     // Notify user if proceeding with partial data.
     if (fetchResult.failedInstruments.length > 0) {
@@ -340,10 +350,48 @@ export function AutomatedTradingControls() {
         };
       }
     }
+
+    // Step 2c: Filter instruments by market status and adjust stake apportionment
+    const openMarketInstruments = activeInstruments.filter(instrument => {
+      const instrumentData = instrumentOfferingsData[instrument];
+      return instrumentData && instrumentData.isMarketCurrentlyOpen;
+    });
+
+    const closedMarketInstruments = activeInstruments.filter(instrument => {
+      const instrumentData = instrumentOfferingsData[instrument];
+      return !instrumentData || !instrumentData.isMarketCurrentlyOpen;
+    });
+
+    // Notify user about market status filtering
+    if (closedMarketInstruments.length > 0) {
+      toast({
+        title: 'Market Hours Filtering',
+        description: `Markets closed: ${closedMarketInstruments.join(', ')}. AI will focus on open markets: ${openMarketInstruments.join(', ')}.`,
+        variant: 'info',
+        duration: 8000
+      });
+    }
+
+    if (openMarketInstruments.length === 0) {
+      toast({
+        title: 'No Open Markets',
+        description: 'All selected markets are currently closed. Please try again during market hours or select different instruments.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Update active instruments to only include open markets
+    activeInstruments = openMarketInstruments;
+
+    // Recalculate stake apportionment for open markets
+    const adjustedStakePerInstrument = totalStake / activeInstruments.length;
+    console.log(`[AutomatedTrading] Stake apportionment: Total $${totalStake} across ${activeInstruments.length} open markets = $${adjustedStakePerInstrument.toFixed(2)} per instrument`);
+
     // Step 3: Call AI to generate trading strategy.
     setIsProcessingAi(true);
     try {
-      toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${activeInstruments.join(', ')}...` });
+      toast({ title: 'AI Thinking...', description: `Generating trading strategy for ${activeInstruments.length} open market(s): ${activeInstruments.join(', ')}...` });
 
       const strategyInput = {
         totalStake,
@@ -425,14 +473,45 @@ export function AutomatedTradingControls() {
       );
       setExecutionResults(results);
 
+      // Initialize trade monitor for successful trades
+      const tradeMonitor = getTradeMonitor(apiToken, targetAccountId, {
+        onTradeComplete: (trade: TradeCompletionData) => {
+          setSessionProfitLoss(prev => prev + trade.profit);
+          setCompletedTrades(prev => prev + 1);
+
+          // Show session summary toast
+          toast({
+            title: `📊 Session Update`,
+            description: `Completed: ${completedTrades + 1} trades | Session P/L: ${sessionProfitLoss + trade.profit >= 0 ? '+' : ''}$${(sessionProfitLoss + trade.profit).toFixed(2)}`,
+            duration: 5000
+          });
+        },
+        showToastNotifications: true
+      });
+
       results.forEach(result => {
         if (result.success) {
+          // Add to trade monitor
+          if (tradeMonitor && result.tradeResponse?.contract_id) {
+            tradeMonitor.addContract(
+              result.tradeResponse.contract_id.toString(),
+              result.instrument,
+              result.tradeResponse.buy_price || 0
+            );
+          }
+
           toast({
-            title: `Trade Success: ${result.instrument}`,
-            description: `Deriv Contract ID: ${result.tradeResponse?.contract_id}, DB ID: ${result.dbTradeId}`,
+            title: `✅ Trade Placed: ${result.instrument}`,
+            description: `Stake: $${result.tradeResponse?.buy_price || 'N/A'} | Contract ID: ${result.tradeResponse?.contract_id} | Entry: ${result.tradeResponse?.entry_spot}`,
+            duration: 6000
           });
         } else {
-          toast({ title: `Trade Failed: ${result.instrument}`, description: result.error, variant: 'destructive' });
+          toast({
+            title: `❌ Trade Failed: ${result.instrument}`,
+            description: result.error,
+            variant: 'destructive',
+            duration: 8000
+          });
         }
       });
 

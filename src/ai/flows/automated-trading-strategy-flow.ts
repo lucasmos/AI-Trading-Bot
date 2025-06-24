@@ -242,12 +242,36 @@ const automatedTradingStrategyFlow = ai.defineFlow(
         // Build a simplified prompt for enhanced AI service
         const systemPrompt = `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Return a JSON response matching the exact schema for automated trading strategy.`;
 
+        // Filter instruments by market status and prepare market status information
+        const marketStatusInfo = promptInput.instrumentOfferings ?
+          Object.entries(promptInput.instrumentOfferings).map(([instrument, data]) =>
+            `${instrument}: ${data.isMarketCurrentlyOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}`
+          ).join('\n') : 'Market status information not available';
+
+        // Get only open market instruments for trading
+        const openMarketInstruments = promptInput.instrumentOfferings ?
+          Object.entries(promptInput.instrumentOfferings)
+            .filter(([instrument, data]) => data.isMarketCurrentlyOpen)
+            .map(([instrument]) => instrument) : promptInput.instruments;
+
+        // Calculate adjusted stake per instrument for open markets
+        const adjustedStakePerInstrument = openMarketInstruments.length > 0 ?
+          promptInput.totalStake / openMarketInstruments.length : 0;
+
         const userPrompt = `
 Analyze the provided data and generate trading strategy:
 
 Total Stake: ${promptInput.totalStake}
 Available Instruments: ${promptInput.instruments.join(', ')}
 Trading Mode: ${promptInput.tradingMode}
+
+MARKET STATUS (CRITICAL - Only trade instruments with MARKET OPEN):
+${marketStatusInfo}
+
+TRADEABLE INSTRUMENTS (Markets Currently Open): ${openMarketInstruments.join(', ')}
+${openMarketInstruments.length === 0 ? 'WARNING: No markets are currently open for trading!' : ''}
+
+Suggested Stake Per Open Market: $${adjustedStakePerInstrument.toFixed(2)}
 
 Recent Price Data:
 ${Object.entries(promptInput.instrumentTicks).map(([instrument, ticks]) =>
@@ -256,9 +280,15 @@ ${Object.entries(promptInput.instrumentTicks).map(([instrument, ticks]) =>
 
 ${promptInput.formattedIndicatorsString}
 
+IMPORTANT TRADING RULES:
+1. ONLY trade instruments where market status shows "MARKET OPEN"
+2. If no markets are open, return empty tradesToExecute array
+3. Distribute the total stake evenly among open market instruments
+4. Focus your analysis on instruments with open markets
+
 Return ONLY a JSON object with this structure:
 {
-  "overallReasoning": "your strategy explanation",
+  "overallReasoning": "your strategy explanation including market status considerations",
   "tradesToExecute": [
     {
       "instrument": "instrument_name",

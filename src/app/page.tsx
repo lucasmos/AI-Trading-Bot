@@ -1951,6 +1951,8 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             selectedAccountType={selectedDerivAccountType}
             displayAccountId={selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId}
             syncStatus={selectedDerivAccountType === 'demo' ? demoSyncStatus : realSyncStatus}
+            sessionProfitLoss={0} // Will be updated by trade monitor
+            completedTrades={0} // Will be updated by trade monitor
           />
           <TradingChart
                 instrument={currentInstrument}
