@@ -410,26 +410,15 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
     let output: VolatilitySingleTradeProposal | null = null;
 
     try {
-      // Try Gemini first through the standard prompt
-      const geminiResult = await determineDerivContractTypePrompt(promptGenerationInput) as { output: VolatilitySingleTradeProposal | null };
-      output = geminiResult.output;
+      // Try DeepSeek first (now primary) with enhanced AI service
+      const enhancedAI = getEnhancedAI();
 
-      if (output) {
-        console.log(`[AI Single Flow/${input.currentInstrument}] Gemini generation successful`);
-      } else {
-        throw new Error('Gemini returned null output');
-      }
-    } catch (geminiError) {
-      console.warn(`[AI Single Flow/${input.currentInstrument}] Gemini failed, falling back to DeepSeek:`, geminiError instanceof Error ? geminiError.message : 'Unknown error');
+      console.log(`[AI Single Flow/${input.currentInstrument}] Attempting DeepSeek generation (primary)`);
 
-      try {
-        // Fallback to DeepSeek with enhanced AI service
-        const enhancedAI = getEnhancedAI();
+      // Build the prompt manually for DeepSeek
+      const systemPrompt = `You are an expert AI trading strategist for Deriv Volatility Indices. Analyze the provided data and return a JSON response matching the exact schema.`;
 
-        // Build the prompt manually for DeepSeek
-        const systemPrompt = `You are an expert AI trading strategist for Deriv Volatility Indices. Analyze the provided data and return a JSON response matching the exact schema.`;
-
-        const userPrompt = `
+      const userPrompt = `
 Analyze the provided data for the instrument: ${input.currentInstrument}.
 User has selected the trade type: ${input.userSelectedTradeType}.
 Recommended stake for this trade: ${input.stakePerTrade}.
@@ -469,23 +458,36 @@ Return ONLY a JSON object with this exact structure:
   "reasoning": "your analysis"
 }`;
 
-        const deepSeekResponse = await enhancedAI.generateStructuredWithFallback<VolatilitySingleTradeProposal>(
-          userPrompt,
-          VolatilitySingleTradeProposalSchema,
-          systemPrompt
-        );
+      const deepSeekResponse = await enhancedAI.generateStructuredWithFallback<VolatilitySingleTradeProposal>(
+        userPrompt,
+        VolatilitySingleTradeProposalSchema,
+        systemPrompt
+      );
 
-        output = deepSeekResponse;
-        console.log(`[AI Single Flow/${input.currentInstrument}] DeepSeek fallback successful`);
-      } catch (deepSeekError) {
-        console.error(`[AI Single Flow/${input.currentInstrument}] Both Gemini and DeepSeek failed:`, deepSeekError);
+      output = deepSeekResponse;
+      console.log(`[AI Single Flow/${input.currentInstrument}] DeepSeek generation successful (primary)`);
+    } catch (deepSeekError) {
+      console.warn(`[AI Single Flow/${input.currentInstrument}] DeepSeek failed, falling back to Gemini:`, deepSeekError instanceof Error ? deepSeekError.message : 'Unknown error');
+
+      try {
+        // Fallback to Gemini through the standard prompt
+        const geminiResult = await determineDerivContractTypePrompt(promptGenerationInput) as { output: VolatilitySingleTradeProposal | null };
+        output = geminiResult.output;
+
+        if (output) {
+          console.log(`[AI Single Flow/${input.currentInstrument}] Gemini fallback successful`);
+        } else {
+          throw new Error('Gemini returned null output');
+        }
+      } catch (geminiError) {
+        console.error(`[AI Single Flow/${input.currentInstrument}] Both DeepSeek and Gemini failed:`, geminiError);
         return {
           instrument: input.currentInstrument as ExternalVolatilityInstrumentType,
           shouldTrade: false,
-          reasoning: `All AI services failed. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`,
+          reasoning: `All AI services failed. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}`,
         };
       }
-    }
+
 
     if (!output) {
       console.error(`[AI Single Flow/${input.currentInstrument}] AI failed to generate a trade proposal. Null output.`);

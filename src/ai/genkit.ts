@@ -12,34 +12,34 @@ export class EnhancedAIService {
   private deepSeekService = getDeepSeekService();
 
   /**
-   * Generate response with automatic fallback to DeepSeek if Gemini fails
+   * Generate response with automatic fallback to Gemini if DeepSeek fails
    */
   async generateWithFallback(prompt: string, systemPrompt?: string): Promise<string> {
     try {
-      console.log('[EnhancedAI] Attempting generation with Gemini');
+      console.log('[EnhancedAI] Attempting generation with DeepSeek (primary)');
 
-      // Try Gemini first
-      const geminiResponse = await ai.generate({
-        model: 'googleai/gemini-2.0-flash',
-        prompt: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,
-      });
-
-      if (geminiResponse.text) {
-        console.log('[EnhancedAI] Gemini generation successful');
-        return geminiResponse.text;
-      }
-
-      throw new Error('Gemini returned empty response');
+      // Try DeepSeek first (now primary)
+      const deepSeekResponse = await this.deepSeekService.generate(prompt, systemPrompt);
+      console.log('[EnhancedAI] DeepSeek generation successful');
+      return deepSeekResponse;
     } catch (error) {
-      console.warn('[EnhancedAI] Gemini failed, falling back to DeepSeek:', error instanceof Error ? error.message : 'Unknown error');
+      console.warn('[EnhancedAI] DeepSeek failed, falling back to Gemini:', error instanceof Error ? error.message : 'Unknown error');
 
       try {
-        const deepSeekResponse = await this.deepSeekService.generate(prompt, systemPrompt);
-        console.log('[EnhancedAI] DeepSeek fallback successful');
-        return deepSeekResponse;
-      } catch (deepSeekError) {
-        console.error('[EnhancedAI] Both Gemini and DeepSeek failed:', deepSeekError);
-        throw new Error(`All AI services failed. Gemini: ${error instanceof Error ? error.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`);
+        const geminiResponse = await ai.generate({
+          model: 'googleai/gemini-2.0-flash',
+          prompt: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,
+        });
+
+        if (geminiResponse.text) {
+          console.log('[EnhancedAI] Gemini fallback successful');
+          return geminiResponse.text;
+        }
+
+        throw new Error('Gemini returned empty response');
+      } catch (geminiError) {
+        console.error('[EnhancedAI] Both DeepSeek and Gemini failed:', geminiError);
+        throw new Error(`All AI services failed. DeepSeek: ${error instanceof Error ? error.message : 'Unknown'}. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}`);
       }
     }
   }
@@ -53,36 +53,36 @@ export class EnhancedAIService {
     systemPrompt?: string
   ): Promise<T> {
     try {
-      console.log('[EnhancedAI] Attempting structured generation with Gemini');
+      console.log('[EnhancedAI] Attempting structured generation with DeepSeek (primary)');
 
-      // Try Gemini first
-      const geminiResponse = await ai.generate({
-        model: 'googleai/gemini-2.0-flash',
-        prompt: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,
-        output: { schema },
-      });
-
-      if (geminiResponse.output) {
-        console.log('[EnhancedAI] Gemini structured generation successful');
-        return geminiResponse.output as T;
-      }
-
-      throw new Error('Gemini returned empty structured response');
+      // Try DeepSeek first (now primary)
+      const schemaDescription = JSON.stringify(schema, null, 2);
+      const deepSeekResponse = await this.deepSeekService.generateStructured<T>(
+        prompt,
+        schemaDescription,
+        systemPrompt
+      );
+      console.log('[EnhancedAI] DeepSeek structured generation successful');
+      return deepSeekResponse;
     } catch (error) {
-      console.warn('[EnhancedAI] Gemini structured generation failed, falling back to DeepSeek:', error instanceof Error ? error.message : 'Unknown error');
+      console.warn('[EnhancedAI] DeepSeek structured generation failed, falling back to Gemini:', error instanceof Error ? error.message : 'Unknown error');
 
       try {
-        const schemaDescription = JSON.stringify(schema, null, 2);
-        const deepSeekResponse = await this.deepSeekService.generateStructured<T>(
-          prompt,
-          schemaDescription,
-          systemPrompt
-        );
-        console.log('[EnhancedAI] DeepSeek structured fallback successful');
-        return deepSeekResponse;
-      } catch (deepSeekError) {
-        console.error('[EnhancedAI] Both Gemini and DeepSeek structured generation failed:', deepSeekError);
-        throw new Error(`All AI services failed for structured generation. Gemini: ${error instanceof Error ? error.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`);
+        const geminiResponse = await ai.generate({
+          model: 'googleai/gemini-2.0-flash',
+          prompt: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt,
+          output: { schema },
+        });
+
+        if (geminiResponse.output) {
+          console.log('[EnhancedAI] Gemini structured fallback successful');
+          return geminiResponse.output as T;
+        }
+
+        throw new Error('Gemini returned empty structured response');
+      } catch (geminiError) {
+        console.error('[EnhancedAI] Both DeepSeek and Gemini structured generation failed:', geminiError);
+        throw new Error(`All AI services failed for structured generation. DeepSeek: ${error instanceof Error ? error.message : 'Unknown'}. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}`);
       }
     }
   }
