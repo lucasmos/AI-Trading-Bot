@@ -481,6 +481,9 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             setAllTradingTimesData({ error: timesData.error });
             logAutomatedTradingEvent(`Error fetching all trading times: ${timesData.error}`);
           } else if (timesData) {
+            // console.log('[Trading Times Debug] Raw trading times data structure:', JSON.stringify(timesData, null, 2));
+            // Also log to AI Trading Log for debugging
+            logAutomatedTradingEvent(`Trading times data structure: ${JSON.stringify(Object.keys(timesData || {}))}`);
             setAllTradingTimesData(timesData);
             logAutomatedTradingEvent('All trading times data fetched successfully.');
           } else {
@@ -588,10 +591,23 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
 
     console.log(`[Market Status Debug] Looking for symbol: ${derivSymbol} for instrument: ${currentInstrument}`);
 
-    if (allTradingTimesData && Array.isArray(allTradingTimesData.markets)) {
+    // Handle both possible data structures: direct markets array or nested in trading_times
+    let marketsData = null;
+    if (allTradingTimesData) {
+      if (Array.isArray(allTradingTimesData.markets)) {
+        marketsData = allTradingTimesData.markets;
+      } else if (allTradingTimesData.trading_times && Array.isArray(allTradingTimesData.trading_times.markets)) {
+        marketsData = allTradingTimesData.trading_times.markets;
+      } else if (Array.isArray(allTradingTimesData)) {
+        // In case the data is directly an array of markets
+        marketsData = allTradingTimesData;
+      }
+    }
+
+    if (marketsData && Array.isArray(marketsData)) {
       // Debug: List all available symbols
       const availableSymbols: string[] = [];
-      for (const market of allTradingTimesData.markets) {
+      for (const market of marketsData) {
         if (market && Array.isArray(market.submarkets)) {
           for (const submarket of market.submarkets) {
             if (submarket && Array.isArray(submarket.symbols)) {
@@ -604,10 +620,9 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
           }
         }
       }
-      // Debug: Show first 20 available symbols if needed
       // console.log(`[Market Status Debug] Available symbols in trading times data:`, availableSymbols.slice(0, 20));
 
-      for (const market of allTradingTimesData.markets) {
+      for (const market of marketsData) {
         if (market && Array.isArray(market.submarkets)) {
           for (const submarket of market.submarkets) {
             if (submarket && Array.isArray(submarket.symbols)) {
@@ -632,6 +647,13 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
         }
         if (foundSymbolData) break;
       }
+    } else {
+      console.log(`[Market Status Debug] No valid markets data found. Data structure:`, {
+        allTradingTimesData: allTradingTimesData,
+        type: typeof allTradingTimesData,
+        keys: allTradingTimesData ? Object.keys(allTradingTimesData) : []
+      });
+      logAutomatedTradingEvent(`No markets data found in trading times. Keys: ${allTradingTimesData ? Object.keys(allTradingTimesData).join(', ') : 'none'}`);
     }
 
     if (foundSymbolData) {
@@ -640,24 +662,56 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     } else {
       console.log(`[Market Status Debug] Symbol ${derivSymbol} not found. Trying fallback logic...`);
 
-      // Fallback: For major forex pairs, use general forex market hours if specific data not found
-      if (['frxEURUSD', 'frxGBPUSD', 'frxXAUUSD', 'frxXPDUSD', 'frxXPTUSD', 'frxXAGUSD'].includes(derivSymbol)) {
-        console.log(`[Market Status Debug] Using fallback forex hours for ${derivSymbol}`);
-        const fallbackData = {
-          times: {
-            opens: ['00:00:00'],
-            closes: ['23:59:59']
-          },
-          trading_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-          events: [
-            {
-              dates: 'Fridays',
-              descrip: 'Closes early (at 20:55)',
-              times: '20:55:00'
-            }
-          ],
-          feed_license: 'realtime'
-        };
+      // Fallback: For major forex pairs and commodities, use general market hours if specific data not found
+      if (['frxEURUSD', 'frxGBPUSD', 'frxXAUUSD', 'frxXPDUSD', 'frxXPTUSD', 'frxXAGUSD', 'cryBTCUSD', 'cryETHUSD'].includes(derivSymbol)) {
+        console.log(`[Market Status Debug] Using fallback hours for ${derivSymbol}`);
+
+        let fallbackData;
+        if (derivSymbol.startsWith('cry')) {
+          // Crypto: 24/7 trading
+          fallbackData = {
+            times: {
+              opens: ['00:00:00'],
+              closes: ['23:59:59']
+            },
+            trading_days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            events: [],
+            feed_license: 'realtime'
+          };
+        } else if (derivSymbol.startsWith('frxXAU') || derivSymbol.startsWith('frxXAG') || derivSymbol.startsWith('frxXPD') || derivSymbol.startsWith('frxXPT')) {
+          // Commodities: Mon-Fri with gap
+          fallbackData = {
+            times: {
+              opens: ['00:00:00', '22:00:00'],
+              closes: ['21:00:00', '23:59:59']
+            },
+            trading_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            events: [
+              {
+                dates: 'Fridays',
+                descrip: 'Closes early (at 20:55)'
+              }
+            ],
+            feed_license: 'realtime'
+          };
+        } else {
+          // Forex: Mon-Fri standard hours
+          fallbackData = {
+            times: {
+              opens: ['00:00:00'],
+              closes: ['23:59:59']
+            },
+            trading_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+            events: [
+              {
+                dates: 'Fridays',
+                descrip: 'Closes early (at 20:55)'
+              }
+            ],
+            feed_license: 'realtime'
+          };
+        }
+
         setCurrentInstrumentTradingTimes(fallbackData);
         logAutomatedTradingEvent(`Using fallback trading times for ${derivSymbol}.`);
       } else {

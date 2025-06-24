@@ -152,16 +152,19 @@ export function getCurrentMarketStatus(
     if (isFriday) {
       const fridayEarlyCloseEvent = events.find(event =>
         event.dates.toLowerCase().includes('friday') &&
-        event.descrip.toLowerCase().includes('closes early') &&
-        event.times
+        event.descrip.toLowerCase().includes('closes early')
       );
 
-      if (fridayEarlyCloseEvent && fridayEarlyCloseEvent.times) {
-        const [eventH, eventM, eventS] = fridayEarlyCloseEvent.times.split(':').map(Number);
-        const earlyCloseTime = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate(), eventH, eventM, eventS || 0));
+      if (fridayEarlyCloseEvent) {
+        // Extract time from description like "Closes early (at 20:55)"
+        const timeMatch = fridayEarlyCloseEvent.descrip.match(/at (\d{2}):(\d{2})/);
+        if (timeMatch) {
+          const [, hours, minutes] = timeMatch;
+          const earlyCloseTime = new Date(Date.UTC(referenceDateUTC.getUTCFullYear(), referenceDateUTC.getUTCMonth(), referenceDateUTC.getUTCDate(), parseInt(hours), parseInt(minutes), 0));
 
-        if (referenceDateUTC >= earlyCloseTime) {
-          isOpen = false;
+          if (referenceDateUTC >= earlyCloseTime) {
+            isOpen = false;
+          }
         }
       }
     }
