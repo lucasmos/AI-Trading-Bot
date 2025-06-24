@@ -236,7 +236,8 @@ function isTimeInSession(currentTimeUTC: Date, sessionOpenGMT: string, sessionCl
     return false;
 
   } else { // Same-day session
-    return currentTimeUTC >= sessionOpenDateUTC && currentTimeUTC < sessionCloseDateUTC;
+    const isInSession = currentTimeUTC >= sessionOpenDateUTC && currentTimeUTC < sessionCloseDateUTC;
+    return isInSession;
   }
 }
 

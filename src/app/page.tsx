@@ -586,13 +586,39 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
     const derivSymbol = instrumentToDerivSymbol(currentInstrument);
     let foundSymbolData: DerivSymbolSpecificTradingData | null = null;
 
+    console.log(`[Market Status Debug] Looking for symbol: ${derivSymbol} for instrument: ${currentInstrument}`);
+
     if (allTradingTimesData && Array.isArray(allTradingTimesData.markets)) {
+      // Debug: List all available symbols
+      const availableSymbols: string[] = [];
+      for (const market of allTradingTimesData.markets) {
+        if (market && Array.isArray(market.submarkets)) {
+          for (const submarket of market.submarkets) {
+            if (submarket && Array.isArray(submarket.symbols)) {
+              submarket.symbols.forEach((s: any) => {
+                if (s && s.symbol) {
+                  availableSymbols.push(s.symbol);
+                }
+              });
+            }
+          }
+        }
+      }
+      // Debug: Show first 20 available symbols if needed
+      // console.log(`[Market Status Debug] Available symbols in trading times data:`, availableSymbols.slice(0, 20));
+
       for (const market of allTradingTimesData.markets) {
         if (market && Array.isArray(market.submarkets)) {
           for (const submarket of market.submarkets) {
             if (submarket && Array.isArray(submarket.symbols)) {
               const symbolData = submarket.symbols.find((s: any) => s && s.symbol === derivSymbol);
               if (symbolData) {
+                console.log(`[Market Status Debug] Found symbol data for ${derivSymbol}:`, {
+                  symbol: symbolData.symbol,
+                  times: symbolData.times,
+                  trading_days: symbolData.trading_days,
+                  events: symbolData.events
+                });
                 foundSymbolData = {
                   times: symbolData.times,
                   events: symbolData.events,
@@ -612,9 +638,33 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
       setCurrentInstrumentTradingTimes(foundSymbolData);
       logAutomatedTradingEvent(`Successfully derived trading times for ${derivSymbol}.`);
     } else {
-      const errorMessage = `Trading times data not found for ${derivSymbol} in the global list.`;
-      setCurrentInstrumentTradingTimes({ error: errorMessage });
-      logAutomatedTradingEvent(errorMessage);
+      console.log(`[Market Status Debug] Symbol ${derivSymbol} not found. Trying fallback logic...`);
+
+      // Fallback: For major forex pairs, use general forex market hours if specific data not found
+      if (['frxEURUSD', 'frxGBPUSD', 'frxXAUUSD', 'frxXPDUSD', 'frxXPTUSD', 'frxXAGUSD'].includes(derivSymbol)) {
+        console.log(`[Market Status Debug] Using fallback forex hours for ${derivSymbol}`);
+        const fallbackData = {
+          times: {
+            opens: ['00:00:00'],
+            closes: ['23:59:59']
+          },
+          trading_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          events: [
+            {
+              dates: 'Fridays',
+              descrip: 'Closes early (at 20:55)',
+              times: '20:55:00'
+            }
+          ],
+          feed_license: 'realtime'
+        };
+        setCurrentInstrumentTradingTimes(fallbackData);
+        logAutomatedTradingEvent(`Using fallback trading times for ${derivSymbol}.`);
+      } else {
+        const errorMessage = `Trading times data not found for ${derivSymbol} in the global list.`;
+        setCurrentInstrumentTradingTimes({ error: errorMessage });
+        logAutomatedTradingEvent(errorMessage);
+      }
     }
   }, [currentInstrument, allTradingTimesData, isLoadingAllTradingTimes, logAutomatedTradingEvent]);
 
@@ -1777,7 +1827,7 @@ function mapDerivStatusToLocal(derivStatus?: DerivContractStatusData['status']):
             displayAccountId={selectedDerivAccountType === 'demo' ? derivDemoAccountId : derivRealAccountId}
             syncStatus={selectedDerivAccountType === 'demo' ? demoSyncStatus : realSyncStatus}
           />
-          <TradingChart 
+          <TradingChart
                 instrument={currentInstrument}
                 onInstrumentChange={handleInstrumentChange}
                 instrumentsToShow={FOREX_CRYPTO_COMMODITY_INSTRUMENTS}
