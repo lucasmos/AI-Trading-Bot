@@ -87,9 +87,9 @@ export class DigitAnalysisService {
    * Generate bot trading signal
    */
   static generateTradingSignal(
-    prediction: DigitPredictionModel, 
-    analysis: DigitAnalysisResult, 
-    currentTick: number
+    prediction: DigitPredictionModel,
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
   ): BotTradingSignal {
     const { predictedDigit, confidence, estimatedOccurrence } = prediction;
 
@@ -119,8 +119,9 @@ export class DigitAnalysisService {
       action = 'SKIP';
     }
 
-    // Calculate optimal entry point
-    const entryTick = currentTick + Math.max(1, Math.floor(estimatedOccurrence * 0.8));
+    // Entry tick should be the current last digit of the price (0-9)
+    // This is what the trader will use to make the trading decision
+    const entryTick = currentLastDigit;
 
     // Risk assessment
     const riskAssessment = this.assessRisk(prediction, analysis);
@@ -132,7 +133,7 @@ export class DigitAnalysisService {
       entryTick,
       confidence,
       duration: Math.min(10, Math.max(1, estimatedOccurrence)),
-      reasoning: `${prediction.method} analysis suggests digit ${predictedDigit} with ${confidence.toFixed(1)}% confidence`,
+      reasoning: `${prediction.method} analysis suggests digit ${predictedDigit} with ${confidence.toFixed(1)}% confidence. Current last digit is ${currentLastDigit}.`,
       riskAssessment
     };
   }
@@ -151,7 +152,11 @@ export class DigitAnalysisService {
     return ticks.map(tick => {
       const priceStr = tick.price.toString();
       const lastChar = priceStr.charAt(priceStr.length - 1);
-      return parseInt(lastChar);
+      const lastDigit = parseInt(lastChar);
+
+      // Ensure digit 0 is properly handled as a significant digit
+      // parseInt('0') returns 0, which is falsy but valid
+      return isNaN(lastDigit) ? 0 : lastDigit;
     });
   }
 

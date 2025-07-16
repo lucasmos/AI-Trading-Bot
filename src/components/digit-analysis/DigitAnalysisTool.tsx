@@ -69,10 +69,14 @@ export default function DigitAnalysisTool() {
 
 
 
-  // Get last digit from price
+  // Get last digit from price (including 0 as significant)
   const getLastDigit = useCallback((price: number): number => {
     const priceStr = price.toString();
-    return parseInt(priceStr.charAt(priceStr.length - 1));
+    const lastChar = priceStr.charAt(priceStr.length - 1);
+    const lastDigit = parseInt(lastChar);
+
+    // Ensure 0 is treated as a valid digit (not NaN or falsy)
+    return isNaN(lastDigit) ? 0 : lastDigit;
   }, []);
 
   // Fetch historical tick data
@@ -126,8 +130,8 @@ export default function DigitAnalysisTool() {
         const predictionResult = DigitAnalysisService.generatePrediction(analysisResult, currentTick);
         setPrediction(predictionResult);
 
-        // Set entry tick as the predicted digit value
-        setEntryTick(predictionResult.predictedDigit);
+        // Entry tick should be the current last digit of the price (0-9)
+        // This represents the actual digit we're analyzing for trading decisions
 
         const signal = DigitAnalysisService.generateTradingSignal(predictionResult, analysisResult, currentTick);
         setTradingSignal(signal);
@@ -239,8 +243,13 @@ export default function DigitAnalysisTool() {
                       return (
                         <>
                           <span className="text-gray-600">{beforeLastDigit}</span>
-                          <span className="text-5xl font-black text-blue-600 bg-yellow-200 px-2 py-1 rounded-lg border-2 border-yellow-400 shadow-lg animate-pulse">
+                          <span className={`text-5xl font-black px-2 py-1 rounded-lg border-2 shadow-lg animate-pulse ${
+                            lastDigit === '0'
+                              ? 'text-orange-600 bg-orange-200 border-orange-400'
+                              : 'text-blue-600 bg-yellow-200 border-yellow-400'
+                          }`}>
                             {lastDigit}
+                            {lastDigit === '0' && <span className="text-sm text-orange-700 ml-1">⚠</span>}
                           </span>
                         </>
                       );
@@ -253,12 +262,18 @@ export default function DigitAnalysisTool() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-green-600" />
-                      <span>Entry Digit: <strong>{entryTick}</strong></span>
+                      <span>Current Last Digit: <strong>{currentTick}</strong></span>
                     </div>
-                    {currentTick === entryTick && (
+                    {prediction && currentTick === prediction.predictedDigit && (
                       <div className="flex items-center gap-2 bg-green-100 px-3 py-1 rounded-full border-2 border-green-400 animate-bounce">
                         <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                        <span className="text-green-800 font-bold text-xs">MATCH!</span>
+                        <span className="text-green-800 font-bold text-xs">PREDICTION MATCH!</span>
+                      </div>
+                    )}
+                    {currentTick === 0 && (
+                      <div className="flex items-center gap-2 bg-orange-100 px-3 py-1 rounded-full border-2 border-orange-400">
+                        <div className="w-2 h-2 bg-orange-600 rounded-full"></div>
+                        <span className="text-orange-800 font-bold text-xs">DIGIT 0 - VALID ENTRY!</span>
                       </div>
                     )}
                   </div>
@@ -328,21 +343,23 @@ export default function DigitAnalysisTool() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Activity className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium">Current Digit</span>
+                      <span className="text-sm font-medium">Current Last Digit</span>
                     </div>
                     <div className="text-2xl font-bold text-blue-600 font-mono bg-blue-50 px-3 py-1 rounded-lg border">
                       {currentTick}
                     </div>
+                    <div className="text-xs text-gray-500 text-center">Last digit of current price</div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-green-600" />
-                      <span className="text-sm font-medium">Entry Digit</span>
+                      <span className="text-sm font-medium">Predicted Digit</span>
                     </div>
                     <div className="text-2xl font-bold text-green-600 font-mono bg-green-50 px-3 py-1 rounded-lg border">
-                      {entryTick}
+                      {prediction.predictedDigit}
                     </div>
+                    <div className="text-xs text-gray-500 text-center">AI prediction for next occurrence</div>
                   </div>
                 </div>
 
@@ -373,8 +390,8 @@ export default function DigitAnalysisTool() {
                       </div>
                       <div><span className="font-medium">Strategy:</span> {tradingSignal.strategy}</div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">Entry Digit:</span>
-                        <span className="font-mono font-bold text-lg bg-green-100 px-2 py-1 rounded border">
+                        <span className="font-medium">Current Last Digit:</span>
+                        <span className="font-mono font-bold text-lg bg-blue-100 px-2 py-1 rounded border">
                           {tradingSignal.entryTick}
                         </span>
                       </div>
@@ -387,6 +404,13 @@ export default function DigitAnalysisTool() {
                     <div className="mt-2 p-2 bg-blue-50 rounded border">
                       <span className="font-medium text-sm">Reasoning:</span>
                       <p className="text-xs text-gray-600 mt-1">{tradingSignal.reasoning}</p>
+                    </div>
+                    <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
+                      <span className="font-medium text-sm text-yellow-800">Trading Context:</span>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        For <strong>{tradingSignal.strategy}</strong> strategy: The current last digit ({tradingSignal.entryTick})
+                        is your reference point. AI predicts digit {tradingSignal.digit} will appear next with {tradingSignal.confidence.toFixed(1)}% confidence.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -469,6 +493,12 @@ export default function DigitAnalysisTool() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="mb-3 p-2 bg-blue-50 rounded border border-blue-200">
+                  <p className="text-xs text-blue-700">
+                    <strong>Note:</strong> Digit 0 is significant and counted as a valid trading entry point.
+                    It's classified as EVEN and UNDER 5 for trading strategies.
+                  </p>
+                </div>
                 <div className="space-y-3">
                   {Object.entries(analysis.digitProbabilities).map(([digit, probability]) => {
                     const digitNum = parseInt(digit);
@@ -476,9 +506,12 @@ export default function DigitAnalysisTool() {
                     const streak = analysis.streakAnalysis[digitNum];
 
                     return (
-                      <div key={digit} className="flex items-center justify-between p-2 border rounded">
+                      <div key={digit} className={`flex items-center justify-between p-2 border rounded ${digitNum === 0 ? 'bg-yellow-50 border-yellow-200' : ''}`}>
                         <div className="flex items-center gap-3">
-                          <span className="font-mono text-lg font-bold w-6">{digit}</span>
+                          <span className={`font-mono text-lg font-bold w-6 ${digitNum === 0 ? 'text-yellow-700' : ''}`}>
+                            {digit}
+                            {digitNum === 0 && <span className="text-xs text-yellow-600 ml-1">⚠</span>}
+                          </span>
                           <div className="flex gap-1">
                             <Badge variant={probability > 12 ? 'default' : probability < 8 ? 'destructive' : 'secondary'} className="text-xs">
                               {probability.toFixed(1)}%
@@ -525,12 +558,28 @@ export default function DigitAnalysisTool() {
                 </div>
 
                 <div className="space-y-2">
+                  <h4 className="font-semibold">⚠ Important: Digit 0 Significance</h4>
+                  <div className="p-3 bg-orange-50 rounded border border-orange-200">
+                    <p className="text-sm text-orange-800">
+                      <strong>Digit 0 is a valid and significant trading entry point!</strong>
+                    </p>
+                    <ul className="text-sm text-orange-700 mt-2 space-y-1 list-disc list-inside">
+                      <li><strong>Classification:</strong> Digit 0 is EVEN and UNDER 5</li>
+                      <li><strong>Trading Value:</strong> Counts as a legitimate last digit for all strategies</li>
+                      <li><strong>Frequency:</strong> Appears with ~10% theoretical probability like other digits</li>
+                      <li><strong>Visual Indicator:</strong> Highlighted in orange when it appears</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
                   <h4 className="font-semibold">How to Use This Tool</h4>
                   <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
                     <li>Monitor the predicted digit and confidence level</li>
                     <li>Wait for the estimated number of rounds</li>
                     <li>Place your trade at the suggested entry point</li>
                     <li>Use the pattern analysis to validate predictions</li>
+                    <li><strong>Remember:</strong> Digit 0 is a valid entry point for all strategies</li>
                   </ul>
                 </div>
 
