@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TrendingUp, TrendingDown, Target, Activity, BarChart3, Clock } from 'lucide-react';
 import { VolatilityInstrumentType, PriceTick } from '@/types';
-import { getDerivTicks } from '@/lib/deriv-service';
+import { getTicks } from '@/services/deriv';
 import { DigitAnalysisService, DigitAnalysisResult, DigitPredictionModel, BotTradingSignal } from '@/lib/digit-analysis-service';
 
 interface DigitAnalysis {
@@ -54,24 +54,13 @@ export default function DigitAnalysisTool() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [currentTick, setCurrentTick] = useState<number>(0);
 
-  // Convert instrument name to Deriv symbol
-  const getDerivSymbol = (instrument: VolatilityInstrumentType): string => {
-    const symbolMap: Record<VolatilityInstrumentType, string> = {
-      'Volatility 10 Index': 'R_10',
-      'Volatility 25 Index': 'R_25',
-      'Volatility 50 Index': 'R_50',
-      'Volatility 75 Index': 'R_75',
-      'Volatility 100 Index': 'R_100'
-    };
-    return symbolMap[instrument];
-  };
+
 
   // Fetch historical tick data
   const fetchTickData = useCallback(async () => {
     setIsAnalyzing(true);
     try {
-      const symbol = getDerivSymbol(selectedInstrument);
-      const tickData = await getDerivTicks(symbol, 100); // Get last 100 ticks
+      const tickData = await getTicks(selectedInstrument, 100); // Get last 100 ticks
       setTicks(tickData);
       setLastUpdate(new Date());
     } catch (error) {
