@@ -6,6 +6,11 @@ export type VolatilityInstrumentType =
   | 'Volatility 50 Index'
   | 'Volatility 75 Index'
   | 'Volatility 100 Index'
+  | 'Volatility 10 (1s) Index'
+  | 'Volatility 25 (1s) Index'
+  | 'Volatility 50 (1s) Index'
+  | 'Volatility 75 (1s) Index'
+  | 'Volatility 100 (1s) Index'
   | 'Boom 500 Index'
   | 'Boom 600 Index'
   | 'Boom 900 Index'
@@ -28,7 +33,7 @@ export type ForexCommodityInstrumentType =
   | 'Platinum/USD'
   | 'Silver/USD';
 
-export type VolatilityIndexInstrumentType = string; // Refined later
+export type VolatilityIndexInstrumentType = VolatilityInstrumentType | JumpInstrumentType;
 
 export type InstrumentType = ForexCommodityInstrumentType | VolatilityIndexInstrumentType;
 

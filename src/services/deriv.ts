@@ -326,6 +326,17 @@ export const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
       return 'R_75';
     case 'Volatility 100 Index':
       return 'R_100';
+    // 1-Second Volatility Indices
+    case 'Volatility 10 (1s) Index':
+      return '1HZ10V';
+    case 'Volatility 25 (1s) Index':
+      return '1HZ25V';
+    case 'Volatility 50 (1s) Index':
+      return '1HZ50V';
+    case 'Volatility 75 (1s) Index':
+      return '1HZ75V';
+    case 'Volatility 100 (1s) Index':
+      return '1HZ100V';
     default:
       // This case handles any string that wasn't explicitly matched.
       // It might be an instrument symbol not yet in TradingInstrument type,

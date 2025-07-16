@@ -39,8 +39,18 @@ interface DigitPatternAnalysis {
 }
 
 const VOLATILITY_INSTRUMENTS: VolatilityInstrumentType[] = [
-  'Volatility 10 Index', 'Volatility 25 Index', 'Volatility 50 Index',
-  'Volatility 75 Index', 'Volatility 100 Index'
+  // Regular Volatility Indices
+  'Volatility 10 Index',
+  'Volatility 25 Index',
+  'Volatility 50 Index',
+  'Volatility 75 Index',
+  'Volatility 100 Index',
+  // 1-Second Volatility Indices
+  'Volatility 10 (1s) Index',
+  'Volatility 25 (1s) Index',
+  'Volatility 50 (1s) Index',
+  'Volatility 75 (1s) Index',
+  'Volatility 100 (1s) Index'
 ];
 
 export default function DigitAnalysisTool() {
@@ -50,11 +60,20 @@ export default function DigitAnalysisTool() {
   const [prediction, setPrediction] = useState<DigitPredictionModel | null>(null);
   const [tradingSignal, setTradingSignal] = useState<BotTradingSignal | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isLive, setIsLive] = useState(false);
+  const [isLive, setIsLive] = useState(true); // Start live by default
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [currentTick, setCurrentTick] = useState<number>(0);
+  const [entryTick, setEntryTick] = useState<number>(0);
+  const [tickCount, setTickCount] = useState<number>(0);
 
 
+
+  // Get last digit from price
+  const getLastDigit = useCallback((price: number): number => {
+    const priceStr = price.toString();
+    return parseInt(priceStr.charAt(priceStr.length - 1));
+  }, []);
 
   // Fetch historical tick data
   const fetchTickData = useCallback(async () => {
@@ -62,13 +81,22 @@ export default function DigitAnalysisTool() {
     try {
       const tickData = await getTicks(selectedInstrument, 100); // Get last 100 ticks
       setTicks(tickData);
+
+      // Set current price and tick from latest data
+      if (tickData.length > 0) {
+        const latestTick = tickData[tickData.length - 1];
+        setCurrentPrice(latestTick.price);
+        setCurrentTick(getLastDigit(latestTick.price));
+        setTickCount(tickData.length);
+      }
+
       setLastUpdate(new Date());
     } catch (error) {
       console.error('Error fetching tick data:', error);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedInstrument]);
+  }, [selectedInstrument, getLastDigit]);
 
   // Analyze digit patterns using the advanced service
   const analyzeDigitPatterns = useCallback((tickData: PriceTick[]): DigitAnalysisResult | null => {
@@ -98,19 +126,20 @@ export default function DigitAnalysisTool() {
         const predictionResult = DigitAnalysisService.generatePrediction(analysisResult, currentTick);
         setPrediction(predictionResult);
 
+        // Set entry tick as the predicted digit value
+        setEntryTick(predictionResult.predictedDigit);
+
         const signal = DigitAnalysisService.generateTradingSignal(predictionResult, analysisResult, currentTick);
         setTradingSignal(signal);
       }
-
-      setCurrentTick(ticks.length);
     }
   }, [ticks, analyzeDigitPatterns, currentTick]);
 
-  // Auto-refresh when live mode is enabled
+  // Auto-refresh when live mode is enabled (constantly running)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isLive) {
-      interval = setInterval(fetchTickData, 2000); // Refresh every 2 seconds
+      interval = setInterval(fetchTickData, 1000); // Refresh every 1 second for more responsive updates
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -126,9 +155,23 @@ export default function DigitAnalysisTool() {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            Digit Analysis Tool
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Digit Analysis Tool
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-blue-600" />
+                <span>Ticks: <strong>{tickCount}</strong></span>
+              </div>
+              {isLive && (
+                <div className="flex items-center gap-2 bg-green-100 px-2 py-1 rounded-full">
+                  <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></div>
+                  <span className="text-green-800 font-medium text-xs">LIVE</span>
+                </div>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -140,36 +183,102 @@ export default function DigitAnalysisTool() {
               onChange={(e) => setSelectedInstrument(e.target.value as VolatilityInstrumentType)}
               className="w-full p-2 border rounded-md"
             >
-              {VOLATILITY_INSTRUMENTS.map(instrument => (
-                <option key={instrument} value={instrument}>{instrument}</option>
-              ))}
+              <optgroup label="Regular Volatility Indices">
+                <option value="Volatility 10 Index">Volatility 10 Index</option>
+                <option value="Volatility 25 Index">Volatility 25 Index</option>
+                <option value="Volatility 50 Index">Volatility 50 Index</option>
+                <option value="Volatility 75 Index">Volatility 75 Index</option>
+                <option value="Volatility 100 Index">Volatility 100 Index</option>
+              </optgroup>
+              <optgroup label="1-Second Volatility Indices">
+                <option value="Volatility 10 (1s) Index">Volatility 10 (1s) Index</option>
+                <option value="Volatility 25 (1s) Index">Volatility 25 (1s) Index</option>
+                <option value="Volatility 50 (1s) Index">Volatility 50 (1s) Index</option>
+                <option value="Volatility 75 (1s) Index">Volatility 75 (1s) Index</option>
+                <option value="Volatility 100 (1s) Index">Volatility 100 (1s) Index</option>
+              </optgroup>
             </select>
           </div>
 
           {/* Control Buttons */}
           <div className="flex gap-2">
-            <Button 
-              onClick={fetchTickData} 
-              disabled={isAnalyzing}
+            <Button
+              onClick={fetchTickData}
+              disabled={isAnalyzing || isLive}
               variant="outline"
               size="sm"
             >
-              {isAnalyzing ? 'Analyzing...' : 'Refresh Data'}
+              {isAnalyzing ? 'Analyzing...' : 'Manual Refresh'}
             </Button>
             <Button
               onClick={() => setIsLive(!isLive)}
-              variant={isLive ? "destructive" : "default"}
+              variant={isLive ? "default" : "secondary"}
               size="sm"
+              className={isLive ? "bg-green-600 hover:bg-green-700" : ""}
             >
-              {isLive ? 'Stop Live' : 'Start Live'}
+              <div className="flex items-center gap-2">
+                {isLive && <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>}
+                {isLive ? 'Live Mode ON' : 'Start Live Mode'}
+              </div>
             </Button>
           </div>
 
+          {/* Current Price Display */}
+          {currentPrice && (
+            <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+              <CardContent className="pt-4">
+                <div className="text-center space-y-2">
+                  <div className="text-sm font-medium text-gray-600">Current Price - {selectedInstrument}</div>
+                  <div className="text-3xl font-mono font-bold text-gray-800">
+                    {(() => {
+                      const priceStr = currentPrice.toString();
+                      const lastDigitIndex = priceStr.length - 1;
+                      const beforeLastDigit = priceStr.substring(0, lastDigitIndex);
+                      const lastDigit = priceStr.charAt(lastDigitIndex);
+
+                      return (
+                        <>
+                          <span className="text-gray-600">{beforeLastDigit}</span>
+                          <span className="text-5xl font-black text-blue-600 bg-yellow-200 px-2 py-1 rounded-lg border-2 border-yellow-400 shadow-lg animate-pulse">
+                            {lastDigit}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex justify-center items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse"></div>
+                      <span>Current Digit: <strong>{currentTick}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Target className="h-4 w-4 text-green-600" />
+                      <span>Entry Digit: <strong>{entryTick}</strong></span>
+                    </div>
+                    {currentTick === entryTick && (
+                      <div className="flex items-center gap-2 bg-green-100 px-3 py-1 rounded-full border-2 border-green-400 animate-bounce">
+                        <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                        <span className="text-green-800 font-bold text-xs">MATCH!</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Status */}
           {lastUpdate && (
-            <div className="text-xs text-gray-500">
-              Last updated: {lastUpdate.toLocaleTimeString()}
-              {isLive && <Badge variant="secondary" className="ml-2">LIVE</Badge>}
+            <div className="text-xs text-gray-500 flex items-center justify-between">
+              <span>Last updated: {lastUpdate.toLocaleTimeString()}</span>
+              <div className="flex items-center gap-2">
+                {isLive && (
+                  <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <Badge variant="default" className="bg-green-600">LIVE</Badge>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
@@ -207,21 +316,33 @@ export default function DigitAnalysisTool() {
                   </AlertDescription>
                 </Alert>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      <span className="text-sm font-medium">Estimated Occurrence</span>
+                      <span className="text-sm font-medium">Est. Occurrence</span>
                     </div>
-                    <div className="text-2xl font-bold">{prediction.estimatedOccurrence} ticks</div>
+                    <div className="text-xl font-bold">{prediction.estimatedOccurrence} ticks</div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Target className="h-4 w-4" />
-                      <span className="text-sm font-medium">Current Tick</span>
+                      <Activity className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium">Current Digit</span>
                     </div>
-                    <div className="text-2xl font-bold">#{currentTick}</div>
+                    <div className="text-2xl font-bold text-blue-600 font-mono bg-blue-50 px-3 py-1 rounded-lg border">
+                      {currentTick}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium">Entry Digit</span>
+                    </div>
+                    <div className="text-2xl font-bold text-green-600 font-mono bg-green-50 px-3 py-1 rounded-lg border">
+                      {entryTick}
+                    </div>
                   </div>
                 </div>
 
@@ -238,22 +359,34 @@ export default function DigitAnalysisTool() {
 
                 {/* Trading Signal */}
                 {tradingSignal && (
-                  <div className="mt-4 p-4 border rounded-lg bg-muted/50">
-                    <h4 className="font-semibold mb-2">Bot Trading Signal</h4>
+                  <div className="mt-4 p-4 border rounded-lg bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      Bot Trading Signal
+                    </h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
+                      <div className="flex items-center gap-2">
                         <span className="font-medium">Action:</span>
-                        <Badge variant={tradingSignal.action === 'BUY' ? 'default' : tradingSignal.action === 'WAIT' ? 'secondary' : 'destructive'} className="ml-2">
+                        <Badge variant={tradingSignal.action === 'BUY' ? 'default' : tradingSignal.action === 'WAIT' ? 'secondary' : 'destructive'} className="ml-1">
                           {tradingSignal.action}
                         </Badge>
                       </div>
                       <div><span className="font-medium">Strategy:</span> {tradingSignal.strategy}</div>
-                      <div><span className="font-medium">Entry Tick:</span> #{tradingSignal.entryTick}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Entry Digit:</span>
+                        <span className="font-mono font-bold text-lg bg-green-100 px-2 py-1 rounded border">
+                          {tradingSignal.entryTick}
+                        </span>
+                      </div>
                       <div><span className="font-medium">Duration:</span> {tradingSignal.duration} ticks</div>
                     </div>
-                    <div className="mt-2">
-                      <span className="font-medium">Risk Assessment:</span>
-                      <p className="text-xs text-gray-600">{tradingSignal.riskAssessment}</p>
+                    <div className="mt-3 p-2 bg-white rounded border">
+                      <span className="font-medium text-sm">Risk Assessment:</span>
+                      <p className="text-xs text-gray-600 mt-1">{tradingSignal.riskAssessment}</p>
+                    </div>
+                    <div className="mt-2 p-2 bg-blue-50 rounded border">
+                      <span className="font-medium text-sm">Reasoning:</span>
+                      <p className="text-xs text-gray-600 mt-1">{tradingSignal.reasoning}</p>
                     </div>
                   </div>
                 )}

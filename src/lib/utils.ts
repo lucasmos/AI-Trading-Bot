@@ -43,6 +43,17 @@ export function getInstrumentDecimalPlaces(instrument: InstrumentType): number {
       return 2;
     case 'R_75':
       return 4;
+    // 1-Second Volatility Indices
+    case 'Volatility 10 (1s) Index':
+      return 3; // Same as regular R_10
+    case 'Volatility 25 (1s) Index':
+      return 3; // Same as regular R_25
+    case 'Volatility 50 (1s) Index':
+      return 2; // Same as regular R_50
+    case 'Volatility 75 (1s) Index':
+      return 4; // Same as regular R_75
+    case 'Volatility 100 (1s) Index':
+      return 2; // Same as regular R_100
     case 'Boom 500 Index':
     case 'Boom 600 Index':
     case 'Boom 900 Index':
