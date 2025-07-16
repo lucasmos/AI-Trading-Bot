@@ -11,6 +11,7 @@ import { TrendingUp, TrendingDown, Target, Activity, BarChart3, Clock } from 'lu
 import { VolatilityInstrumentType, PriceTick } from '@/types';
 import { getTicks } from '@/services/deriv';
 import { DigitAnalysisService, DigitAnalysisResult, DigitPredictionModel, BotTradingSignal } from '@/lib/digit-analysis-service';
+import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 interface DigitAnalysis {
   digit: number;
@@ -70,8 +71,12 @@ export default function DigitAnalysisTool() {
 
 
   // Get last digit from price (including 0 as significant)
-  const getLastDigit = useCallback((price: number): number => {
-    const priceStr = price.toString();
+  const getLastDigit = useCallback((price: number, instrument: VolatilityInstrumentType): number => {
+    // Get the correct decimal places for this instrument
+    const decimalPlaces = getInstrumentDecimalPlaces(instrument);
+
+    // Format the price with the correct decimal places to preserve trailing zeros
+    const priceStr = price.toFixed(decimalPlaces);
     const lastChar = priceStr.charAt(priceStr.length - 1);
     const lastDigit = parseInt(lastChar);
 
@@ -90,7 +95,7 @@ export default function DigitAnalysisTool() {
       if (tickData.length > 0) {
         const latestTick = tickData[tickData.length - 1];
         setCurrentPrice(latestTick.price);
-        setCurrentTick(getLastDigit(latestTick.price));
+        setCurrentTick(getLastDigit(latestTick.price, selectedInstrument));
         setTickCount(tickData.length);
       }
 
@@ -103,13 +108,13 @@ export default function DigitAnalysisTool() {
   }, [selectedInstrument, getLastDigit]);
 
   // Analyze digit patterns using the advanced service
-  const analyzeDigitPatterns = useCallback((tickData: PriceTick[]): DigitAnalysisResult | null => {
+  const analyzeDigitPatterns = useCallback((tickData: PriceTick[], instrument: VolatilityInstrumentType): DigitAnalysisResult | null => {
     if (tickData.length < 20) {
       return null;
     }
 
     try {
-      return DigitAnalysisService.analyzeDigitPatterns(tickData);
+      return DigitAnalysisService.analyzeDigitPatterns(tickData, instrument);
     } catch (error) {
       console.error('Error analyzing digit patterns:', error);
       return null;
@@ -123,7 +128,7 @@ export default function DigitAnalysisTool() {
   // Perform analysis when ticks change
   useEffect(() => {
     if (ticks.length > 0) {
-      const analysisResult = analyzeDigitPatterns(ticks);
+      const analysisResult = analyzeDigitPatterns(ticks, selectedInstrument);
       if (analysisResult) {
         setAnalysis(analysisResult);
 
@@ -137,7 +142,7 @@ export default function DigitAnalysisTool() {
         setTradingSignal(signal);
       }
     }
-  }, [ticks, analyzeDigitPatterns, currentTick]);
+  }, [ticks, analyzeDigitPatterns, currentTick, selectedInstrument]);
 
   // Auto-refresh when live mode is enabled (constantly running)
   useEffect(() => {
@@ -235,7 +240,9 @@ export default function DigitAnalysisTool() {
                   <div className="text-sm font-medium text-gray-600">Current Price - {selectedInstrument}</div>
                   <div className="text-3xl font-mono font-bold text-gray-800">
                     {(() => {
-                      const priceStr = currentPrice.toString();
+                      // Use correct decimal places to preserve trailing zeros
+                      const decimalPlaces = getInstrumentDecimalPlaces(selectedInstrument);
+                      const priceStr = currentPrice.toFixed(decimalPlaces);
                       const lastDigitIndex = priceStr.length - 1;
                       const beforeLastDigit = priceStr.substring(0, lastDigitIndex);
                       const lastDigit = priceStr.charAt(lastDigitIndex);
