@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
-import { LayoutDashboard, History, Settings, LogOut, DollarSign, LogIn, CreditCard, BarChartBig, User, AlertCircle, Activity, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { LayoutDashboard, History, Settings, LogOut, DollarSign, LogIn, CreditCard, BarChartBig, User, AlertCircle, Activity, RefreshCw, Eye, EyeOff, Target } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
@@ -84,6 +84,19 @@ export function SidebarContentComponent() {
               <Link href="/volatility-trading">
                 <Activity />
                 <span>Volatility Trading</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === '/digit-analysis'}
+              tooltip={{ children: 'Digit Analysis Tool', side: 'right' }}
+              onClick={handleMenuClick}
+            >
+              <Link href="/digit-analysis">
+                <Target />
+                <span>Digit Analysis</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
