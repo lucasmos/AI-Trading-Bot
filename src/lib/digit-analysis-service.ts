@@ -221,7 +221,9 @@ export class DigitAnalysisService {
       confidence,
       reasoning: hasConsecutiveOddPattern
         ? `Pattern detected: ${consecutiveOddCount} consecutive odd digits followed by even digit ${currentLastDigit}. Strong even signal!`
-        : `No consecutive odd pattern detected (${consecutiveOddCount} consecutive odds). Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
+        : consecutiveOddCount >= 3
+          ? `Pattern found: ${consecutiveOddCount} consecutive odd digits detected! Waiting for even digit to appear.`
+          : `No consecutive odd pattern detected (${consecutiveOddCount} consecutive odds). Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
       isMatch: shouldSignal
     };
   }
@@ -258,7 +260,9 @@ export class DigitAnalysisService {
       confidence,
       reasoning: hasConsecutiveEvenPattern
         ? `Pattern detected: ${consecutiveEvenCount} consecutive even digits followed by odd digit ${currentLastDigit}. Strong odd signal!`
-        : `No consecutive even pattern detected (${consecutiveEvenCount} consecutive evens). Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
+        : consecutiveEvenCount >= 3
+          ? `Pattern found: ${consecutiveEvenCount} consecutive even digits detected! Waiting for odd digit to appear.`
+          : `No consecutive even pattern detected (${consecutiveEvenCount} consecutive evens). Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
       isMatch: shouldSignal
     };
   }
