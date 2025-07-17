@@ -10,6 +10,7 @@ export interface DigitAnalysisResult {
   streakAnalysis: Record<number, { current: number; max: number; avg: number }>;
   gapAnalysis: Record<number, { current: number; avg: number; max: number }>;
   cyclicalPatterns: Record<string, number>;
+  recentDigits: number[]; // Added for consecutive pattern analysis
 }
 
 export interface DigitPredictionModel {
@@ -74,7 +75,8 @@ export class DigitAnalysisService {
       consecutivePatterns: this.analyzeConsecutivePatterns(digits),
       streakAnalysis: this.analyzeStreaks(digits),
       gapAnalysis: this.analyzeGaps(digits),
-      cyclicalPatterns: this.analyzeCyclicalPatterns(digits)
+      cyclicalPatterns: this.analyzeCyclicalPatterns(digits),
+      recentDigits: digits // Include recent digits for consecutive pattern analysis
     };
   }
 
@@ -100,6 +102,38 @@ export class DigitAnalysisService {
     }
 
     return bestPrediction;
+  }
+
+  /**
+   * Count consecutive odd digits from the end of the sequence
+   */
+  private static getConsecutiveOddCount(digits: number[]): number {
+    let count = 0;
+    // Start from the end and count backwards
+    for (let i = digits.length - 1; i >= 0; i--) {
+      if (digits[i] % 2 === 1) { // Odd digit
+        count++;
+      } else {
+        break; // Stop at first even digit
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Count consecutive even digits from the end of the sequence
+   */
+  private static getConsecutiveEvenCount(digits: number[]): number {
+    let count = 0;
+    // Start from the end and count backwards
+    for (let i = digits.length - 1; i >= 0; i--) {
+      if (digits[i] % 2 === 0) { // Even digit
+        count++;
+      } else {
+        break; // Stop at first odd digit
+      }
+    }
+    return count;
   }
 
   /**
@@ -156,17 +190,28 @@ export class DigitAnalysisService {
   }
 
   /**
-   * Generate Digits Even prediction
+   * Generate Digits Even prediction based on consecutive odd pattern
    */
   private static generateDigitsEvenPrediction(
     analysis: DigitAnalysisResult,
     currentLastDigit: number
   ): StrategyPrediction {
-    const evenBias = analysis.evenOddBias.even;
-    const confidence = evenBias;
+    // Get recent digits for pattern analysis
+    const recentDigits = analysis.recentDigits || [];
+
+    // Check for 3+ consecutive odd digits pattern
+    const consecutiveOddCount = this.getConsecutiveOddCount(recentDigits);
+    const hasConsecutiveOddPattern = consecutiveOddCount >= 3;
+
+    // Current digit should be even for match
     const isCurrentEven = currentLastDigit % 2 === 0;
-    const isMatch = isCurrentEven && evenBias > 50;
-    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    // Signal conditions: 3+ consecutive odds followed by current even digit
+    const shouldSignal = hasConsecutiveOddPattern && isCurrentEven;
+    const action = shouldSignal ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    // Confidence based on pattern strength
+    const confidence = hasConsecutiveOddPattern ? Math.min(85, 60 + (consecutiveOddCount * 5)) : 45;
 
     return {
       strategy: 'DIGITSEVEN',
@@ -174,23 +219,36 @@ export class DigitAnalysisService {
       targetDigit: undefined, // Even strategy doesn't target specific digit
       currentDigit: currentLastDigit,
       confidence,
-      reasoning: `Even digits have ${evenBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
-      isMatch
+      reasoning: hasConsecutiveOddPattern
+        ? `Pattern detected: ${consecutiveOddCount} consecutive odd digits followed by even digit ${currentLastDigit}. Strong even signal!`
+        : `No consecutive odd pattern detected (${consecutiveOddCount} consecutive odds). Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
+      isMatch: shouldSignal
     };
   }
 
   /**
-   * Generate Digits Odd prediction
+   * Generate Digits Odd prediction based on consecutive even pattern
    */
   private static generateDigitsOddPrediction(
     analysis: DigitAnalysisResult,
     currentLastDigit: number
   ): StrategyPrediction {
-    const oddBias = analysis.evenOddBias.odd;
-    const confidence = oddBias;
+    // Get recent digits for pattern analysis
+    const recentDigits = analysis.recentDigits || [];
+
+    // Check for 3+ consecutive even digits pattern
+    const consecutiveEvenCount = this.getConsecutiveEvenCount(recentDigits);
+    const hasConsecutiveEvenPattern = consecutiveEvenCount >= 3;
+
+    // Current digit should be odd for match
     const isCurrentOdd = currentLastDigit % 2 === 1;
-    const isMatch = isCurrentOdd && oddBias > 50;
-    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    // Signal conditions: 3+ consecutive evens followed by current odd digit
+    const shouldSignal = hasConsecutiveEvenPattern && isCurrentOdd;
+    const action = shouldSignal ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    // Confidence based on pattern strength
+    const confidence = hasConsecutiveEvenPattern ? Math.min(85, 60 + (consecutiveEvenCount * 5)) : 45;
 
     return {
       strategy: 'DIGITSODD',
@@ -198,8 +256,10 @@ export class DigitAnalysisService {
       targetDigit: undefined, // Odd strategy doesn't target specific digit
       currentDigit: currentLastDigit,
       confidence,
-      reasoning: `Odd digits have ${oddBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
-      isMatch
+      reasoning: hasConsecutiveEvenPattern
+        ? `Pattern detected: ${consecutiveEvenCount} consecutive even digits followed by odd digit ${currentLastDigit}. Strong odd signal!`
+        : `No consecutive even pattern detected (${consecutiveEvenCount} consecutive evens). Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
+      isMatch: shouldSignal
     };
   }
 
