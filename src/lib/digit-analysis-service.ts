@@ -1,5 +1,4 @@
-import { PriceTick, VolatilityInstrumentType } from '@/types';
-import { getInstrumentDecimalPlaces } from '@/lib/utils';
+import { PriceTick } from '@/types';
 
 export interface DigitAnalysisResult {
   digitFrequencies: Record<number, number>;
@@ -40,13 +39,13 @@ export class DigitAnalysisService {
   /**
    * Comprehensive digit analysis from tick data
    */
-  static analyzeDigitPatterns(ticks: PriceTick[], instrument: VolatilityInstrumentType): DigitAnalysisResult {
+  static analyzeDigitPatterns(ticks: PriceTick[]): DigitAnalysisResult {
     if (ticks.length < 20) {
       throw new Error('Insufficient tick data for analysis. Minimum 20 ticks required.');
     }
 
     const recentTicks = ticks.slice(-this.ANALYSIS_WINDOW);
-    const digits = this.extractLastDigits(recentTicks, instrument);
+    const digits = this.extractLastDigits(recentTicks);
 
     return {
       digitFrequencies: this.calculateDigitFrequencies(digits),
@@ -149,13 +148,10 @@ export class DigitAnalysisService {
 
   // Private helper methods
 
-  private static extractLastDigits(ticks: PriceTick[], instrument: VolatilityInstrumentType): number[] {
-    // Get the correct decimal places for this instrument
-    const decimalPlaces = getInstrumentDecimalPlaces(instrument);
-
+  private static extractLastDigits(ticks: PriceTick[]): number[] {
     return ticks.map(tick => {
-      // Format the price with the correct decimal places to preserve trailing zeros
-      const priceStr = tick.price.toFixed(decimalPlaces);
+      // Use price as-is without forcing decimal places
+      const priceStr = tick.price.toString();
       const lastChar = priceStr.charAt(priceStr.length - 1);
       const lastDigit = parseInt(lastChar);
 
