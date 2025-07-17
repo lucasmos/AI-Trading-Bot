@@ -32,6 +32,24 @@ export interface BotTradingSignal {
   riskAssessment: string;
 }
 
+export interface StrategyPrediction {
+  strategy: 'DIGITSMATCH' | 'DIGITSEVEN' | 'DIGITSODD' | 'DIGITSOVER' | 'DIGITSUNDER';
+  action: 'MATCH_NOW' | 'NO_SIGNAL';
+  targetDigit?: number;
+  currentDigit: number;
+  confidence: number;
+  reasoning: string;
+  isMatch: boolean;
+}
+
+export interface AllStrategyPredictions {
+  digitsMatch: StrategyPrediction;
+  digitsEven: StrategyPrediction;
+  digitsOdd: StrategyPrediction;
+  digitsOver: StrategyPrediction;
+  digitsUnder: StrategyPrediction;
+}
+
 export class DigitAnalysisService {
   private static readonly ANALYSIS_WINDOW = 200; // Number of ticks to analyze
   private static readonly MIN_CONFIDENCE_THRESHOLD = 65;
@@ -82,6 +100,157 @@ export class DigitAnalysisService {
     }
 
     return bestPrediction;
+  }
+
+  /**
+   * Generate predictions for all trading strategies
+   */
+  static generateAllStrategyPredictions(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): AllStrategyPredictions {
+    // Generate individual strategy predictions
+    const digitsMatch = this.generateDigitsMatchPrediction(analysis, currentLastDigit);
+    const digitsEven = this.generateDigitsEvenPrediction(analysis, currentLastDigit);
+    const digitsOdd = this.generateDigitsOddPrediction(analysis, currentLastDigit);
+    const digitsOver = this.generateDigitsOverPrediction(analysis, currentLastDigit);
+    const digitsUnder = this.generateDigitsUnderPrediction(analysis, currentLastDigit);
+
+    return {
+      digitsMatch,
+      digitsEven,
+      digitsOdd,
+      digitsOver,
+      digitsUnder
+    };
+  }
+
+  /**
+   * Generate Digits Match prediction
+   */
+  private static generateDigitsMatchPrediction(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): StrategyPrediction {
+    // Find the digit with highest probability that's not the current digit
+    const sortedDigits = Object.entries(analysis.digitProbabilities)
+      .map(([digit, prob]) => ({ digit: parseInt(digit), probability: prob }))
+      .sort((a, b) => b.probability - a.probability);
+
+    const bestDigit = sortedDigits[0];
+    const confidence = bestDigit.probability;
+
+    // Check if current digit matches the predicted digit
+    const isMatch = currentLastDigit === bestDigit.digit;
+    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    return {
+      strategy: 'DIGITSMATCH',
+      action,
+      targetDigit: bestDigit.digit,
+      currentDigit: currentLastDigit,
+      confidence,
+      reasoning: `Digit ${bestDigit.digit} has ${confidence.toFixed(1)}% probability based on frequency analysis`,
+      isMatch
+    };
+  }
+
+  /**
+   * Generate Digits Even prediction
+   */
+  private static generateDigitsEvenPrediction(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): StrategyPrediction {
+    const evenBias = analysis.evenOddBias.even;
+    const confidence = evenBias;
+    const isCurrentEven = currentLastDigit % 2 === 0;
+    const isMatch = isCurrentEven && evenBias > 50;
+    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    return {
+      strategy: 'DIGITSEVEN',
+      action,
+      targetDigit: undefined, // Even strategy doesn't target specific digit
+      currentDigit: currentLastDigit,
+      confidence,
+      reasoning: `Even digits have ${evenBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
+      isMatch
+    };
+  }
+
+  /**
+   * Generate Digits Odd prediction
+   */
+  private static generateDigitsOddPrediction(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): StrategyPrediction {
+    const oddBias = analysis.evenOddBias.odd;
+    const confidence = oddBias;
+    const isCurrentOdd = currentLastDigit % 2 === 1;
+    const isMatch = isCurrentOdd && oddBias > 50;
+    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    return {
+      strategy: 'DIGITSODD',
+      action,
+      targetDigit: undefined, // Odd strategy doesn't target specific digit
+      currentDigit: currentLastDigit,
+      confidence,
+      reasoning: `Odd digits have ${oddBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
+      isMatch
+    };
+  }
+
+  /**
+   * Generate Digits Over prediction
+   */
+  private static generateDigitsOverPrediction(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): StrategyPrediction {
+    const overBias = analysis.overUnderBias.over;
+    const threshold = analysis.overUnderBias.threshold;
+    const confidence = overBias;
+    const isCurrentOver = currentLastDigit > threshold;
+    const isMatch = isCurrentOver && overBias > 50;
+    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    return {
+      strategy: 'DIGITSOVER',
+      action,
+      targetDigit: undefined, // Over strategy doesn't target specific digit
+      currentDigit: currentLastDigit,
+      confidence,
+      reasoning: `Digits over ${threshold} have ${overBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentOver ? 'over' : 'under'} ${threshold}`,
+      isMatch
+    };
+  }
+
+  /**
+   * Generate Digits Under prediction
+   */
+  private static generateDigitsUnderPrediction(
+    analysis: DigitAnalysisResult,
+    currentLastDigit: number
+  ): StrategyPrediction {
+    const underBias = analysis.overUnderBias.under;
+    const threshold = analysis.overUnderBias.threshold;
+    const confidence = underBias;
+    const isCurrentUnder = currentLastDigit <= threshold;
+    const isMatch = isCurrentUnder && underBias > 50;
+    const action = confidence >= this.MIN_CONFIDENCE_THRESHOLD && isMatch ? 'MATCH_NOW' : 'NO_SIGNAL';
+
+    return {
+      strategy: 'DIGITSUNDER',
+      action,
+      targetDigit: undefined, // Under strategy doesn't target specific digit
+      currentDigit: currentLastDigit,
+      confidence,
+      reasoning: `Digits under/equal ${threshold} have ${underBias.toFixed(1)}% bias. Current digit ${currentLastDigit} is ${isCurrentUnder ? 'under/equal' : 'over'} ${threshold}`,
+      isMatch
+    };
   }
 
   /**
