@@ -23,37 +23,37 @@ export function getInstrumentDecimalPlaces(instrument: InstrumentType): number {
       return 2;
     case 'Silver/USD':
       return 4;
-    // Volatility Indices
+    // Volatility Indices (CORRECTED with actual Deriv decimal places)
     case 'Volatility 10 Index':
-      return 3; // Example, verify specific index
+      return 3; // 3 decimal places
     case 'Volatility 25 Index':
-      return 3; // Example, verify specific index
+      return 3; // 3 decimal places
     case 'Volatility 50 Index':
-      return 2; // Example, verify specific index
+      return 4; // 4 decimal places (CORRECTED from 2 to 4)
     case 'Volatility 75 Index':
-      return 4; // Example, verify specific index (often has more decimals)
+      return 4; // 4 decimal places
     case 'Volatility 100 Index':
     case 'R_100':
-      return 2;
+      return 2; // 2 decimal places
     case 'R_10':
-      return 3;
+      return 3; // 3 decimal places
     case 'R_25':
-      return 3;
+      return 3; // 3 decimal places
     case 'R_50':
-      return 2;
+      return 4; // 4 decimal places (CORRECTED from 2 to 4)
     case 'R_75':
-      return 4;
-    // 1-Second Volatility Indices
+      return 4; // 4 decimal places
+    // 1-Second Volatility Indices (ALL 2 decimal places per Deriv)
     case 'Volatility 10 (1s) Index':
-      return 3; // Same as regular R_10
+      return 2; // 2 decimal places (CORRECTED from 3 to 2)
     case 'Volatility 25 (1s) Index':
-      return 3; // Same as regular R_25
+      return 2; // 2 decimal places (CORRECTED from 3 to 2)
     case 'Volatility 50 (1s) Index':
-      return 2; // Same as regular R_50
+      return 2; // 2 decimal places
     case 'Volatility 75 (1s) Index':
-      return 4; // Same as regular R_75
+      return 2; // 2 decimal places (CORRECTED from 4 to 2)
     case 'Volatility 100 (1s) Index':
-      return 2; // Same as regular R_100
+      return 2; // 2 decimal places
     case 'Boom 500 Index':
     case 'Boom 600 Index':
     case 'Boom 900 Index':
