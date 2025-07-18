@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Activity, Target, BarChart3, Clock, TrendingUp, TrendingDown } from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
 import { VolatilityInstrumentType, PriceTick } from '@/types';
 import { getTicks } from '@/services/deriv';
 import { DigitAnalysisService, DigitAnalysisResult, DigitPredictionModel, BotTradingSignal, AllStrategyPredictions } from '@/lib/digit-analysis-service';
@@ -42,6 +43,15 @@ export default function DigitAnalysisTool() {
   const [prediction, setPrediction] = useState<DigitPredictionModel | null>(null);
   const [tradingSignal, setTradingSignal] = useState<BotTradingSignal | null>(null);
   const [strategyPredictions, setStrategyPredictions] = useState<AllStrategyPredictions | null>(null);
+
+  // Track previous strategy states for toast notifications
+  const previousStrategyStates = useRef<{
+    digitsEven: 'MATCH_NOW' | 'NO_SIGNAL';
+    digitsOdd: 'MATCH_NOW' | 'NO_SIGNAL';
+  }>({
+    digitsEven: 'NO_SIGNAL',
+    digitsOdd: 'NO_SIGNAL'
+  });
 
   // Get last digit from price (including 0 as significant)
   const getLastDigit = useCallback((price: number, instrument: VolatilityInstrumentType): number => {
@@ -114,6 +124,58 @@ export default function DigitAnalysisTool() {
     }
   }, [ticks, analyzeDigitPatterns, currentTick, selectedInstrument]);
 
+  // Effect to detect strategy changes and show toast notifications
+  useEffect(() => {
+    if (!strategyPredictions) return;
+
+    const currentEvenAction = strategyPredictions.digitsEven.action;
+    const currentOddAction = strategyPredictions.digitsOdd.action;
+
+    // Check for new Even strategy signal
+    if (currentEvenAction === 'MATCH_NOW' && previousStrategyStates.current.digitsEven === 'NO_SIGNAL') {
+      toast.success(
+        `🎯 DIGITS EVEN - MATCH NOW!\n3+ consecutive odd digits detected!\nCurrent digit: ${strategyPredictions.digitsEven.currentDigit} (EVEN)`,
+        {
+          duration: 6000,
+          style: {
+            background: '#dbeafe',
+            border: '2px solid #3b82f6',
+            color: '#1e40af',
+            fontWeight: 'bold',
+            fontSize: '14px'
+          },
+          icon: '🔵',
+          position: 'top-right'
+        }
+      );
+    }
+
+    // Check for new Odd strategy signal
+    if (currentOddAction === 'MATCH_NOW' && previousStrategyStates.current.digitsOdd === 'NO_SIGNAL') {
+      toast.success(
+        `🎯 DIGITS ODD - MATCH NOW!\n3+ consecutive even digits detected!\nCurrent digit: ${strategyPredictions.digitsOdd.currentDigit} (ODD)`,
+        {
+          duration: 6000,
+          style: {
+            background: '#f3e8ff',
+            border: '2px solid #8b5cf6',
+            color: '#7c3aed',
+            fontWeight: 'bold',
+            fontSize: '14px'
+          },
+          icon: '🟣',
+          position: 'top-right'
+        }
+      );
+    }
+
+    // Update previous states
+    previousStrategyStates.current = {
+      digitsEven: currentEvenAction,
+      digitsOdd: currentOddAction
+    };
+  }, [strategyPredictions]);
+
   // Live mode effect
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -134,6 +196,7 @@ export default function DigitAnalysisTool() {
 
   return (
     <div className="space-y-4">
+      <Toaster />
       <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-gray-900 dark:text-gray-100">
@@ -327,10 +390,30 @@ export default function DigitAnalysisTool() {
                   </div>
                 ) : (
                   <div className="text-center py-4">
-                    <div className="text-gray-500 dark:text-gray-400 text-sm">No Signal</div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      Current digit: {strategyPredictions.digitsEven.currentDigit} ({strategyPredictions.digitsEven.currentDigit % 2 === 0 ? 'Even' : 'Odd'})
-                    </div>
+                    {/* Check if we should show popup notification for pattern detection */}
+                    {strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected') ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-center gap-2 bg-blue-100 dark:bg-blue-900 px-4 py-3 rounded-full border-2 border-blue-400 dark:border-blue-600 animate-bounce">
+                          <div className="w-3 h-3 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse"></div>
+                          <span className="text-blue-800 dark:text-blue-200 font-bold text-sm">PATTERN DETECTED!</span>
+                        </div>
+                        <div className="bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                          <div className="text-blue-800 dark:text-blue-200 font-semibold text-sm mb-1">
+                            3+ Consecutive Odds Found!
+                          </div>
+                          <div className="text-blue-700 dark:text-blue-300 text-xs">
+                            Wait for EVEN digit to appear, then trade DIGITS EVEN
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400 text-sm">No Signal</div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          Current digit: {strategyPredictions.digitsEven.currentDigit} ({strategyPredictions.digitsEven.currentDigit % 2 === 0 ? 'Even' : 'Odd'})
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
@@ -368,10 +451,30 @@ export default function DigitAnalysisTool() {
                   </div>
                 ) : (
                   <div className="text-center py-4">
-                    <div className="text-gray-500 dark:text-gray-400 text-sm">No Signal</div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      Current: {strategyPredictions.digitsOdd.currentDigit} ({strategyPredictions.digitsOdd.currentDigit % 2 === 0 ? 'Even' : 'Odd'})
-                    </div>
+                    {/* Check if we should show popup notification for pattern detection */}
+                    {strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected') ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-center gap-2 bg-purple-100 dark:bg-purple-900 px-4 py-3 rounded-full border-2 border-purple-400 dark:border-purple-600 animate-bounce">
+                          <div className="w-3 h-3 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse"></div>
+                          <span className="text-purple-800 dark:text-purple-200 font-bold text-sm">PATTERN DETECTED!</span>
+                        </div>
+                        <div className="bg-purple-50 dark:bg-purple-900/30 border-2 border-purple-200 dark:border-purple-700 rounded-lg p-3">
+                          <div className="text-purple-800 dark:text-purple-200 font-semibold text-sm mb-1">
+                            3+ Consecutive Evens Found!
+                          </div>
+                          <div className="text-purple-700 dark:text-purple-300 text-xs">
+                            Wait for ODD digit to appear, then trade DIGITS ODD
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400 text-sm">No Signal</div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          Current: {strategyPredictions.digitsOdd.currentDigit} ({strategyPredictions.digitsOdd.currentDigit % 2 === 0 ? 'Even' : 'Odd'})
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
