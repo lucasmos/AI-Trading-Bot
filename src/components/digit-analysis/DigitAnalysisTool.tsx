@@ -134,7 +134,7 @@ export default function DigitAnalysisTool() {
     // Check for new Even strategy signal
     if (currentEvenAction === 'MATCH_NOW' && previousStrategyStates.current.digitsEven === 'NO_SIGNAL') {
       toast.success(
-        `🎯 DIGITS EVEN - MATCH NOW!\n3+ consecutive odd digits detected!\nCurrent digit: ${strategyPredictions.digitsEven.currentDigit} (EVEN)`,
+        `🎯 DIGITS EVEN - MATCH NOW!\n2+ consecutive odd digits detected!\nCurrent digit: ${strategyPredictions.digitsEven.currentDigit} (EVEN)`,
         {
           duration: 6000,
           style: {
@@ -153,7 +153,7 @@ export default function DigitAnalysisTool() {
     // Check for new Odd strategy signal
     if (currentOddAction === 'MATCH_NOW' && previousStrategyStates.current.digitsOdd === 'NO_SIGNAL') {
       toast.success(
-        `🎯 DIGITS ODD - MATCH NOW!\n3+ consecutive even digits detected!\nCurrent digit: ${strategyPredictions.digitsOdd.currentDigit} (ODD)`,
+        `🎯 DIGITS ODD - MATCH NOW!\n2+ consecutive even digits detected!\nCurrent digit: ${strategyPredictions.digitsOdd.currentDigit} (ODD)`,
         {
           duration: 6000,
           style: {
@@ -392,7 +392,7 @@ export default function DigitAnalysisTool() {
                 ) : (
                   <div className="text-center py-4">
                     {/* Check if we should show popup notification for pattern detection */}
-                    {(strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected') ||
+                    {(strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected!') ||
                       strategyPredictions.digitsEven.reasoning.includes('Pattern found:')) ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-center gap-2 bg-blue-100 dark:bg-blue-900 px-4 py-3 rounded-full border-2 border-blue-400 dark:border-blue-600 animate-bounce">
@@ -401,7 +401,7 @@ export default function DigitAnalysisTool() {
                         </div>
                         <div className="bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-200 dark:border-blue-700 rounded-lg p-3">
                           <div className="text-blue-800 dark:text-blue-200 font-semibold text-sm mb-1">
-                            3+ Consecutive Odds Found!
+                            2+ Consecutive Odds Found!
                           </div>
                           <div className="text-blue-700 dark:text-blue-300 text-xs">
                             Wait for EVEN digit to appear, then trade DIGITS EVEN
@@ -455,7 +455,7 @@ export default function DigitAnalysisTool() {
                 ) : (
                   <div className="text-center py-4">
                     {/* Check if we should show popup notification for pattern detection */}
-                    {(strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected') ||
+                    {(strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected!') ||
                       strategyPredictions.digitsOdd.reasoning.includes('Pattern found:')) ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-center gap-2 bg-purple-100 dark:bg-purple-900 px-4 py-3 rounded-full border-2 border-purple-400 dark:border-purple-600 animate-bounce">
@@ -464,7 +464,7 @@ export default function DigitAnalysisTool() {
                         </div>
                         <div className="bg-purple-50 dark:bg-purple-900/30 border-2 border-purple-200 dark:border-purple-700 rounded-lg p-3">
                           <div className="text-purple-800 dark:text-purple-200 font-semibold text-sm mb-1">
-                            3+ Consecutive Evens Found!
+                            2+ Consecutive Evens Found!
                           </div>
                           <div className="text-purple-700 dark:text-purple-300 text-xs">
                             Wait for ODD digit to appear, then trade DIGITS ODD

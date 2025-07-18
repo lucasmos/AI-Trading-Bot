@@ -199,9 +199,9 @@ export class DigitAnalysisService {
     // Get recent digits for pattern analysis
     const recentDigits = analysis.recentDigits || [];
 
-    // Check for 3+ consecutive odd digits pattern
+    // Check for 2+ consecutive odd digits pattern (more sensitive)
     const consecutiveOddCount = this.getConsecutiveOddCount(recentDigits);
-    const hasConsecutiveOddPattern = consecutiveOddCount >= 3;
+    const hasConsecutiveOddPattern = consecutiveOddCount >= 2;
 
     // Current digit should be even for match
     const isCurrentEven = currentLastDigit % 2 === 0;
@@ -221,7 +221,7 @@ export class DigitAnalysisService {
       confidence,
       reasoning: hasConsecutiveOddPattern
         ? `Pattern detected: ${consecutiveOddCount} consecutive odd digits followed by even digit ${currentLastDigit}. Strong even signal!`
-        : consecutiveOddCount >= 3
+        : consecutiveOddCount >= 2
           ? `Pattern found: ${consecutiveOddCount} consecutive odd digits detected! Waiting for even digit to appear.`
           : `No consecutive odd pattern detected (${consecutiveOddCount} consecutive odds). Current digit ${currentLastDigit} is ${isCurrentEven ? 'even' : 'odd'}`,
       isMatch: shouldSignal
@@ -238,9 +238,9 @@ export class DigitAnalysisService {
     // Get recent digits for pattern analysis
     const recentDigits = analysis.recentDigits || [];
 
-    // Check for 3+ consecutive even digits pattern
+    // Check for 2+ consecutive even digits pattern (more sensitive)
     const consecutiveEvenCount = this.getConsecutiveEvenCount(recentDigits);
-    const hasConsecutiveEvenPattern = consecutiveEvenCount >= 3;
+    const hasConsecutiveEvenPattern = consecutiveEvenCount >= 2;
 
     // Current digit should be odd for match
     const isCurrentOdd = currentLastDigit % 2 === 1;
@@ -260,7 +260,7 @@ export class DigitAnalysisService {
       confidence,
       reasoning: hasConsecutiveEvenPattern
         ? `Pattern detected: ${consecutiveEvenCount} consecutive even digits followed by odd digit ${currentLastDigit}. Strong odd signal!`
-        : consecutiveEvenCount >= 3
+        : consecutiveEvenCount >= 2
           ? `Pattern found: ${consecutiveEvenCount} consecutive even digits detected! Waiting for odd digit to appear.`
           : `No consecutive even pattern detected (${consecutiveEvenCount} consecutive evens). Current digit ${currentLastDigit} is ${isCurrentOdd ? 'odd' : 'even'}`,
       isMatch: shouldSignal
