@@ -392,7 +392,8 @@ export default function DigitAnalysisTool() {
                 ) : (
                   <div className="text-center py-4">
                     {/* Check if we should show popup notification for pattern detection */}
-                    {strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected') ? (
+                    {(strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected') ||
+                      strategyPredictions.digitsEven.reasoning.includes('Pattern found:')) ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-center gap-2 bg-blue-100 dark:bg-blue-900 px-4 py-3 rounded-full border-2 border-blue-400 dark:border-blue-600 animate-bounce">
                           <div className="w-3 h-3 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse"></div>
@@ -454,7 +455,8 @@ export default function DigitAnalysisTool() {
                 ) : (
                   <div className="text-center py-4">
                     {/* Check if we should show popup notification for pattern detection */}
-                    {strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected') ? (
+                    {(strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected') ||
+                      strategyPredictions.digitsOdd.reasoning.includes('Pattern found:')) ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-center gap-2 bg-purple-100 dark:bg-purple-900 px-4 py-3 rounded-full border-2 border-purple-400 dark:border-purple-600 animate-bounce">
                           <div className="w-3 h-3 bg-purple-600 dark:bg-purple-400 rounded-full animate-pulse"></div>
