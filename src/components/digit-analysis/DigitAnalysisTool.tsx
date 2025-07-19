@@ -122,6 +122,9 @@ export default function DigitAnalysisTool() {
         
         // Generate strategy predictions for all trading strategies
         const allStrategyPredictions = DigitAnalysisService.generateAllStrategyPredictions(analysisResult, currentTick);
+
+
+
         setStrategyPredictions(allStrategyPredictions);
         
         // Entry tick should be the current last digit of the price (0-9)
@@ -187,20 +190,41 @@ export default function DigitAnalysisTool() {
 
   // Effect to detect pattern changes and show bouncy popup notifications
   useEffect(() => {
-    if (!strategyPredictions) return;
+    if (!strategyPredictions || !analysis) return;
 
-    // Check if Even strategy pattern is detected (3+ consecutive odds)
-    const evenPatternDetected = strategyPredictions.digitsEven.reasoning.includes('consecutive odd digits detected!') ||
-                               strategyPredictions.digitsEven.reasoning.includes('Pattern found:');
+    // Direct check for consecutive patterns using the analysis data
+    const recentDigits = analysis.recentDigits || [];
 
-    // Check if Odd strategy pattern is detected (3+ consecutive evens)
-    const oddPatternDetected = strategyPredictions.digitsOdd.reasoning.includes('consecutive even digits detected!') ||
-                              strategyPredictions.digitsOdd.reasoning.includes('Pattern found:');
+    // Count consecutive odds from the end
+    let consecutiveOdds = 0;
+    for (let i = recentDigits.length - 1; i >= 0; i--) {
+      if (recentDigits[i] % 2 === 1) {
+        consecutiveOdds++;
+      } else {
+        break;
+      }
+    }
+
+    // Count consecutive evens from the end
+    let consecutiveEvens = 0;
+    for (let i = recentDigits.length - 1; i >= 0; i--) {
+      if (recentDigits[i] % 2 === 0) {
+        consecutiveEvens++;
+      } else {
+        break;
+      }
+    }
+
+    // Pattern detection based on direct count
+    const evenPatternDetected = consecutiveOdds >= 3;
+    const oddPatternDetected = consecutiveEvens >= 3;
+
+
 
     // Show bouncy popup for Even strategy pattern detection
     if (evenPatternDetected && !previousPatternStates.current.digitsEvenPatternDetected) {
       toast.success(
-        `🚨 PATTERN ALERT!\n3+ consecutive ODD digits detected!\n🎯 MATCH EVEN NEXT!`,
+        `🚨 PATTERN ALERT!\n${consecutiveOdds} consecutive ODD digits detected!\n🎯 MATCH EVEN NEXT!`,
         {
           duration: 8000,
           style: {
@@ -222,7 +246,7 @@ export default function DigitAnalysisTool() {
     // Show bouncy popup for Odd strategy pattern detection
     if (oddPatternDetected && !previousPatternStates.current.digitsOddPatternDetected) {
       toast.success(
-        `🚨 PATTERN ALERT!\n3+ consecutive EVEN digits detected!\n🎯 MATCH ODD NEXT!`,
+        `🚨 PATTERN ALERT!\n${consecutiveEvens} consecutive EVEN digits detected!\n🎯 MATCH ODD NEXT!`,
         {
           duration: 8000,
           style: {
