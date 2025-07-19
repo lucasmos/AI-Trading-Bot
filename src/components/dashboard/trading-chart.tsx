@@ -10,7 +10,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, ComposedChart, Legend } from "recharts";
 import { Loader2, TrendingUp, TrendingDown, Activity, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
-import { useHybridChart } from '@/hooks/use-hybrid-chart';
+import { useStreamingChart } from '@/hooks/use-streaming-chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
@@ -124,10 +124,10 @@ interface ChartDataPoint {
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
-  const { chartData, isLoading, error, connectionStatus, refresh } = useHybridChart({
+  const { chartData, isLoading, error, connectionStatus, refresh } = useStreamingChart({
     instrument,
-    initialCandleCount: 120,
-    candleTimeframe: 60
+    maxDataPoints: 300,
+    indicatorUpdateInterval: 60
   });
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
@@ -158,7 +158,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   // Calculate Y-axis domain for price chart, including BB
   const yDomainPrice = useMemo(() => {
     if (chartData.length === 0) return ['auto', 'auto'];
-    const prices = chartData.map(d => d.close);
+    const prices = chartData.map(d => d.price);
     const bbUppers = chartData.map(d => d.bbUpper).filter(v => v !== undefined) as number[];
     const bbLowers = chartData.map(d => d.bbLower).filter(v => v !== undefined) as number[];
     const allValues = [...prices, ...bbUppers, ...bbLowers];
@@ -242,7 +242,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
       <div className="flex items-center justify-between mb-4 p-2 bg-muted/50 rounded-lg">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4" />
-          <span className="text-sm font-medium">{instrument} - Real-time Chart</span>
+          <span className="text-sm font-medium">{instrument} - Streaming Chart</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -263,10 +263,19 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           {/* Price + Bollinger Bands Chart */}
           <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} />
-            <YAxis
+            <LineChart
+              data={chartData}
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 10 }}
+                tickMargin={5}
+                type="category"
+                scale="point"
+              />
+              <YAxis
                 yAxisId="left"
                 orientation="left"
                 domain={yDomainPrice}
@@ -274,14 +283,71 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
               />
-              <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+              <ChartTooltip
+                content={<ChartTooltipContent indicator="line" />}
+                labelFormatter={(value) => new Date(value).toLocaleTimeString()}
+                formatter={(value: any, name: string) => [
+                  typeof value === 'number' ? value.toFixed(decimalPlaces) : value,
+                  name
+                ]}
+              />
               <Legend content={<ChartLegendContent />} />
-              <Line type="monotone" dataKey="close" stroke={chartConfig.price.color} strokeWidth={2} dot={false} yAxisId="left" name="Price" />
-              <Line type="monotone" dataKey="bbUpper" stroke={chartConfig.bbUpper.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Upper" />
-              <Line type="monotone" dataKey="bbMiddle" stroke={chartConfig.bbMiddle.color} strokeDasharray="5 5" dot={false} yAxisId="left" name="BB Middle" />
-              <Line type="monotone" dataKey="bbLower" stroke={chartConfig.bbLower.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Lower" />
-              <Line type="monotone" dataKey="ema" stroke={chartConfig.ema.color} strokeWidth={2} dot={false} yAxisId="left" name="EMA (20)" />
-            </ComposedChart>
+              <Line
+                type="monotone"
+                dataKey="price"
+                stroke={chartConfig.price.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="Price"
+                connectNulls={true}
+                animationDuration={0}
+              />
+              <Line
+                type="monotone"
+                dataKey="bbUpper"
+                stroke={chartConfig.bbUpper.color}
+                strokeDasharray="3 3"
+                dot={false}
+                yAxisId="left"
+                name="BB Upper"
+                connectNulls={true}
+                animationDuration={0}
+              />
+              <Line
+                type="monotone"
+                dataKey="bbMiddle"
+                stroke={chartConfig.bbMiddle.color}
+                strokeDasharray="5 5"
+                dot={false}
+                yAxisId="left"
+                name="BB Middle"
+                connectNulls={true}
+                animationDuration={0}
+              />
+              <Line
+                type="monotone"
+                dataKey="bbLower"
+                stroke={chartConfig.bbLower.color}
+                strokeDasharray="3 3"
+                dot={false}
+                yAxisId="left"
+                name="BB Lower"
+                connectNulls={true}
+                animationDuration={0}
+              />
+              <Line
+                type="monotone"
+                dataKey="ema"
+                stroke={chartConfig.ema.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="EMA (20)"
+                connectNulls={true}
+                animationDuration={0}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </div>
         <p className="text-xs text-muted-foreground mt-1 px-2">
@@ -297,7 +363,17 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
-              <Line type="monotone" dataKey="rsi" stroke={chartConfig.rsi.color} strokeWidth={2} dot={false} yAxisId="left" name="RSI" />
+              <Line
+                type="monotone"
+                dataKey="rsi"
+                stroke={chartConfig.rsi.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="RSI"
+                connectNulls={true}
+                animationDuration={0}
+              />
           </LineChart>
         </ResponsiveContainer>
         </div>
@@ -314,8 +390,28 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Legend content={<ChartLegendContent />} />
-              <Line type="monotone" dataKey="macdLine" stroke={chartConfig.macdLine.color} strokeWidth={2} dot={false} yAxisId="left" name="MACD Line" />
-              <Line type="monotone" dataKey="macdSignal" stroke={chartConfig.macdSignal.color} strokeWidth={2} dot={false} yAxisId="left" name="Signal Line" />
+              <Line
+                type="monotone"
+                dataKey="macdLine"
+                stroke={chartConfig.macdLine.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="MACD Line"
+                connectNulls={true}
+                animationDuration={0}
+              />
+              <Line
+                type="monotone"
+                dataKey="macdSignal"
+                stroke={chartConfig.macdSignal.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="Signal Line"
+                connectNulls={true}
+                animationDuration={0}
+              />
               <Bar dataKey="macdHistogram" yAxisId="left" name="Histogram">
                 {chartData.map((entry, index) => (
                   <Bar
