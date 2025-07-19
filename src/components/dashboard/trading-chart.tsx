@@ -54,23 +54,23 @@ const chartConfig = {
   },
   atr: {
     label: "ATR",
-    color: "hsl(var(--chart-7))",
+    color: "#f59e0b", // Amber color that works well in both light and dark modes
   },
   stochasticK: {
     label: "Stochastic %K",
-    color: "hsl(var(--chart-8))",
+    color: "#8b5cf6", // Purple color for good visibility
   },
   stochasticD: {
     label: "Stochastic %D",
-    color: "hsl(var(--chart-9))",
+    color: "#06b6d4", // Cyan color for good visibility
   },
   williamsR: {
     label: "Williams %R",
-    color: "hsl(var(--chart-10))",
+    color: "#f97316", // Orange color for good visibility
   },
   cci: {
     label: "CCI",
-    color: "hsl(var(--chart-11))",
+    color: "#ec4899", // Pink color for good visibility in both themes
   }
 };
 
@@ -437,7 +437,17 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
-              <Line type="monotone" dataKey="atr" stroke={chartConfig.atr.color} strokeWidth={2} dot={false} yAxisId="left" name="ATR" />
+              <Line
+                type="monotone"
+                dataKey="atr"
+                stroke={chartConfig.atr.color}
+                strokeWidth={2}
+                dot={false}
+                yAxisId="left"
+                name="ATR"
+                connectNulls={true}
+                animationDuration={0}
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
