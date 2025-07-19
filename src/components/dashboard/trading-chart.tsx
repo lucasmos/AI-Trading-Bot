@@ -10,7 +10,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, ComposedChart, Legend } from "recharts";
 import { Loader2, TrendingUp, TrendingDown, Activity, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
-import { useRealtimeChart } from '@/hooks/use-realtime-chart';
+import { useHybridChart } from '@/hooks/use-hybrid-chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
@@ -124,7 +124,7 @@ interface ChartDataPoint {
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
-  const { chartData, isLoading, error, connectionStatus, refresh } = useRealtimeChart({
+  const { chartData, isLoading, error, connectionStatus, refresh } = useHybridChart({
     instrument,
     initialCandleCount: 120,
     candleTimeframe: 60
@@ -132,21 +132,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
-  // Calculate Y-axis domain for price chart, including BB
-  const yDomainPrice = useMemo(() => {
-    if (chartData.length === 0) return ['auto', 'auto'];
-    const prices = chartData.map(d => d.close);
-    const bbUppers = chartData.map(d => d.bollingerUpper).filter(v => v !== undefined) as number[];
-    const bbLowers = chartData.map(d => d.bollingerLower).filter(v => v !== undefined) as number[];
-    const allValues = [...prices, ...bbUppers, ...bbLowers];
-    if (allValues.length === 0) return ['auto', 'auto'];
-    const min = Math.min(...allValues);
-    const max = Math.max(...allValues);
-    const padding = (max - min) * 0.1;
-    return [min - padding > 0 ? min - padding : 0 , max + padding];
-  }, [chartData]);
-
-  // Connection status indicator
+  // Connection status indicator functions
   const getConnectionStatusIcon = () => {
     switch (connectionStatus) {
       case 'connected':
@@ -161,13 +147,31 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   const getConnectionStatusText = () => {
     switch (connectionStatus) {
       case 'connected':
-        return 'Live Data';
+        return 'Real-time Ticks';
       case 'connecting':
         return 'Connecting...';
       default:
         return 'Disconnected';
     }
   };
+
+  // Calculate Y-axis domain for price chart, including BB
+  const yDomainPrice = useMemo(() => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+    const prices = chartData.map(d => d.close);
+    const bbUppers = chartData.map(d => d.bbUpper).filter(v => v !== undefined) as number[];
+    const bbLowers = chartData.map(d => d.bbLower).filter(v => v !== undefined) as number[];
+    const allValues = [...prices, ...bbUppers, ...bbLowers];
+    if (allValues.length === 0) return ['auto', 'auto'];
+    const min = Math.min(...allValues);
+    const max = Math.max(...allValues);
+    const padding = (max - min) * 0.1;
+    return [min - padding > 0 ? min - padding : 0 , max + padding];
+  }, [chartData]);
+
+
+
+
 
 
 
@@ -273,9 +277,9 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
               <Line type="monotone" dataKey="close" stroke={chartConfig.price.color} strokeWidth={2} dot={false} yAxisId="left" name="Price" />
-              <Line type="monotone" dataKey="bollingerUpper" stroke={chartConfig.bbUpper.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Upper" />
-              <Line type="monotone" dataKey="bollingerMiddle" stroke={chartConfig.bbMiddle.color} strokeDasharray="5 5" dot={false} yAxisId="left" name="BB Middle" />
-              <Line type="monotone" dataKey="bollingerLower" stroke={chartConfig.bbLower.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Lower" />
+              <Line type="monotone" dataKey="bbUpper" stroke={chartConfig.bbUpper.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Upper" />
+              <Line type="monotone" dataKey="bbMiddle" stroke={chartConfig.bbMiddle.color} strokeDasharray="5 5" dot={false} yAxisId="left" name="BB Middle" />
+              <Line type="monotone" dataKey="bbLower" stroke={chartConfig.bbLower.color} strokeDasharray="3 3" dot={false} yAxisId="left" name="BB Lower" />
               <Line type="monotone" dataKey="ema" stroke={chartConfig.ema.color} strokeWidth={2} dot={false} yAxisId="left" name="EMA (20)" />
             </ComposedChart>
           </ResponsiveContainer>

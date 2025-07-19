@@ -2,42 +2,42 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getTickStream } from '@/services/deriv-tick-stream';
 import { getCandles } from '@/services/deriv';
-import {
-  calculateFullRSI,
-  calculateFullMACD,
-  calculateFullBollingerBands,
-  calculateFullEMA,
-  calculateFullATR
+import { 
+  calculateFullRSI, 
+  calculateFullMACD, 
+  calculateFullBollingerBands, 
+  calculateFullEMA, 
+  calculateFullATR 
 } from '@/lib/technical-analysis';
 
-export interface RealtimeChartData extends CandleData {
+export interface HybridChartData extends CandleData {
   rsi?: number;
   macdLine?: number;
   macdSignal?: number;
   macdHistogram?: number;
-  bollingerUpper?: number;
-  bollingerMiddle?: number;
-  bollingerLower?: number;
+  bbUpper?: number;
+  bbMiddle?: number;
+  bbLower?: number;
   ema?: number;
   atr?: number;
 }
 
-export interface UseRealtimeChartOptions {
+export interface UseHybridChartOptions {
   instrument: InstrumentType;
   initialCandleCount?: number;
-  candleTimeframe?: number; // seconds per candle (default 60)
+  candleTimeframe?: number;
 }
 
-export function useRealtimeChart({
+export function useHybridChart({
   instrument,
   initialCandleCount = 120,
   candleTimeframe = 60
-}: UseRealtimeChartOptions) {
-  const [chartData, setChartData] = useState<RealtimeChartData[]>([]);
+}: UseHybridChartOptions) {
+  const [chartData, setChartData] = useState<HybridChartData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-
+  
   const currentCandleRef = useRef<{
     open: number;
     high: number;
@@ -46,10 +46,11 @@ export function useRealtimeChart({
     startTime: number;
     epoch: number;
   } | null>(null);
-
+  
   const tickStreamRef = useRef(getTickStream());
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastIndicatorUpdateRef = useRef<number>(0);
+  const indicatorDataRef = useRef<HybridChartData[]>([]);
 
   // Create a new candle from tick data
   const createCandleFromTick = useCallback((tick: PriceTick, startTime: number): CandleData => {
@@ -95,123 +96,111 @@ export function useRealtimeChart({
     };
   }, [candleTimeframe]);
 
-  // Calculate technical indicators for the chart data (only on completed candles)
-  const calculateIndicators = useCallback((candles: CandleData[], forceUpdate = false): RealtimeChartData[] => {
+  // Calculate technical indicators (only when needed)
+  const calculateIndicators = useCallback(async (candles: CandleData[]): Promise<HybridChartData[]> => {
     if (candles.length < 50) {
-      console.log('[useRealtimeChart] Not enough data for indicators:', candles.length);
-      return candles as RealtimeChartData[];
+      return candles as HybridChartData[];
     }
-
-    // Only recalculate indicators if forced or if enough time has passed
-    const now = Date.now();
-    if (!forceUpdate && (now - lastIndicatorUpdateRef.current) < 30000) { // 30 seconds minimum
-      // Return existing data with indicators if available
-      if (chartData.length > 0 && chartData[0].rsi !== undefined) {
-        return chartData;
-      }
-    }
-
+    
     try {
-      console.log('[useRealtimeChart] Calculating indicators for', candles.length, 'candles');
-
-      // Extract price arrays
       const prices = candles.map(c => c.close);
       const highPrices = candles.map(c => c.high);
       const lowPrices = candles.map(c => c.low);
-
+      
       // Calculate full indicator arrays
       const rsiArray = calculateFullRSI(prices, 14);
       const macdArray = calculateFullMACD(prices, 12, 26, 9);
       const bbArray = calculateFullBollingerBands(prices, 20, 2);
       const emaArray = calculateFullEMA(prices, 20);
       const atrArray = calculateFullATR(highPrices, lowPrices, prices, 14);
-
-      lastIndicatorUpdateRef.current = now;
-
+      
       const result = candles.map((candle, index) => {
-        // Calculate the offset for each indicator array
         const rsiIndex = index - (prices.length - rsiArray.length);
         const macdIndex = index - (prices.length - macdArray.length);
         const bbIndex = index - (prices.length - bbArray.length);
         const emaIndex = index - (prices.length - emaArray.length);
         const atrIndex = index - (prices.length - atrArray.length);
-
+        
         return {
           ...candle,
           rsi: rsiIndex >= 0 ? rsiArray[rsiIndex] : undefined,
           macdLine: macdIndex >= 0 ? macdArray[macdIndex]?.macd : undefined,
           macdSignal: macdIndex >= 0 ? macdArray[macdIndex]?.signal : undefined,
           macdHistogram: macdIndex >= 0 ? macdArray[macdIndex]?.histogram : undefined,
-          bollingerUpper: bbIndex >= 0 ? bbArray[bbIndex]?.upper : undefined,
-          bollingerMiddle: bbIndex >= 0 ? bbArray[bbIndex]?.middle : undefined,
-          bollingerLower: bbIndex >= 0 ? bbArray[bbIndex]?.lower : undefined,
+          bbUpper: bbIndex >= 0 ? bbArray[bbIndex]?.upper : undefined,
+          bbMiddle: bbIndex >= 0 ? bbArray[bbIndex]?.middle : undefined,
+          bbLower: bbIndex >= 0 ? bbArray[bbIndex]?.lower : undefined,
           ema: emaIndex >= 0 ? emaArray[emaIndex] : undefined,
           atr: atrIndex >= 0 ? atrArray[atrIndex] : undefined
         };
       });
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[useRealtimeChart] Indicators calculated. Sample data:', {
-          totalCandles: result.length,
-          rsiValues: rsiArray.length,
-          macdValues: macdArray.length,
-          lastRSI: result[result.length - 1]?.rsi,
-          lastMACD: result[result.length - 1]?.macdLine
-        });
-      }
-
+      
+      indicatorDataRef.current = result;
       return result;
     } catch (error) {
-      console.error('[useRealtimeChart] Error calculating indicators:', error);
-      return candles as RealtimeChartData[];
+      console.error('[useHybridChart] Error calculating indicators:', error);
+      return candles as HybridChartData[];
     }
-  }, [chartData]);
+  }, []);
 
-  // Handle incoming tick data
+  // Handle incoming tick data - ONLY update prices, not indicators
   const handleTick = useCallback((tick: PriceTick) => {
     const newCandle = updateCandleWithTick(tick);
-
+    
     setChartData(prevData => {
+      if (prevData.length === 0) return prevData;
+      
       const updatedData = [...prevData];
-      let isNewCandle = false;
-
+      const lastIndex = updatedData.length - 1;
+      
       // Check if we need to add a new candle or update the last one
-      if (updatedData.length === 0 || updatedData[updatedData.length - 1].epoch !== newCandle.epoch) {
-        // New candle period - add new candle and recalculate indicators
-        updatedData.push(newCandle);
-        isNewCandle = true;
-
-        // Keep only the last N candles to prevent memory issues
-        if (updatedData.length > initialCandleCount + 50) {
-          updatedData.splice(0, updatedData.length - initialCandleCount);
+      if (updatedData[lastIndex].epoch !== newCandle.epoch) {
+        // New candle period - add new candle with indicators from previous data
+        const newCandleWithIndicators: HybridChartData = {
+          ...newCandle,
+          // New candles don't have indicators yet - will be calculated on next indicator update
+          rsi: undefined,
+          macdLine: undefined,
+          macdSignal: undefined,
+          macdHistogram: undefined,
+          bbUpper: undefined,
+          bbMiddle: undefined,
+          bbLower: undefined,
+          ema: undefined,
+          atr: undefined
+        };
+        
+        updatedData.push(newCandleWithIndicators);
+        
+        // Keep only the last N candles
+        if (updatedData.length > initialCandleCount + 10) {
+          updatedData.splice(0, 10);
         }
+        
+        // Trigger indicator recalculation for new candle (async)
+        setTimeout(() => {
+          calculateIndicators(updatedData.map(d => ({
+            time: d.time,
+            epoch: d.epoch,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close
+          }))).then(newDataWithIndicators => {
+            setChartData(newDataWithIndicators);
+          });
+        }, 100);
+        
       } else {
-        // Update the last candle (price updates only, no indicator recalculation)
-        const lastIndex = updatedData.length - 1;
+        // Update the last candle price only - preserve existing indicators
         updatedData[lastIndex] = {
           ...updatedData[lastIndex],
-          ...newCandle,
-          // Preserve existing indicators for current candle
-          rsi: updatedData[lastIndex].rsi,
-          macdLine: updatedData[lastIndex].macdLine,
-          macdSignal: updatedData[lastIndex].macdSignal,
-          macdHistogram: updatedData[lastIndex].macdHistogram,
-          bollingerUpper: updatedData[lastIndex].bollingerUpper,
-          bollingerMiddle: updatedData[lastIndex].bollingerMiddle,
-          bollingerLower: updatedData[lastIndex].bollingerLower,
-          ema: updatedData[lastIndex].ema,
-          atr: updatedData[lastIndex].atr
+          high: Math.max(updatedData[lastIndex].high, newCandle.high),
+          low: Math.min(updatedData[lastIndex].low, newCandle.low),
+          close: newCandle.close
         };
       }
-
-      // Only recalculate indicators when a new candle is formed
-      if (isNewCandle) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[useRealtimeChart] New candle formed, recalculating indicators');
-        }
-        return calculateIndicators(updatedData, true);
-      }
-
+      
       return updatedData;
     });
   }, [updateCandleWithTick, calculateIndicators, initialCandleCount]);
@@ -220,15 +209,15 @@ export function useRealtimeChart({
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-
+    
     try {
-      console.log('[useRealtimeChart] Loading initial data for', instrument);
+      console.log('[useHybridChart] Loading initial data for', instrument);
       const candles = await getCandles(instrument, initialCandleCount, candleTimeframe);
       if (candles && candles.length > 0) {
-        console.log('[useRealtimeChart] Loaded', candles.length, 'candles');
-        const dataWithIndicators = calculateIndicators(candles, true); // Force calculation
+        console.log('[useHybridChart] Loaded', candles.length, 'candles');
+        const dataWithIndicators = await calculateIndicators(candles);
         setChartData(dataWithIndicators);
-
+        
         // Initialize current candle with the last candle
         const lastCandle = candles[candles.length - 1];
         currentCandleRef.current = {
@@ -239,13 +228,13 @@ export function useRealtimeChart({
           startTime: lastCandle.epoch,
           epoch: lastCandle.epoch
         };
-
-        console.log('[useRealtimeChart] Initial data loaded successfully');
+        
+        console.log('[useHybridChart] Initial data loaded successfully');
       } else {
         setError(`No price data available for ${instrument}`);
       }
     } catch (err) {
-      console.error('[useRealtimeChart] Error loading initial data:', err);
+      console.error('[useHybridChart] Error loading initial data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load chart data');
     } finally {
       setIsLoading(false);
@@ -256,7 +245,6 @@ export function useRealtimeChart({
   useEffect(() => {
     const tickStream = tickStreamRef.current;
     
-    // Update connection status
     const updateConnectionStatus = () => {
       setConnectionStatus(tickStream.getConnectionStatus());
     };
@@ -264,20 +252,19 @@ export function useRealtimeChart({
     updateConnectionStatus();
     const statusInterval = setInterval(updateConnectionStatus, 1000);
     
-    // Subscribe to tick updates
     const unsubscribe = tickStream.subscribe(instrument, {
       onTick: handleTick,
       onError: (error) => {
-        console.error('[useRealtimeChart] Tick stream error:', error);
+        console.error('[useHybridChart] Tick stream error:', error);
         setError(error.message);
       },
       onConnect: () => {
-        console.log(`[useRealtimeChart] Connected to tick stream for ${instrument}`);
+        console.log(`[useHybridChart] Connected to tick stream for ${instrument}`);
         setConnectionStatus('connected');
         setError(null);
       },
       onDisconnect: () => {
-        console.log(`[useRealtimeChart] Disconnected from tick stream for ${instrument}`);
+        console.log(`[useHybridChart] Disconnected from tick stream for ${instrument}`);
         setConnectionStatus('disconnected');
       }
     });

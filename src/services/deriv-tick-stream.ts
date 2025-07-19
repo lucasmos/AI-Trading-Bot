@@ -18,7 +18,7 @@ export class DerivTickStream {
   private subscriptions: Map<string, TickStreamOptions> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000; // Start with 1 second
+  private reconnectDelay = 1000;
   private isConnecting = false;
   private isConnected = false;
 
@@ -41,12 +41,10 @@ export class DerivTickStream {
       this.reconnectAttempts = 0;
       this.reconnectDelay = 1000;
       
-      // Notify all subscribers about connection
       this.subscriptions.forEach(options => {
         options.onConnect?.();
       });
       
-      // Re-subscribe to all instruments
       this.resubscribeAll();
     };
 
@@ -70,12 +68,10 @@ export class DerivTickStream {
       this.isConnecting = false;
       this.isConnected = false;
       
-      // Notify all subscribers about disconnection
       this.subscriptions.forEach(options => {
         options.onDisconnect?.();
       });
       
-      // Attempt to reconnect
       this.attemptReconnect();
     };
   }
@@ -119,7 +115,6 @@ export class DerivTickStream {
       this.connect();
     }, this.reconnectDelay);
     
-    // Exponential backoff
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
   }
 
@@ -149,7 +144,6 @@ export class DerivTickStream {
       this.ws.send(JSON.stringify(request));
     }
     
-    // Return unsubscribe function
     return () => {
       this.unsubscribe(instrument);
     };
