@@ -14,6 +14,23 @@ import { useStreamingChart } from '@/hooks/use-streaming-chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
+// Helper function to get clean display names for chart tabs
+function getChartTabLabel(instrument: string): string {
+  switch (instrument) {
+    case 'Volatility 10 Index': return 'V10';
+    case 'Volatility 25 Index': return 'V25';
+    case 'Volatility 50 Index': return 'V50';
+    case 'Volatility 75 Index': return 'V75';
+    case 'Volatility 100 Index': return 'V100';
+    case 'Volatility 10 (1s) Index': return 'V10 (1s)';
+    case 'Volatility 25 (1s) Index': return 'V25 (1s)';
+    case 'Volatility 50 (1s) Index': return 'V50 (1s)';
+    case 'Volatility 75 (1s) Index': return 'V75 (1s)';
+    case 'Volatility 100 (1s) Index': return 'V100 (1s)';
+    default: return instrument;
+  }
+}
+
 const chartConfig = {
   price: {
     label: "Price",
@@ -242,7 +259,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
       <div className="flex items-center justify-between mb-4 p-2 bg-muted/50 rounded-lg">
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4" />
-          <span className="text-sm font-medium">{instrument} - Streaming Chart</span>
+          <span className="text-sm font-medium">{getChartTabLabel(instrument)} - Streaming Chart</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -545,7 +562,7 @@ export function TradingChart({ instrument, onInstrumentChange, instrumentsToShow
           >
             {instrumentsToShow.map((inst) => (
               <TabsTrigger key={inst} value={inst}>
-                {inst}
+                {getChartTabLabel(inst)}
               </TabsTrigger>
             ))}
           </TabsList>

@@ -10,7 +10,8 @@ import {
 import { type VolatilityTradingStrategyInput } from '@/types/ai-shared-types';
 import {
   executeVolatilityAiTradeLoop, // New backend action for real trades
-  VolatilityTradeExecutionResult
+  VolatilityTradeExecutionResult,
+  VolatilityTradeOptions
 } from '@/app/actions/trade-execution-actions';
 import { getUpdatedUserBalances } from '@/app/actions/balance-actions';
 import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types'; // For the new trade type selector
@@ -66,6 +67,12 @@ export default function VolatilityTradingPage() {
   } = useAuth();
 
   const [currentVolatilityInstrument, setCurrentVolatilityInstrument] = useState<VolatilityInstrumentType>(VOLATILITY_INSTRUMENTS[0]);
+
+  // New state variables for the updated controls
+  const [executionMode, setExecutionMode] = useState<'turbo' | 'safe'>('safe');
+  const [numberOfBulkTrades, setNumberOfBulkTrades] = useState<number>(1);
+
+  // Legacy state variables (keeping for backward compatibility)
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
 
@@ -330,7 +337,12 @@ export default function VolatilityTradingPage() {
                 selectedDerivAccountType as 'demo' | 'real',
                 userInfo.id,
                 selectedUserTradeTypeForLoop,
-                autoTradeTotalStake
+                autoTradeTotalStake,
+                {
+                  executionMode,
+                  numberOfBulkTrades,
+                  selectedInstrument: currentVolatilityInstrument
+                }
             );
 
             setConsecutiveAiCallCount(prev => prev + 1);
@@ -486,6 +498,7 @@ export default function VolatilityTradingPage() {
     authStatus, userInfo, selectedDerivAccountType, autoTradeTotalStake, currentBalance,
     consecutiveAiCallCount, lastAiCallTimestamp, router, toast,
     selectedUserTradeTypeForLoop,
+    executionMode, numberOfBulkTrades, currentVolatilityInstrument,
     tradingMode, selectedAiStrategyId,
 ]);
 
@@ -923,23 +936,91 @@ export default function VolatilityTradingPage() {
               <CardDescription>Configure AI trading for Volatility Indices.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* 1. Select Volatility Index */}
               <div className="space-y-2">
-                <Label htmlFor="volatility-trading-mode">Trading Mode (for Simulation)</Label>
-                <Select value={tradingMode} onValueChange={(value) => setTradingMode(value as TradingMode)} disabled={isAutoTradingActive || isAiLoading}>
-                  <SelectTrigger id="volatility-trading-mode"><SelectValue placeholder="Select mode" /></SelectTrigger>
+                <Label htmlFor="volatility-index-select">Select Volatility Index</Label>
+                <Select
+                  value={currentVolatilityInstrument}
+                  onValueChange={(value) => setCurrentVolatilityInstrument(value as VolatilityInstrumentType)}
+                  disabled={isAutoTradingActive || isAiLoading}
+                >
+                  <SelectTrigger id="volatility-index-select">
+                    <SelectValue placeholder="Select volatility index" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="conservative">Conservative</SelectItem>
-                    <SelectItem value="balanced">Balanced</SelectItem>
-                    <SelectItem value="aggressive">Aggressive</SelectItem>
+                    <SelectItem value="Volatility 10 Index">10</SelectItem>
+                    <SelectItem value="Volatility 10 (1s) Index">10 (1s)</SelectItem>
+                    <SelectItem value="Volatility 25 Index">25</SelectItem>
+                    <SelectItem value="Volatility 25 (1s) Index">25 (1s)</SelectItem>
+                    <SelectItem value="Volatility 50 Index">50</SelectItem>
+                    <SelectItem value="Volatility 50 (1s) Index">50 (1s)</SelectItem>
+                    <SelectItem value="Volatility 75 Index">75</SelectItem>
+                    <SelectItem value="Volatility 75 (1s) Index">75 (1s)</SelectItem>
+                    <SelectItem value="Volatility 100 Index">100</SelectItem>
+                    <SelectItem value="Volatility 100 (1s) Index">100 (1s)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* 3. Execution Mode */}
+              <div className="space-y-3">
+                <Label htmlFor="execution-mode">Execution Mode</Label>
+                <div className="flex space-x-2">
+                  <Button
+                    variant={executionMode === 'turbo' ? 'default' : 'outline'}
+                    onClick={() => setExecutionMode('turbo')}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className="flex-1"
+                  >
+                    Turbo
+                  </Button>
+                  <Button
+                    variant={executionMode === 'safe' ? 'default' : 'outline'}
+                    onClick={() => setExecutionMode('safe')}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className="flex-1"
+                  >
+                    Safe
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground p-3 bg-muted rounded-md">
+                  <div className="font-medium mb-2">Mode Explanation:</div>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="font-medium">Turbo:</span> Trades only one tick when execution starts. Entry and exit prices are the same for all contracts (e.g., 4567.76 → 4567.76).
+                    </div>
+                    <div>
+                      <span className="font-medium">Safe:</span> Trades each tick during execution. Each contract has different entry and exit prices (e.g., 1st: 4567.76 → 4567.76, 2nd: 4668.90 → 4668.90).
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Number of Bulk Trades */}
               <div className="space-y-2">
-                <Label htmlFor="volatility-ai-strategy">AI Strategy (for Simulation)</Label>
-                <Select value={selectedAiStrategyId} onValueChange={setSelectedAiStrategyId} disabled={isAutoTradingActive || isAiLoading}>
-                  <SelectTrigger id="volatility-ai-strategy"><SelectValue placeholder="Select AI Strategy" /></SelectTrigger>
-                  <SelectContent>{AI_TRADING_STRATEGIES.map((s) => (<SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>))}</SelectContent>
-                </Select>
+                <Label htmlFor="bulk-trades">Number of Bulk Trades</Label>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNumberOfBulkTrades(Math.max(1, numberOfBulkTrades - 1))}
+                    disabled={isAutoTradingActive || isAiLoading || numberOfBulkTrades <= 1}
+                  >
+                    -
+                  </Button>
+                  <div className="flex-1 text-center font-medium">{numberOfBulkTrades}</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNumberOfBulkTrades(Math.min(20, numberOfBulkTrades + 1))}
+                    disabled={isAutoTradingActive || isAiLoading || numberOfBulkTrades >= 20}
+                  >
+                    +
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Default: 1, Maximum: 20 trades per session
+                </div>
               </div>
                <div>
                 <Label htmlFor="vol-account-mode">Deriv Account Type</Label>

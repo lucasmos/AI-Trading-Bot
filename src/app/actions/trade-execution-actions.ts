@@ -135,14 +135,26 @@ export interface VolatilityTradeExecutionResult {
   aiReasoning?: string;
 }
 
+export interface VolatilityTradeOptions {
+  executionMode: 'turbo' | 'safe';
+  numberOfBulkTrades: number;
+  selectedInstrument: string;
+}
+
 export async function executeVolatilityAiTradeLoop(
   userDerivApiToken: string,
   targetAccountId: string,
   selectedAccountType: 'demo' | 'real',
   userId: string,
   userSelectedTradeType: UserTradeType,
-  totalStakeFromUser: number
+  totalStakeFromUser: number,
+  options?: VolatilityTradeOptions
 ): Promise<VolatilityTradeExecutionResult[]> {
+  // Use the new options or defaults
+  const executionMode = options?.executionMode || 'safe';
+  const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
+  const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
+
   const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
   const results: VolatilityTradeExecutionResult[] = [];
 
@@ -153,6 +165,7 @@ export async function executeVolatilityAiTradeLoop(
   }
 
   console.log(`[TradeAction/Session] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
+  console.log(`[TradeAction/Session] Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Selected Instrument: ${selectedInstrument}`);
 
   const instrumentTicksForAI: Record<string, PriceTick[]> = {};
   const instrumentIndicatorsForAI: Record<string, InstrumentIndicatorData | undefined> = {};

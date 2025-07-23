@@ -27,6 +27,11 @@ export const VOLATILITY_INSTRUMENTS: VolatilityInstrumentType[] = [
   'Volatility 50 Index',
   'Volatility 75 Index',
   'Volatility 100 Index',
+  'Volatility 10 (1s) Index',
+  'Volatility 25 (1s) Index',
+  'Volatility 50 (1s) Index',
+  'Volatility 75 (1s) Index',
+  'Volatility 100 (1s) Index',
 ];
 
 /**
@@ -59,6 +64,12 @@ export const SUPPORTED_INSTRUMENTS: SupportedInstrument[] = [
   { id: 'Volatility 50 Index', name: 'Volatility 50 Index', type: 'Volatility', defaultDecimalPlaces: 2 },
   { id: 'Volatility 75 Index', name: 'Volatility 75 Index', type: 'Volatility', defaultDecimalPlaces: 4 },
   { id: 'Volatility 100 Index', name: 'Volatility 100 Index', type: 'Volatility', defaultDecimalPlaces: 2 },
+  // 1-Second Volatility Indices
+  { id: 'Volatility 10 (1s) Index', name: 'Volatility 10 (1s) Index', type: 'Volatility', defaultDecimalPlaces: 3 },
+  { id: 'Volatility 25 (1s) Index', name: 'Volatility 25 (1s) Index', type: 'Volatility', defaultDecimalPlaces: 3 },
+  { id: 'Volatility 50 (1s) Index', name: 'Volatility 50 (1s) Index', type: 'Volatility', defaultDecimalPlaces: 2 },
+  { id: 'Volatility 75 (1s) Index', name: 'Volatility 75 (1s) Index', type: 'Volatility', defaultDecimalPlaces: 4 },
+  { id: 'Volatility 100 (1s) Index', name: 'Volatility 100 (1s) Index', type: 'Volatility', defaultDecimalPlaces: 2 },
 ];
 
 /**
