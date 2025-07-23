@@ -148,18 +148,26 @@ export interface VolatilityTradeProposal {
   // For now, the page simulation implies Rise/Fall based on CALL/PUT.
 }
 
-export interface ActiveAutomatedVolatilityTrade { // Removed 'extends VolatilityTradeProposal' to redefine fields clearly
+export interface ActiveAutomatedVolatilityTrade { // Updated to match Deriv's trading table format
   id: string;
   instrument: InstrumentType;
-  stake: number;
-  durationSeconds: number;
-  reasoning?: string; // Make optional if not always present
-  entryPrice: number;
-  stopLossPrice: number; // Specific to the page's simulation
-  startTime: number;
-  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual' | 'pending_execution' | 'failed_placement'; // Added new statuses for real trades
-  pnl?: number;
-  currentPrice?: number; // For simulation or live price updates
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under", "Rise/Fall", "Touch/No Touch"
+  entryPrice: number; // Price when trade began
+  exitPrice?: number; // Price when trade concluded (only for completed trades)
+  buyPrice: number; // Price of the contract (stake amount)
+  profitLoss?: number; // Profit/Loss after trade completion
+  status: 'active' | 'won' | 'lost' | 'pending' | 'cancelled'; // Simplified status matching Deriv
+  startTime: number; // When trade started
+  endTime?: number; // When trade ended (for completed trades)
+  duration?: number; // Trade duration in seconds
+  reasoning?: string; // AI reasoning for the trade
+
+  // Legacy fields for backward compatibility (will be removed gradually)
+  stake?: number; // Use buyPrice instead
+  durationSeconds?: number; // Use duration instead
+  stopLossPrice?: number; // Not used in volatility trading
+  currentPrice?: number; // For live price updates
+  pnl?: number; // Use profitLoss instead
 
   // New fields for better type display and future real trading
   derivContractType: string; // e.g., "CALL", "PUT", "DIGITEVEN", "DIGITOVER" - this will store proposal.action for now
@@ -317,18 +325,23 @@ export interface Trade {
   id: string;
   userId: string;
   instrument: InstrumentType;
-  type: 'CALL' | 'PUT';
-  entryPrice: number;
-  exitPrice?: number;
-  stake: number;
-  duration: number; // in seconds
-  durationUnit: 's' | 'm' | 'h';
-  entryTime: Date;
-  exitTime?: Date;
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under", "Rise/Fall", "Touch/No Touch"
+  entryPrice: number; // Price when trade began
+  exitPrice?: number; // Price when trade concluded
+  buyPrice: number; // Price of the contract (stake amount)
+  profitLoss?: number; // Profit/Loss after trade completion
   status: 'open' | 'won' | 'lost' | 'cancelled';
-  profitOrLoss?: number;
+  entryTime: Date; // When trade started
+  exitTime?: Date; // When trade ended
+  duration?: number; // Trade duration in seconds
   isPaperTrade: boolean;
-  metadata?: Record<string, any>; // For any extra info, like AI reasoning snapshot
+  metadata?: Record<string, any>; // For AI reasoning and other trade details
+
+  // Legacy fields for backward compatibility
+  type?: 'CALL' | 'PUT'; // Use tradeType instead
+  stake?: number; // Use buyPrice instead
+  durationUnit?: 's' | 'm' | 'h'; // Not needed with duration in seconds
+  profitOrLoss?: number; // Use profitLoss instead
 }
 
 export interface HistoricalTrade extends Trade {}
@@ -336,14 +349,21 @@ export interface HistoricalTrade extends Trade {}
 export interface TradeHistoryData {
   tradeId: string;
   instrument: string;
-  entryTime: string;
-  exitTime: string;
-  type: string;
-  entryPrice: string;
-  exitPrice: string;
-  stake: string;
-  profitOrLoss: string;
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under"
+  entryPrice: string; // Price when trade began
+  exitPrice: string; // Price when trade concluded
+  buyPrice: string; // Price of the contract
+  profitLoss: string; // Profit/Loss after trade completion
   status: string;
+  entryTime: string; // When trade started
+  exitTime: string; // When trade ended
+  date: string; // Date when trade was executed (YYYY-MM-DD format)
+  time: string; // Time when trade was completed (HH:MM:SS format)
+
+  // Legacy fields for backward compatibility
+  type?: string; // Use tradeType instead
+  stake?: string; // Use buyPrice instead
+  profitOrLoss?: string; // Use profitLoss instead
 }
 
 export interface AiRecommendation {

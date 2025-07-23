@@ -25,7 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getCandles, getContractStatus } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid';
-import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails } from '@/lib/utils';
+import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails, getTradeTypeDisplayName } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
@@ -343,12 +343,19 @@ export default function VolatilityTradingPage() {
                     ? result.tradeResponse.contract_id.toString()
                     : (result.dbTradeId || uuidv4()),
                 instrument: result.instrument,
+
+                // New Deriv-style fields
+                tradeType: getTradeTypeDisplayName(selectedUserTradeTypeForLoop, result.tradeParams?.contract_type),
+                entryPrice: result.tradeResponse?.entry_spot || 0,
+                buyPrice: result.tradeParams?.amount || 0,
+                profitLoss: undefined, // Will be set when trade completes
+
+                // Legacy fields for backward compatibility
                 derivContractType: result.tradeParams?.contract_type || 'N/A',
                 userSelectedTradeType: selectedUserTradeTypeForLoop,
                 stake: result.tradeParams?.amount || 0,
                 durationSeconds: result.tradeParams?.duration || 0,
                 reasoning: result.aiReasoning || (result.error ? 'Placement Error' : 'N/A'),
-                entryPrice: result.tradeResponse?.entry_spot || 0,
                 stopLossPrice: 0,
                 startTime: result.tradeResponse?.purchase_time ? result.tradeResponse.purchase_time * 1000 : Date.now(),
                 status: result.success ? 'pending_execution' : 'failed_placement',
@@ -441,13 +448,20 @@ export default function VolatilityTradingPage() {
               newTrades.push({
                 id: uuidv4(),
                 instrument: proposal.instrument as VolatilityInstrumentType,
+
+                // New Deriv-style fields
+                tradeType: getTradeTypeDisplayName("RiseFall", proposal.action),
+                entryPrice,
+                buyPrice: proposal.stake,
+                profitLoss: undefined, // Will be set when trade completes
+
+                // Legacy fields for backward compatibility
                 derivContractType: proposal.action,
                 userSelectedTradeType: "RiseFall",
                 actionDirection: actionDirection,
                 stake: proposal.stake,
                 durationSeconds: proposal.durationSeconds,
                 reasoning: proposal.reasoning,
-                entryPrice,
                 stopLossPrice: parseFloat(stopLossPrice.toFixed(getInstrumentDecimalPlaces(proposal.instrument as InstrumentType))),
                 startTime: Date.now(),
                 status: 'active',
@@ -600,6 +614,13 @@ export default function VolatilityTradingPage() {
               ...trade,
               status: newLocalStatus,
               currentPrice: contractStatusData.current_spot ?? trade.currentPrice,
+
+              // Update new Deriv-style fields
+              exitPrice: isSettled ? contractStatusData.current_spot : undefined,
+              profitLoss: isSettled ? contractStatusData.profit : undefined,
+              endTime: isSettled ? Date.now() : undefined,
+
+              // Legacy field for backward compatibility
               pnl: isSettled ? contractStatusData.profit : undefined,
             };
 
@@ -786,15 +807,24 @@ export default function VolatilityTradingPage() {
                       userId: userInfo.id,
                       email: userInfo.email, name: userInfo.name,
                       symbol: currentTrade.instrument,
+
+                      // New Deriv-style fields
+                      tradeType: currentTrade.tradeType || (currentTrade.actionDirection === 'CALL' ? 'Rise/Fall' : 'Rise/Fall'),
+                      entryPrice: currentTrade.entryPrice,
+                      buyPrice: currentTrade.buyPrice || currentTrade.stake,
+
+                      // Legacy fields for backward compatibility
                       type: currentTrade.actionDirection === 'CALL' ? 'buy' : 'sell',
                       amount: currentTrade.stake,
                       price: currentTrade.entryPrice,
+
                       aiStrategyId: selectedAiStrategyId,
                       metadata: {
                         mode: tradingMode,
                         duration: `${currentTrade.durationSeconds}s`,
                         accountType: selectedDerivAccountType,
-                        automated: true, tradeCategory: 'volatility',
+                        automated: true,
+                        tradeCategory: 'volatility',
                         reasoning: currentTrade.reasoning
                       }
                     }),
@@ -807,7 +837,14 @@ export default function VolatilityTradingPage() {
                         headers: { 'Content-Type': 'application/json', },
                         body: JSON.stringify({
                           exitPrice: newCurrentPrice,
-                          metadata: { outcome: newStatus, pnl: pnl, reason: "Automated simulation completed" }
+                          profitLoss: pnl,
+                          metadata: {
+                            outcome: newStatus,
+                            pnl: pnl,
+                            profitLoss: pnl,
+                            reason: "Automated simulation completed",
+                            completedAt: new Date().toISOString()
+                          }
                         }),
                       });
                     }
@@ -992,63 +1029,63 @@ export default function VolatilityTradingPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Trade Type</TableHead>
+                      <TableHead>Entry Point</TableHead>
+                      <TableHead>Exit Point</TableHead>
+                      <TableHead>Buy Price</TableHead>
+                      <TableHead>Profit/Loss</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Instrument</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Stake</TableHead>
-                      <TableHead>Entry</TableHead>
-                      <TableHead>{selectedUserTradeTypeForLoop ? "Status" : "Current Price"}</TableHead>
-                      <TableHead>{selectedUserTradeTypeForLoop ? "Details" : "Stop-Loss"}</TableHead>
-                      <TableHead>{selectedUserTradeTypeForLoop ? "Deriv ID" : "Status (Sim)"}</TableHead>
-                      <TableHead>{selectedUserTradeTypeForLoop ? "Reasoning" : "P/L (Sim)"}</TableHead>
+                      <TableHead>Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {activeAutomatedTrades.map(trade => (
                       <TableRow key={trade.id}>
-                        <TableCell>{trade.instrument}</TableCell>
+                        {/* Trade Type */}
                         <TableCell>
                           <Badge variant={trade.derivContractType === 'CALL' || trade.derivContractType === 'ONETOUCH' || trade.derivContractType === 'DIGITEVEN' || trade.derivContractType === 'DIGITOVER' ? 'default' : 'destructive'}
                                  className={(trade.derivContractType === 'CALL' || trade.derivContractType === 'ONETOUCH' || trade.derivContractType === 'DIGITEVEN' || trade.derivContractType === 'DIGITOVER') ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-                            {getDisplayTradeTypeDetails(trade.derivContractType, trade.userSelectedTradeType, trade.barrier)}
+                            {trade.tradeType || getDisplayTradeTypeDetails(trade.derivContractType, trade.userSelectedTradeType, trade.barrier)}
                           </Badge>
                         </TableCell>
-                        <TableCell>${trade.stake.toFixed(2)}</TableCell>
+
+                        {/* Entry Point */}
                         <TableCell>{trade.entryPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || '-'}</TableCell>
 
-                        {selectedUserTradeTypeForLoop ? (
-                          <>
-                            <TableCell>
-                                <Badge variant={trade.status === 'pending_execution' ? 'secondary' : (trade.status === 'failed_placement' ? 'destructive' : 'default')}
-                                       className={trade.status === 'pending_execution' ? 'bg-yellow-500 text-white' : (trade.status === 'failed_placement' ? 'bg-red-500' : 'bg-gray-500')}>
-                                {trade.status === 'pending_execution' ? 'Pending Execution' :
-                                 trade.status === 'failed_placement' ? 'Failed Placement' :
-                                 trade.status.replace('_', ' ')}
-                                </Badge>
-                            </TableCell>
-                            <TableCell className="text-xs max-w-[150px] truncate" title={trade.error || "No details"}>{trade.error || "Placed"}</TableCell>
-                            <TableCell className="text-xs">{(trade.id !== uuidv4() && !trade.id.startsWith("sim-")) ? trade.id.substring(0,10)+"..." : "N/A"}</TableCell>
-                            <TableCell className="text-xs max-w-[150px] truncate" title={trade.reasoning}>{trade.reasoning}</TableCell>
-                          </>
-                        ) : (
-                          <>
-                            <TableCell>{trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) ?? '-'}</TableCell>
-                            <TableCell>{trade.stopLossPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument))}</TableCell>
-                            <TableCell>
-                               <Badge variant={trade.status === 'active' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
-                                      className={trade.status === 'active' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
-                                {trade.status === 'active' ? 'Active' :
-                                 trade.status === 'won' ? 'Won' :
-                                 trade.status === 'lost_duration' ? 'Lost (Duration)' :
-                                 trade.status === 'lost_stoploss' ? 'Lost (Stop Loss)' :
-                                 trade.status === 'closed_manual' ? 'Closed (Manual)' :
-                                 trade.status}
-                               </Badge>
-                            </TableCell>
-                            <TableCell className={trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                              {trade.pnl !== undefined ? `$${trade.pnl.toFixed(2)}` : '-'}
-                            </TableCell>
-                          </>
-                        )}
+                        {/* Exit Point */}
+                        <TableCell>{trade.exitPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || (trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument))) || '-'}</TableCell>
+
+                        {/* Buy Price */}
+                        <TableCell>${trade.buyPrice?.toFixed(2) || trade.stake?.toFixed(2) || '0.00'}</TableCell>
+
+                        {/* Profit/Loss */}
+                        <TableCell className={trade.profitLoss && trade.profitLoss > 0 ? 'text-green-500' : trade.profitLoss && trade.profitLoss < 0 ? 'text-red-500' : trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
+                          {trade.profitLoss !== undefined ? `$${trade.profitLoss.toFixed(2)}` : (trade.pnl !== undefined ? `$${trade.pnl.toFixed(2)}` : '-')}
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell>
+                          <Badge variant={trade.status === 'active' || trade.status === 'pending_execution' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
+                                 className={trade.status === 'active' || trade.status === 'pending_execution' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
+                            {trade.status === 'active' ? 'Active' :
+                             trade.status === 'pending_execution' ? 'Pending' :
+                             trade.status === 'failed_placement' ? 'Failed' :
+                             trade.status === 'won' ? 'Won' :
+                             trade.status === 'lost_duration' ? 'Lost' :
+                             trade.status === 'lost_stoploss' ? 'Lost' :
+                             trade.status === 'closed_manual' ? 'Closed' :
+                             trade.status}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Instrument */}
+                        <TableCell>{trade.instrument}</TableCell>
+
+                        {/* Details */}
+                        <TableCell className="text-xs max-w-[150px] truncate" title={trade.reasoning || trade.error || "No details"}>
+                          {selectedUserTradeTypeForLoop ? (trade.error || "Placed") : (trade.reasoning || "AI Trade")}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -23,12 +23,22 @@ interface TradeRecord {
   id: string;
   timestamp: number;
   instrument: GlobalTradingInstrument;
+
+  // New Deriv-style fields
+  tradeType?: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under"
+  entryPrice: number; // Price when trade began
+  exitPrice?: number | null; // Price when trade concluded
+  buyPrice?: number; // Price of the contract
+  profitLoss?: number | null; // Profit/Loss after trade completion
+  date?: string; // Date when trade was executed (YYYY-MM-DD)
+  time?: string; // Time when trade was completed (HH:MM:SS)
+
+  // Legacy fields for backward compatibility
   action: 'CALL' | 'PUT' | 'BUY' | 'SELL';
   duration?: string;
   stake: number;
-  entryPrice: number;
-  exitPrice?: number | null;
   pnl: number | null;
+
   status: TradeRecordStatus;
   accountType: PaperTradingMode;
   tradeCategory: TradeCategory;
@@ -69,24 +79,30 @@ export default function TradeHistoryPage() {
       
       const apiTrades = await response.json();
       
-      // Convert API trades to match our TradeRecord format
+      // Convert API trades to match our TradeRecord format with new Deriv-style fields
       const dbTrades = apiTrades.map((trade: any) => ({
         id: trade.id,
         timestamp: new Date(trade.openTime).getTime(),
         instrument: trade.symbol,
-        // Assuming binary option style trades for now for CALL/PUT
-        action: trade.type.toUpperCase() === 'BUY' ? 'CALL' : (trade.type.toUpperCase() === 'SELL' ? 'PUT' : trade.type.toUpperCase()), 
+        tradeType: trade.tradeType || (trade.type.toUpperCase() === 'BUY' ? 'Rise/Fall' : (trade.type.toUpperCase() === 'SELL' ? 'Rise/Fall' : 'Higher/Lower')),
+        entryPrice: trade.entryPrice || trade.price,
+        exitPrice: trade.exitPrice || (trade.closeTime ? trade.metadata?.exitPrice || trade.price : null),
+        buyPrice: trade.buyPrice || trade.amount,
+        profitLoss: trade.profitLoss || trade.profit,
+        status: trade.status === 'closed'
+          ? (trade.profit > 0 ? 'won' : (trade.metadata?.outcome === 'closed_manual' ? 'closed_manual' : 'lost'))
+          : trade.status,
+        date: new Date(trade.openTime).toISOString().split('T')[0], // YYYY-MM-DD format
+        time: trade.closeTime ? new Date(trade.closeTime).toTimeString().split(' ')[0] : '-', // HH:MM:SS format
+        accountType: trade.metadata?.accountType || 'paper',
+        tradeCategory: trade.metadata?.tradeCategory || 'volatility',
+        reasoning: trade.metadata?.reasoning || '',
+
+        // Legacy fields for backward compatibility
+        action: trade.type.toUpperCase() === 'BUY' ? 'CALL' : (trade.type.toUpperCase() === 'SELL' ? 'PUT' : trade.type.toUpperCase()),
         duration: trade.metadata?.duration || '-',
         stake: trade.amount,
-        entryPrice: trade.price,
-        exitPrice: trade.closeTime ? trade.metadata?.exitPrice || trade.price : null, // Use trade.price if exitPrice not available but closed
-        pnl: trade.profit,
-        status: trade.status === 'closed' 
-          ? (trade.profit > 0 ? 'won' : (trade.metadata?.outcome === 'closed_manual' ? 'closed_manual' : 'lost_duration')) 
-          : trade.status, // open, cancelled etc.
-        accountType: trade.metadata?.accountType || 'paper',
-        tradeCategory: trade.metadata?.tradeCategory || 'forexCrypto', // Default or extract from metadata
-        reasoning: trade.metadata?.reasoning || ''
+        pnl: trade.profit
       }));
       
       console.log("Fetched trades from database:", dbTrades.length);
@@ -360,54 +376,72 @@ export default function TradeHistoryPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Instrument</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Account</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead className="text-right">Entry Price</TableHead>
-                    <TableHead className="text-right">Exit Price</TableHead>
-                    <TableHead className="text-right">Stake</TableHead>
-                    <TableHead className="text-right">P/L</TableHead>
+                    <TableHead>Trade Type</TableHead>
+                    <TableHead>Entry Point</TableHead>
+                    <TableHead>Exit Point</TableHead>
+                    <TableHead className="text-right">Buy Price</TableHead>
+                    <TableHead className="text-right">Profit/Loss</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Instrument</TableHead>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Category</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredTrades.map((trade) => (
                     <TableRow key={trade.id}>
-                      <TableCell>{new Date(trade.timestamp).toLocaleString()}</TableCell>
-                      <TableCell>{trade.instrument}</TableCell>
-                      <TableCell>{trade.tradeCategory}</TableCell>
+                      {/* Trade Type */}
                       <TableCell>
-                        {/* @ts-ignore */}
+                        <Badge
+                          variant={trade.action === 'CALL' || trade.action === 'BUY' ? 'default' : 'destructive'}
+                          className={trade.action === 'CALL' || trade.action === 'BUY' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}
+                        >
+                          {trade.tradeType || trade.action || 'N/A'}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Entry Point */}
+                      <TableCell>{formatPrice(trade.entryPrice, trade.instrument)}</TableCell>
+
+                      {/* Exit Point */}
+                      <TableCell>{trade.exitPrice ? formatPrice(trade.exitPrice, trade.instrument) : '-'}</TableCell>
+
+                      {/* Buy Price */}
+                      <TableCell className="text-right">{formatCurrency(trade.buyPrice || trade.stake)}</TableCell>
+
+                      {/* Profit/Loss */}
+                      <TableCell className={`text-right ${trade.profitLoss && trade.profitLoss > 0 ? 'text-green-500' : trade.profitLoss && trade.profitLoss < 0 ? 'text-red-500' : trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}`}>
+                        {trade.profitLoss !== null && trade.profitLoss !== undefined ? formatCurrency(trade.profitLoss) : (trade.pnl !== null ? formatCurrency(trade.pnl) : '-')}
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="text-center">
+                        <Badge variant={getStatusBadgeVariant(trade.status)} className={getStatusBadgeColorClass(trade.status)}>
+                          {trade.status.replace('_', ' ').toUpperCase()}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Time */}
+                      <TableCell>{trade.time || new Date(trade.timestamp).toTimeString().split(' ')[0]}</TableCell>
+
+                      {/* Date */}
+                      <TableCell>{trade.date || new Date(trade.timestamp).toISOString().split('T')[0]}</TableCell>
+
+                      {/* Instrument */}
+                      <TableCell>{trade.instrument}</TableCell>
+
+                      {/* Account */}
+                      <TableCell>
                         <Badge variant={trade.accountType === 'live' ? 'default' : 'secondary'}
                                className={trade.accountType === 'live' ? 'bg-orange-500' : ''}>
                           {trade.accountType.toUpperCase()}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        {/* @ts-ignore */}
-                        <Badge 
-                          variant={trade.action === 'CALL' || trade.action === 'BUY' ? 'default' : 'destructive'}
-                          className={trade.action === 'CALL' || trade.action === 'BUY' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}
-                        >
-                          {trade.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{trade.duration}</TableCell>
-                      <TableCell className="text-right">{formatPrice(trade.entryPrice, trade.instrument)}</TableCell>
-                      <TableCell className="text-right">{trade.exitPrice ? formatPrice(trade.exitPrice, trade.instrument) : '-'}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(trade.stake)}</TableCell>
-                      <TableCell className={`text-right ${trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}`}>
-                        {trade.pnl !== null ? formatCurrency(trade.pnl) : '-'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {/* @ts-ignore */}
-                        <Badge variant={getStatusBadgeVariant(trade.status)} className={getStatusBadgeColorClass(trade.status)}>
-                          {trade.status.replace('_', ' ').toUpperCase()}
-                        </Badge>
-                      </TableCell>
+
+                      {/* Category */}
+                      <TableCell>{trade.tradeCategory}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

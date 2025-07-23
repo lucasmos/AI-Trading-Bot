@@ -121,3 +121,31 @@ export function getDisplayTradeTypeDetails(
 
   return derivContractType; // Fallback to the raw Deriv contract type if no specific mapping found
 }
+
+// Helper function to convert user trade type to Deriv-style display name
+export function getTradeTypeDisplayName(userTradeType: string | undefined, contractType?: string): string {
+  if (contractType) {
+    // Use contract type for more specific display
+    switch (contractType) {
+      case 'CALL': return 'Rise/Fall';
+      case 'PUT': return 'Rise/Fall';
+      case 'ONETOUCH': return 'Touch/No Touch';
+      case 'NOTOUCH': return 'Touch/No Touch';
+      case 'DIGITOVER': return 'Over/Under';
+      case 'DIGITUNDER': return 'Over/Under';
+      case 'DIGITEVEN': return 'Even/Odd';
+      case 'DIGITODD': return 'Even/Odd';
+      default: return contractType;
+    }
+  }
+
+  // Fallback to user trade type
+  switch (userTradeType) {
+    case 'RiseFall': return 'Rise/Fall';
+    case 'HigherLower': return 'Higher/Lower';
+    case 'TouchNoTouch': return 'Touch/No Touch';
+    case 'DigitsOverUnder': return 'Over/Under';
+    case 'DigitsEvenOdd': return 'Even/Odd';
+    default: return userTradeType || 'N/A';
+  }
+}

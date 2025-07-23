@@ -26,7 +26,7 @@ export async function POST(
     const id = params.id;
     const body = await request.json();
     // Rename `metadata` from body to avoid conflict with prisma model's metadata property
-    const { exitPrice, metadata: requestBodyMetadata } = body; 
+    const { exitPrice, metadata: requestBodyMetadata, profitLoss } = body;
 
     console.log('[Close Trade API] Attempting to close trade:', {
       id, 
@@ -198,6 +198,11 @@ export async function POST(
         status: 'closed',
         closeTime: tradeClosingTime,
         profit: pnlToStore,
+
+        // New Deriv-style fields
+        exitPrice: exitPrice || null,
+        profitLoss: profitLoss !== undefined ? profitLoss : pnlToStore,
+
         metadata: finalMetadata,
       },
     });
