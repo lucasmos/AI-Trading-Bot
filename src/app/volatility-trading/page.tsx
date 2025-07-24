@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -46,7 +46,7 @@ import type {
 } from '@/types/index';
 import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 
-import { Bot, Square, Briefcase, UserCheck } from 'lucide-react';
+import { Bot, Square, Briefcase, UserCheck, Activity, DollarSign } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
