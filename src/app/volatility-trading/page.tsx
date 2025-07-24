@@ -1,22 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { v4 as uuidv4 } from 'uuid';
+
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/auth-context';
+
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
-import type { VolatilityInstrumentType, TradingMode, ActiveAutomatedVolatilityTrade, ProfitsClaimable, PriceTick, InstrumentType } from '@/types/index';
-import {
-  generateVolatilityTradingStrategy // Old AI flow for current page simulation
-} from '@/ai/flows/volatility-trading-strategy-flow';
-import { type VolatilityTradingStrategyInput } from '@/types/ai-shared-types';
-import {
-  executeVolatilityAiTradeLoop, // New backend action for real trades
-  VolatilityTradeExecutionResult,
-  VolatilityTradeOptions
-} from '@/app/actions/trade-execution-actions';
-import { getUpdatedUserBalances } from '@/app/actions/balance-actions';
-import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types'; // For the new trade type selector
-
-import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -24,9 +16,41 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 import { getCandles, getContractStatus } from '@/services/deriv';
-import { v4 as uuidv4 } from 'uuid';
 import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails, getTradeTypeDisplayName } from '@/lib/utils';
+import {
+  calculateRSI,
+  calculateMACD,
+  calculateBollingerBands,
+  calculateEMA,
+  calculateATR,
+  calculateStochastic,
+  calculateWilliamsR,
+  calculateCCI
+} from '@/lib/technical-analysis';
+
+import {
+  executeVolatilityAiTradeLoop,
+  type VolatilityTradeExecutionResult,
+  type VolatilityTradeOptions
+} from '@/app/actions/trade-execution-actions';
+import { getUpdatedUserBalances } from '@/app/actions/balance-actions';
+
+import type {
+  VolatilityInstrumentType,
+  TradingMode,
+  ActiveAutomatedVolatilityTrade,
+  ProfitsClaimable,
+  InstrumentType
+} from '@/types/index';
+import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
+
+import { Bot, Square, Briefcase, UserCheck } from 'lucide-react';
+import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
+import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
+import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
+import type { PriceTick } from '@/types';
 
 // Helper function to get clean display names for chart tabs
 function getChartTabLabel(instrument: string): string {
@@ -44,12 +68,6 @@ function getChartTabLabel(instrument: string): string {
     default: return instrument;
   }
 }
-import { useAuth } from '@/contexts/auth-context';
-import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react';
-import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
-import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateStochastic, calculateWilliamsR, calculateCCI } from '@/lib/technical-analysis';
-import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
-import { useRouter } from 'next/navigation';
 import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-balance-listener';
 
 const DEFAULT_PAPER_BALANCE = 10000;
@@ -93,6 +111,8 @@ export default function VolatilityTradingPage() {
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
   const [selectedUnderDigit, setSelectedUnderDigit] = useState<number | null>(null);
 
+
+
   // State for real-time price streaming for trade type cards
   const [currentStreamingPrice, setCurrentStreamingPrice] = useState<number>(0);
   const [priceSequence, setPriceSequence] = useState<Array<{price: number, digit: number, timestamp: number}>>([]);
@@ -101,7 +121,7 @@ export default function VolatilityTradingPage() {
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
 
-  const [selectedUserTradeTypeForLoop, setSelectedUserTradeTypeForLoop] = useState<UserTradeTypeValue | undefined>(undefined);
+  const [selectedUserTradeTypeForLoop, setSelectedUserTradeTypeForLoop] = useState<UserTradeTypeValue>('DigitsEvenOdd');
 
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(10);
   const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
@@ -407,8 +427,9 @@ export default function VolatilityTradingPage() {
                 description: `Trade placements: ${successfulPlacements} successful, ${loopResults.length - successfulPlacements} failed.`,
                 duration: 7000
             });
-        } catch (error: any) {
-            toast({ title: "Volatility AI Loop Error", description: `Failed to execute trading loop: ${error.message}`, variant: "destructive" });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            toast({ title: "Volatility AI Loop Error", description: `Failed to execute trading loop: ${errorMessage}`, variant: "destructive" });
             console.error("[VolatilityPage] Error in real trade loop: ", error);
         } finally {
             console.log("[VolatilityPage] Real trade loop finally: Resetting isAiLoading to false. Keeping isAutoTradingActive true until trades complete.");
@@ -420,7 +441,7 @@ export default function VolatilityTradingPage() {
         toast({ title: "AI Simulation Starting...", description: `Simulating trades for Volatility Indices.` });
         try {
             const instrumentTicksData: Record<VolatilityInstrumentType, PriceTick[]> = {} as Record<VolatilityInstrumentType, PriceTick[]>;
-            const instrumentIndicatorsData: Record<VolatilityInstrumentType, any> = {};
+            const instrumentIndicatorsData: Record<VolatilityInstrumentType, Record<string, unknown>> = {};
 
             for (const inst of VOLATILITY_INSTRUMENTS as VolatilityInstrumentType[]) {
               try {
@@ -522,7 +543,7 @@ export default function VolatilityTradingPage() {
     consecutiveAiCallCount, lastAiCallTimestamp, router, toast,
     selectedUserTradeTypeForLoop,
     executionMode, numberOfBulkTrades, currentVolatilityInstrument,
-    tradingMode, selectedAiStrategyId,
+    tradingMode, selectedAiStrategyId
 ]);
 
   const handleStopAiAutoTrade = () => {
@@ -540,8 +561,8 @@ export default function VolatilityTradingPage() {
 
     setActiveAutomatedTrades(prevTrades =>
       prevTrades.map(trade => {
-        if (trade.status === 'active') {
-          const pnl = -trade.stake;
+        if (trade.status === 'active' || trade.status === 'pending_execution') {
+          const pnl = -(trade.stake || trade.buyPrice || 0);
           if (userInfo?.id && !selectedUserTradeTypeForLoop) {
             console.log('[VolatilityPage] Storing manually stopped SIMULATED trade for user:', userInfo.id);
             fetch('/api/trades', {
@@ -553,7 +574,7 @@ export default function VolatilityTradingPage() {
                 name: userInfo.name,
                 symbol: trade.instrument,
                 type: trade.actionDirection === 'CALL' ? 'buy' : 'sell',
-                amount: trade.stake,
+                amount: trade.stake || trade.buyPrice || 0,
                 price: trade.entryPrice,
                 aiStrategyId: selectedAiStrategyId,
                 metadata: {
@@ -575,7 +596,8 @@ export default function VolatilityTradingPage() {
                   headers: { 'Content-Type': 'application/json', },
                   body: JSON.stringify({
                     exitPrice: trade.currentPrice,
-                    metadata: { outcome: 'closed_manual', pnl: pnl, reason: "Manually stopped automated trade" }
+                    profitLoss: pnl,
+                    metadata: { outcome: 'closed_manual', pnl: pnl, profitLoss: pnl, reason: "Manually stopped automated trade" }
                   }),
                 });
               }
@@ -593,7 +615,15 @@ export default function VolatilityTradingPage() {
             winningTrades: prevProfits.winningTrades,
             losingTrades: prevProfits.losingTrades + 1,
           }));
-          return { ...trade, status: 'closed_manual', pnl, reasoning: (trade.reasoning || "") + " Manually stopped." };
+          return { 
+            ...trade, 
+            status: 'closed_manual', 
+            pnl, 
+            profitLoss: pnl, // Update both legacy and new fields
+            reasoning: (trade.reasoning || "") + " Manually stopped.", 
+            endTime: Date.now(), // Add end time for proper record keeping
+            exitPrice: trade.currentPrice // Set exit price to current price for proper display
+          };
         }
         return trade;
       })
@@ -708,8 +738,9 @@ export default function VolatilityTradingPage() {
             }
 
             return updatedTrade;
-          } catch (error: any) {
-            console.error(`[VolatilityPage] Error monitoring trade ${trade.id}:`, error.message);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`[VolatilityPage] Error monitoring trade ${trade.id}:`, errorMessage);
             return trade; // Return unchanged trade on error
           }
         })
@@ -721,7 +752,7 @@ export default function VolatilityTradingPage() {
 
       // Check if all trades are settled to stop the session
       const allSettled = updatedTrades.every(t =>
-        t.status === 'won' || t.status === 'lost_duration' || t.status === 'closed_manual' || t.status === 'failed_placement'
+        t.status === 'won' || t.status === 'lost_duration' || t.status === 'lost_stoploss' || t.status === 'closed_manual' || t.status === 'failed_placement'
       );
 
       if (allSettled && updatedTrades.length > 0) {
@@ -747,7 +778,7 @@ export default function VolatilityTradingPage() {
 
         // Calculate session summary
         const settledTrades = updatedTrades.filter(t =>
-          t.status === 'won' || t.status === 'lost_duration' || t.status === 'closed_manual'
+          t.status === 'won' || t.status === 'lost_duration' || t.status === 'lost_stoploss' || t.status === 'closed_manual'
         );
         const totalPnL = settledTrades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
         const winCount = settledTrades.filter(t => t.status === 'won').length;
@@ -771,7 +802,8 @@ export default function VolatilityTradingPage() {
     };
   }, [
     selectedUserTradeTypeForLoop, isAutoTradingActive, activeAutomatedTrades, isAiLoading,
-    userInfo, selectedDerivAccountType, setProfitsClaimable, toast
+    userInfo, selectedDerivAccountType, setProfitsClaimable, toast, refreshBalance, 
+    demoBalanceListenerRef, realBalanceListenerRef
   ]);
 
   // Simulation trade monitoring useEffect (for page simulations)
@@ -792,7 +824,7 @@ export default function VolatilityTradingPage() {
             let allSimulatedTradesConcluded = true;
             const updatedTrades = prevTrades.map(currentTrade => {
               if (currentTrade.id !== trade.id || currentTrade.status !== 'active') {
-                if(currentTrade.status === 'active') allSimulatedTradesConcluded = false;
+                if(currentTrade.status === 'active' || currentTrade.status === 'pending_execution') allSimulatedTradesConcluded = false;
                 return currentTrade;
               }
 
@@ -925,7 +957,7 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
+  }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
 
   // Real-time price streaming for trade type cards
   useEffect(() => {
@@ -933,24 +965,47 @@ export default function VolatilityTradingPage() {
       return;
     }
 
+    // Allow Over/Under cards to show even without digit selection
+
     let priceStreamInterval: NodeJS.Timeout;
+    let lastPrice = 0;
+    let isInitialized = false;
 
     const streamPrices = async () => {
       try {
-        const candles = await getCandles(currentVolatilityInstrument, 60);
-        if (candles && candles.length > 0) {
-          const latestPrice = candles[candles.length - 1].close;
+        // Get initial price from API only once
+        if (!isInitialized) {
+          const candles = await getCandles(currentVolatilityInstrument, 60);
+          if (candles && candles.length > 0) {
+            lastPrice = candles[candles.length - 1].close;
+            isInitialized = true;
+          }
+        }
+
+        if (lastPrice > 0) {
+          // Simulate real-time price movements like Deriv
           const decimalPlaces = getInstrumentDecimalPlaces(currentVolatilityInstrument);
-          const priceStr = latestPrice.toFixed(decimalPlaces);
+          const volatility = currentVolatilityInstrument.includes('100') ? 0.003 :
+                            currentVolatilityInstrument.includes('75') ? 0.002 :
+                            currentVolatilityInstrument.includes('50') ? 0.0015 :
+                            currentVolatilityInstrument.includes('25') ? 0.001 :
+                            currentVolatilityInstrument.includes('10') ? 0.0008 : 0.001;
+
+          const priceChange = (Math.random() - 0.5) * volatility * lastPrice;
+          const newPrice = lastPrice + priceChange;
+          const adjustedPrice = parseFloat(newPrice.toFixed(decimalPlaces));
+
+          lastPrice = adjustedPrice;
+          const priceStr = adjustedPrice.toFixed(decimalPlaces);
           const lastDigit = parseInt(priceStr.charAt(priceStr.length - 1));
 
-          setCurrentStreamingPrice(latestPrice);
+          setCurrentStreamingPrice(adjustedPrice);
 
-          // Add to sequence with some randomization to simulate real-time updates
+          // Add to sequence with real-time updates
           const now = Date.now();
           setPriceSequence(prev => {
             const newSequence = [...prev, {
-              price: latestPrice,
+              price: adjustedPrice,
               digit: lastDigit,
               timestamp: now
             }];
@@ -966,8 +1021,8 @@ export default function VolatilityTradingPage() {
     // Initial load
     streamPrices();
 
-    // Update every 2 seconds for demo purposes
-    priceStreamInterval = setInterval(streamPrices, 2000);
+    // Update every 500ms to match Deriv's real-time speed (like per-tick updates)
+    priceStreamInterval = setInterval(streamPrices, 500);
 
     return () => {
       if (priceStreamInterval) {
@@ -1110,7 +1165,14 @@ export default function VolatilityTradingPage() {
                     <Button
                       key={option.value}
                       variant={selectedUserTradeTypeForLoop === option.value ? 'default' : 'outline'}
-                      onClick={() => setSelectedUserTradeTypeForLoop(option.value)}
+                        onClick={() => {
+                          setSelectedUserTradeTypeForLoop(option.value);
+                          // Reset digit selections when changing trade types
+                          if (option.value !== 'DigitsOverUnder') {
+                            setSelectedOverDigit(null);
+                            setSelectedUnderDigit(null);
+                          }
+                        }}
                       disabled={isAutoTradingActive || isAiLoading}
                       className="h-12 text-sm font-medium border-2"
                     >
@@ -1238,8 +1300,8 @@ export default function VolatilityTradingPage() {
                           <button
                             key={`over-${digit}`}
                             onClick={() => {
-                              setSelectedOverDigit(digit);
-                              setSelectedUnderDigit(null);
+                              // Allow selecting/deselecting from Over column without affecting Under column
+                              setSelectedOverDigit(selectedOverDigit === digit ? null : digit);
                             }}
                             className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
                               selectedOverDigit === digit
@@ -1261,8 +1323,8 @@ export default function VolatilityTradingPage() {
                           <button
                             key={`under-${digit}`}
                             onClick={() => {
-                              setSelectedUnderDigit(digit);
-                              setSelectedOverDigit(null);
+                              // Allow selecting/deselecting from Under column without affecting Over column
+                              setSelectedUnderDigit(selectedUnderDigit === digit ? null : digit);
                             }}
                             className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
                               selectedUnderDigit === digit
@@ -1274,6 +1336,48 @@ export default function VolatilityTradingPage() {
                           </button>
                         ))}
                       </div>
+
+                      {/* Over/Under digit selection grid */}
+                      {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
+                        <div className="mt-6">
+                          <h3 className="text-lg font-medium mb-2">Digit Selection</h3>
+                          <div className="grid grid-cols-2 gap-4">
+                            {/* Over digits selection */}
+                            <div className="border rounded-lg p-4">
+                              <h4 className="font-medium mb-2 text-primary">Over</h4>
+                              <div className="grid grid-cols-5 gap-2">
+                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                                  <Button
+                                    key={`over-${digit}`}
+                                    variant={selectedOverDigit === digit ? "default" : "outline"}
+                                    className={`h-12 w-12 ${selectedOverDigit === digit ? 'bg-primary text-primary-foreground' : ''}`}
+                                    onClick={() => handleDigitSelection(digit, 'over')}
+                                  >
+                                    {digit}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Under digits selection */}
+                            <div className="border rounded-lg p-4">
+                              <h4 className="font-medium mb-2 text-destructive">Under</h4>
+                              <div className="grid grid-cols-5 gap-2">
+                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                                  <Button
+                                    key={`under-${digit}`}
+                                    variant={selectedUnderDigit === digit ? "default" : "outline"}
+                                    className={`h-12 w-12 ${selectedUnderDigit === digit ? 'bg-destructive text-destructive-foreground' : ''}`}
+                                    onClick={() => handleDigitSelection(digit, 'under')}
+                                  >
+                                    {digit}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1283,20 +1387,33 @@ export default function VolatilityTradingPage() {
                       Last Digit Sequence (Last 20 ticks)
                       {(selectedOverDigit !== null || selectedUnderDigit !== null) && (
                         <span className="ml-2 text-xs text-muted-foreground">
-                          Selected: {selectedOverDigit !== null ? `Over ${selectedOverDigit}` : `Under ${selectedUnderDigit}`}
+                          Selected: {[
+                            selectedOverDigit !== null ? `Over ${selectedOverDigit}` : null,
+                            selectedUnderDigit !== null ? `Under ${selectedUnderDigit}` : null
+                          ].filter(Boolean).join(', ')}
                         </span>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-1 justify-center">
                       {priceSequence.slice(-20).map((item, index) => {
                         let bgColor = 'bg-gray-300';
+                        let isWinning = false;
 
-                        if (selectedOverDigit !== null) {
-                          // Over logic: digits above selected digit are green (win), digits at or below are red (loss)
-                          bgColor = item.digit > selectedOverDigit ? 'bg-green-500' : 'bg-red-500';
+                        // Handle both Over and Under selections simultaneously
+                        if (selectedOverDigit !== null && selectedUnderDigit !== null) {
+                          // Both selected: digit wins if it satisfies either condition
+                          const overWin = item.digit > selectedOverDigit;
+                          const underWin = item.digit < selectedUnderDigit;
+                          isWinning = overWin || underWin;
+                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
+                        } else if (selectedOverDigit !== null) {
+                          // Only Over selected: digits above selected digit are green (win)
+                          isWinning = item.digit > selectedOverDigit;
+                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
                         } else if (selectedUnderDigit !== null) {
-                          // Under logic: digits below selected digit are green (win), digits at or above are red (loss)
-                          bgColor = item.digit < selectedUnderDigit ? 'bg-green-500' : 'bg-red-500';
+                          // Only Under selected: digits below selected digit are green (win)
+                          isWinning = item.digit < selectedUnderDigit;
+                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
                         }
 
                         return (
@@ -1313,7 +1430,8 @@ export default function VolatilityTradingPage() {
 
                   {/* Instructions */}
                   <div className="text-xs text-muted-foreground text-center space-y-1">
-                    <div>Select a digit in Over or Under column to see win/loss predictions</div>
+                    <div>Select one digit from Over column, Under column, or both to see win/loss predictions</div>
+                    <div>Click the same digit again to deselect it</div>
                     <div className="flex justify-center gap-4">
                       <div className="flex items-center gap-1">
                         <div className="w-3 h-3 rounded-full bg-green-500"></div>
@@ -1399,7 +1517,7 @@ export default function VolatilityTradingPage() {
                              trade.status === 'failed_placement' ? 'Failed' :
                              trade.status === 'won' ? 'Won' :
                              trade.status === 'lost_duration' ? 'Lost' :
-                             trade.status === 'lost_stoploss' ? 'Lost' :
+                             trade.status === 'lost_stoploss' ? 'Stop Loss' :
                              trade.status === 'closed_manual' ? 'Closed' :
                              trade.status}
                           </Badge>
@@ -1427,6 +1545,4 @@ export default function VolatilityTradingPage() {
   );
 }
 
-if (typeof window !== 'undefined' && !(window as any).uuidv4) {
-  (window as any).uuidv4 = uuidv4;
-}
+

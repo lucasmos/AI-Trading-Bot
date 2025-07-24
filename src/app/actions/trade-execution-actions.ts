@@ -133,6 +133,8 @@ export interface VolatilityTradeExecutionResult {
   error?: string;
   dbTradeId?: string;
   aiReasoning?: string;
+  overDigit?: number | null;
+  underDigit?: number | null;
 }
 
 export interface VolatilityTradeOptions {
