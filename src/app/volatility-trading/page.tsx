@@ -68,6 +68,16 @@ function getChartTabLabel(instrument: string): string {
     default: return instrument;
   }
 }
+
+// Helper function to get update interval based on instrument type
+function getUpdateInterval(instrument: string): number {
+  // (1s) indices update every 1 second (1000ms)
+  if (instrument.includes('(1s)')) {
+    return 1000;
+  }
+  // Regular volatility indices update every 2 seconds (2000ms)
+  return 2000;
+}
 import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-balance-listener';
 
 const DEFAULT_PAPER_BALANCE = 10000;
@@ -1042,8 +1052,9 @@ export default function VolatilityTradingPage() {
     // Initial load
     streamPrices();
 
-    // Update every 1 second (1000ms) for all volatility indices
-    priceStreamInterval = setInterval(streamPrices, 1000);
+    // Use dynamic interval based on instrument type
+    const updateInterval = getUpdateInterval(currentVolatilityInstrument);
+    priceStreamInterval = setInterval(streamPrices, updateInterval);
 
     return () => {
       if (priceStreamInterval) {
