@@ -117,6 +117,27 @@ export default function VolatilityTradingPage() {
   const [currentStreamingPrice, setCurrentStreamingPrice] = useState<number>(0);
   const [priceSequence, setPriceSequence] = useState<Array<{price: number, digit: number, timestamp: number}>>([]);
 
+  // Handler for digit selection that allows one from each column
+  const handleDigitSelection = useCallback((digitValue: number, digitType: 'over' | 'under') => {
+    if (digitType === 'over') {
+      // If the same Over digit is clicked again, toggle it off
+      if (selectedOverDigit === digitValue) {
+        setSelectedOverDigit(null);
+      } else {
+        // Otherwise select this digit for Over
+        setSelectedOverDigit(digitValue);
+      }
+    } else { // under
+      // If the same Under digit is clicked again, toggle it off
+      if (selectedUnderDigit === digitValue) {
+        setSelectedUnderDigit(null);
+      } else {
+        // Otherwise select this digit for Under
+        setSelectedUnderDigit(digitValue);
+      }
+    }
+  }, [selectedOverDigit, selectedUnderDigit]);
+
   // Legacy state variables (keeping for backward compatibility)
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
@@ -1009,8 +1030,8 @@ export default function VolatilityTradingPage() {
               digit: lastDigit,
               timestamp: now
             }];
-            // Keep only last 50 items for performance
-            return newSequence.slice(-50);
+            // Keep only last 150 items for performance (to support 100 tick display)
+            return newSequence.slice(-150);
           });
         }
       } catch (error) {
@@ -1021,8 +1042,8 @@ export default function VolatilityTradingPage() {
     // Initial load
     streamPrices();
 
-    // Update every 500ms to match Deriv's real-time speed (like per-tick updates)
-    priceStreamInterval = setInterval(streamPrices, 500);
+    // Update every 1 second (1000ms) for all volatility indices
+    priceStreamInterval = setInterval(streamPrices, 1000);
 
     return () => {
       if (priceStreamInterval) {
@@ -1222,10 +1243,10 @@ export default function VolatilityTradingPage() {
 
           {/* Even/Odd Trade Type Card */}
           {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
-            <Card className="shadow-lg">
+            <Card className="shadow-lg min-h-[500px]">
               <CardHeader>
                 <CardTitle>Even/Odd Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
-                <CardDescription>Real-time digit sequence for Even/Odd trading</CardDescription>
+                <CardDescription>Real-time digit sequence for Even/Odd trading (100 ticks)</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -1239,14 +1260,14 @@ export default function VolatilityTradingPage() {
 
                   {/* Even/Odd Sequence */}
                   <div className="space-y-2">
-                    <div className="text-sm font-medium text-center">Digit Sequence (Last 20 ticks)</div>
-                    <div className="flex flex-wrap gap-1 justify-center">
-                      {priceSequence.slice(-20).map((item, index) => {
+                    <div className="text-sm font-medium text-center">Digit Sequence (Last 100 ticks)</div>
+                    <div className="flex flex-wrap gap-1 justify-center max-h-64 overflow-y-auto">
+                      {priceSequence.slice(-100).map((item, index) => {
                         const isEven = item.digit % 2 === 0;
                         return (
                           <div
                             key={`${item.timestamp}-${index}`}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${
+                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
                               isEven ? 'bg-blue-500' : 'bg-red-500'
                             }`}
                           >
@@ -1275,10 +1296,10 @@ export default function VolatilityTradingPage() {
 
           {/* Over/Under Trade Type Card */}
           {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
-            <Card className="shadow-lg">
+            <Card className="shadow-lg min-h-[600px]">
               <CardHeader>
                 <CardTitle>Over/Under Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
-                <CardDescription>Select your digit and view real-time sequence</CardDescription>
+                <CardDescription>Select your digit and view real-time sequence (100 ticks)</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
@@ -1290,101 +1311,56 @@ export default function VolatilityTradingPage() {
                     </div>
                   </div>
 
-                  {/* Digit Selection */}
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Over Column */}
-                    <div className="space-y-3">
-                      <div className="text-center font-medium text-green-600">Over</div>
-                      <div className="grid grid-cols-5 gap-2">
-                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-                          <button
-                            key={`over-${digit}`}
-                            onClick={() => {
-                              // Allow selecting/deselecting from Over column without affecting Under column
-                              setSelectedOverDigit(selectedOverDigit === digit ? null : digit);
-                            }}
-                            className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
-                              selectedOverDigit === digit
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
-                            }`}
-                          >
-                            {digit}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Under Column */}
-                    <div className="space-y-3">
-                      <div className="text-center font-medium text-red-600">Under</div>
-                      <div className="grid grid-cols-5 gap-2">
-                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-                          <button
-                            key={`under-${digit}`}
-                            onClick={() => {
-                              // Allow selecting/deselecting from Under column without affecting Over column
-                              setSelectedUnderDigit(selectedUnderDigit === digit ? null : digit);
-                            }}
-                            className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
-                              selectedUnderDigit === digit
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
-                            }`}
-                          >
-                            {digit}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Over/Under digit selection grid */}
-                      {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
-                        <div className="mt-6">
-                          <h3 className="text-lg font-medium mb-2">Digit Selection</h3>
-                          <div className="grid grid-cols-2 gap-4">
-                            {/* Over digits selection */}
-                            <div className="border rounded-lg p-4">
-                              <h4 className="font-medium mb-2 text-primary">Over</h4>
-                              <div className="grid grid-cols-5 gap-2">
-                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-                                  <Button
-                                    key={`over-${digit}`}
-                                    variant={selectedOverDigit === digit ? "default" : "outline"}
-                                    className={`h-12 w-12 ${selectedOverDigit === digit ? 'bg-primary text-primary-foreground' : ''}`}
-                                    onClick={() => handleDigitSelection(digit, 'over')}
-                                  >
-                                    {digit}
-                                  </Button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Under digits selection */}
-                            <div className="border rounded-lg p-4">
-                              <h4 className="font-medium mb-2 text-destructive">Under</h4>
-                              <div className="grid grid-cols-5 gap-2">
-                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
-                                  <Button
-                                    key={`under-${digit}`}
-                                    variant={selectedUnderDigit === digit ? "default" : "outline"}
-                                    className={`h-12 w-12 ${selectedUnderDigit === digit ? 'bg-destructive text-destructive-foreground' : ''}`}
-                                    onClick={() => handleDigitSelection(digit, 'under')}
-                                  >
-                                    {digit}
-                                  </Button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
+                  {/* Over/Under digit selection grid */}
+                  <div className="mt-6">
+                    <div className="text-sm text-center mb-4 text-muted-foreground">Select your digit and view real-time sequence</div>
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Over Column */}
+                      <div className="space-y-3">
+                        <div className="text-center font-medium text-green-600">Over</div>
+                        <div className="grid grid-cols-5 gap-2">
+                          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                            <button
+                              key={`over-${digit}`}
+                              onClick={() => handleDigitSelection(digit, 'over')}
+                              className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
+                                selectedOverDigit === digit
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
+                              }`}
+                            >
+                              {digit}
+                            </button>
+                          ))}
                         </div>
-                      )}
+                      </div>
+
+                      {/* Under Column */}
+                      <div className="space-y-3">
+                        <div className="text-center font-medium text-red-600">Under</div>
+                        <div className="grid grid-cols-5 gap-2">
+                          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                            <button
+                              key={`under-${digit}`}
+                              onClick={() => handleDigitSelection(digit, 'under')}
+                              className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
+                                selectedUnderDigit === digit
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
+                              }`}
+                            >
+                              {digit}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   {/* Digit Sequence */}
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-center">
-                      Last Digit Sequence (Last 20 ticks)
+                      Last Digit Sequence (Last 100 ticks)
                       {(selectedOverDigit !== null || selectedUnderDigit !== null) && (
                         <span className="ml-2 text-xs text-muted-foreground">
                           Selected: {[
@@ -1394,32 +1370,34 @@ export default function VolatilityTradingPage() {
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-1 justify-center">
-                      {priceSequence.slice(-20).map((item, index) => {
+                    <div className="flex flex-wrap gap-1 justify-center max-h-64 overflow-y-auto">
+                      {priceSequence.slice(-100).map((item, index) => {
                         let bgColor = 'bg-gray-300';
-                        let isWinning = false;
 
-                        // Handle both Over and Under selections simultaneously
+                        // New logic: If both Over and Under are selected
                         if (selectedOverDigit !== null && selectedUnderDigit !== null) {
-                          // Both selected: digit wins if it satisfies either condition
-                          const overWin = item.digit > selectedOverDigit;
-                          const underWin = item.digit < selectedUnderDigit;
-                          isWinning = overWin || underWin;
-                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
+                          // Digits above Over selection (3,4,5,6,7,8,9 if Over=2) are GREEN
+                          // Digits below Under selection (0,1,2 if Under=3) are RED
+                          if (item.digit > selectedOverDigit) {
+                            bgColor = 'bg-green-500'; // Above Over selection = GREEN
+                          } else if (item.digit < selectedUnderDigit) {
+                            bgColor = 'bg-red-500'; // Below Under selection = RED
+                          } else {
+                            // Digits between selections are neutral
+                            bgColor = 'bg-gray-400';
+                          }
                         } else if (selectedOverDigit !== null) {
                           // Only Over selected: digits above selected digit are green (win)
-                          isWinning = item.digit > selectedOverDigit;
-                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
+                          bgColor = item.digit > selectedOverDigit ? 'bg-green-500' : 'bg-red-500';
                         } else if (selectedUnderDigit !== null) {
                           // Only Under selected: digits below selected digit are green (win)
-                          isWinning = item.digit < selectedUnderDigit;
-                          bgColor = isWinning ? 'bg-green-500' : 'bg-red-500';
+                          bgColor = item.digit < selectedUnderDigit ? 'bg-green-500' : 'bg-red-500';
                         }
 
                         return (
                           <div
                             key={`${item.timestamp}-${index}`}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${bgColor}`}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${bgColor}`}
                           >
                             {item.digit}
                           </div>
