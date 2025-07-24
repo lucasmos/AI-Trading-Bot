@@ -27,6 +27,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { getCandles, getContractStatus } from '@/services/deriv';
 import { v4 as uuidv4 } from 'uuid';
 import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails, getTradeTypeDisplayName } from '@/lib/utils';
+
+// Helper function to get clean display names for chart tabs
+function getChartTabLabel(instrument: string): string {
+  switch (instrument) {
+    case 'Volatility 10 Index': return 'V10';
+    case 'Volatility 25 Index': return 'V25';
+    case 'Volatility 50 Index': return 'V50';
+    case 'Volatility 75 Index': return 'V75';
+    case 'Volatility 100 Index': return 'V100';
+    case 'Volatility 10 (1s) Index': return 'V10 (1s)';
+    case 'Volatility 25 (1s) Index': return 'V25 (1s)';
+    case 'Volatility 50 (1s) Index': return 'V50 (1s)';
+    case 'Volatility 75 (1s) Index': return 'V75 (1s)';
+    case 'Volatility 100 (1s) Index': return 'V100 (1s)';
+    default: return instrument;
+  }
+}
 import { useAuth } from '@/contexts/auth-context';
 import { Bot, DollarSign, Play, Square, Briefcase, UserCheck, Activity } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
@@ -72,6 +89,14 @@ export default function VolatilityTradingPage() {
   const [executionMode, setExecutionMode] = useState<'turbo' | 'safe'>('safe');
   const [numberOfBulkTrades, setNumberOfBulkTrades] = useState<number>(1);
 
+  // State for Over/Under digit selection
+  const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
+  const [selectedUnderDigit, setSelectedUnderDigit] = useState<number | null>(null);
+
+  // State for real-time price streaming for trade type cards
+  const [currentStreamingPrice, setCurrentStreamingPrice] = useState<number>(0);
+  const [priceSequence, setPriceSequence] = useState<Array<{price: number, digit: number, timestamp: number}>>([]);
+
   // Legacy state variables (keeping for backward compatibility)
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
   const [selectedAiStrategyId, setSelectedAiStrategyId] = useState<string>(DEFAULT_AI_STRATEGY_ID);
@@ -108,10 +133,8 @@ export default function VolatilityTradingPage() {
 
   const USER_TRADE_TYPES_OPTIONS: { value: UserTradeTypeValue; label: string }[] = [
     { value: 'RiseFall', label: 'Rise/Fall' },
-    { value: 'HigherLower', label: 'Higher/Lower' },
-    { value: 'TouchNoTouch', label: 'Touch/No Touch' },
-    { value: 'DigitsOverUnder', label: 'Digits - Over/Under' },
-    { value: 'DigitsEvenOdd', label: 'Digits - Even/Odd' },
+    { value: 'DigitsOverUnder', label: 'Over/Under' },
+    { value: 'DigitsEvenOdd', label: 'Even/Odd' },
   ];
 
   const currentBalance = useMemo(() => {
@@ -904,6 +927,55 @@ export default function VolatilityTradingPage() {
     };
   }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
 
+  // Real-time price streaming for trade type cards
+  useEffect(() => {
+    if (!selectedUserTradeTypeForLoop || (selectedUserTradeTypeForLoop !== 'DigitsEvenOdd' && selectedUserTradeTypeForLoop !== 'DigitsOverUnder')) {
+      return;
+    }
+
+    let priceStreamInterval: NodeJS.Timeout;
+
+    const streamPrices = async () => {
+      try {
+        const candles = await getCandles(currentVolatilityInstrument, 60);
+        if (candles && candles.length > 0) {
+          const latestPrice = candles[candles.length - 1].close;
+          const decimalPlaces = getInstrumentDecimalPlaces(currentVolatilityInstrument);
+          const priceStr = latestPrice.toFixed(decimalPlaces);
+          const lastDigit = parseInt(priceStr.charAt(priceStr.length - 1));
+
+          setCurrentStreamingPrice(latestPrice);
+
+          // Add to sequence with some randomization to simulate real-time updates
+          const now = Date.now();
+          setPriceSequence(prev => {
+            const newSequence = [...prev, {
+              price: latestPrice,
+              digit: lastDigit,
+              timestamp: now
+            }];
+            // Keep only last 50 items for performance
+            return newSequence.slice(-50);
+          });
+        }
+      } catch (error) {
+        console.error('Error streaming prices for trade type cards:', error);
+      }
+    };
+
+    // Initial load
+    streamPrices();
+
+    // Update every 2 seconds for demo purposes
+    priceStreamInterval = setInterval(streamPrices, 2000);
+
+    return () => {
+      if (priceStreamInterval) {
+        clearInterval(priceStreamInterval);
+      }
+    };
+  }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument]);
+
   // Cleanup effect for component unmount
   useEffect(() => {
     return () => {
@@ -999,27 +1071,24 @@ export default function VolatilityTradingPage() {
               {/* 4. Number of Bulk Trades */}
               <div className="space-y-2">
                 <Label htmlFor="bulk-trades">Number of Bulk Trades</Label>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNumberOfBulkTrades(Math.max(1, numberOfBulkTrades - 1))}
-                    disabled={isAutoTradingActive || isAiLoading || numberOfBulkTrades <= 1}
-                  >
-                    -
-                  </Button>
-                  <div className="flex-1 text-center font-medium">{numberOfBulkTrades}</div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNumberOfBulkTrades(Math.min(20, numberOfBulkTrades + 1))}
-                    disabled={isAutoTradingActive || isAiLoading || numberOfBulkTrades >= 20}
-                  >
-                    +
-                  </Button>
-                </div>
+                <Input
+                  id="bulk-trades"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={numberOfBulkTrades}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    if (!isNaN(value) && value >= 1 && value <= 20) {
+                      setNumberOfBulkTrades(value);
+                    }
+                  }}
+                  disabled={isAutoTradingActive || isAiLoading}
+                  className="text-center"
+                  placeholder="Enter number (1-20)"
+                />
                 <div className="text-xs text-muted-foreground">
-                  Default: 1, Maximum: 20 trades per session
+                  Enter a number between 1 and 20 trades per session
                 </div>
               </div>
                <div>
@@ -1034,26 +1103,30 @@ export default function VolatilityTradingPage() {
                  {authStatus === 'authenticated' && !userInfo?.derivDemoAccountId && !userInfo?.derivRealAccountId && ( <p className="text-xs text-muted-foreground mt-1">Link Deriv accounts in Profile.</p> )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="volatility-user-trade-type-loop">Select Trade Type (for Real Backend Loop)</Label>
-                <Select
-                  value={selectedUserTradeTypeForLoop || ""}
-                  onValueChange={(value) => {
-                    // If the placeholder "None" is selected (value is empty string), set state to undefined
-                    setSelectedUserTradeTypeForLoop(value === "" ? undefined : value as UserTradeTypeValue);
-                  }}
-                  disabled={isAutoTradingActive || isAiLoading}
-                >
-                  <SelectTrigger id="volatility-user-trade-type-loop">
-                    <SelectValue placeholder="None (Use Page Simulation)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {USER_TRADE_TYPES_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">Select a type to use the new backend AI trading loop. 'None' uses the current page's simulation.</p>
+              <div className="space-y-3">
+                <Label htmlFor="volatility-user-trade-type-loop">Select Trade Type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {USER_TRADE_TYPES_OPTIONS.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={selectedUserTradeTypeForLoop === option.value ? 'default' : 'outline'}
+                      onClick={() => setSelectedUserTradeTypeForLoop(option.value)}
+                      disabled={isAutoTradingActive || isAiLoading}
+                      className="h-12 text-sm font-medium border-2"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                  <Button
+                    variant={selectedUserTradeTypeForLoop === undefined ? 'default' : 'outline'}
+                    onClick={() => setSelectedUserTradeTypeForLoop(undefined)}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className="h-12 text-sm font-medium border-2 col-span-2"
+                  >
+                    Simulation Mode
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Select a trade type for real trading or use Simulation Mode for practice.</p>
               </div>
 
               <div>
@@ -1084,6 +1157,178 @@ export default function VolatilityTradingPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Even/Odd Trade Type Card */}
+          {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Even/Odd Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
+                <CardDescription>Real-time digit sequence for Even/Odd trading</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Current Price Display */}
+                  <div className="text-center">
+                    <div className="text-sm text-muted-foreground mb-2">Current Price</div>
+                    <div className="text-2xl font-mono font-bold">
+                      {currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument))}
+                    </div>
+                  </div>
+
+                  {/* Even/Odd Sequence */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-center">Digit Sequence (Last 20 ticks)</div>
+                    <div className="flex flex-wrap gap-1 justify-center">
+                      {priceSequence.slice(-20).map((item, index) => {
+                        const isEven = item.digit % 2 === 0;
+                        return (
+                          <div
+                            key={`${item.timestamp}-${index}`}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${
+                              isEven ? 'bg-blue-500' : 'bg-red-500'
+                            }`}
+                          >
+                            {isEven ? 'E' : 'O'}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex justify-center gap-4 text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+                      <span>Even (0,2,4,6,8)</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-4 h-4 rounded-full bg-red-500"></div>
+                      <span>Odd (1,3,5,7,9)</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Over/Under Trade Type Card */}
+          {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Over/Under Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
+                <CardDescription>Select your digit and view real-time sequence</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Current Price Display */}
+                  <div className="text-center">
+                    <div className="text-sm text-muted-foreground mb-2">Current Price</div>
+                    <div className="text-2xl font-mono font-bold">
+                      {currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument))}
+                    </div>
+                  </div>
+
+                  {/* Digit Selection */}
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Over Column */}
+                    <div className="space-y-3">
+                      <div className="text-center font-medium text-green-600">Over</div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                          <button
+                            key={`over-${digit}`}
+                            onClick={() => {
+                              setSelectedOverDigit(digit);
+                              setSelectedUnderDigit(null);
+                            }}
+                            className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
+                              selectedOverDigit === digit
+                                ? 'bg-blue-500 text-white border-blue-500'
+                                : 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
+                            }`}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Under Column */}
+                    <div className="space-y-3">
+                      <div className="text-center font-medium text-red-600">Under</div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+                          <button
+                            key={`under-${digit}`}
+                            onClick={() => {
+                              setSelectedUnderDigit(digit);
+                              setSelectedOverDigit(null);
+                            }}
+                            className={`w-10 h-10 rounded-full border-2 font-bold text-sm ${
+                              selectedUnderDigit === digit
+                                ? 'bg-blue-500 text-white border-blue-500'
+                                : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
+                            }`}
+                          >
+                            {digit}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Digit Sequence */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-center">
+                      Last Digit Sequence (Last 20 ticks)
+                      {(selectedOverDigit !== null || selectedUnderDigit !== null) && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          Selected: {selectedOverDigit !== null ? `Over ${selectedOverDigit}` : `Under ${selectedUnderDigit}`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1 justify-center">
+                      {priceSequence.slice(-20).map((item, index) => {
+                        let bgColor = 'bg-gray-300';
+
+                        if (selectedOverDigit !== null) {
+                          // Over logic: digits above selected digit are green (win), digits at or below are red (loss)
+                          bgColor = item.digit > selectedOverDigit ? 'bg-green-500' : 'bg-red-500';
+                        } else if (selectedUnderDigit !== null) {
+                          // Under logic: digits below selected digit are green (win), digits at or above are red (loss)
+                          bgColor = item.digit < selectedUnderDigit ? 'bg-green-500' : 'bg-red-500';
+                        }
+
+                        return (
+                          <div
+                            key={`${item.timestamp}-${index}`}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${bgColor}`}
+                          >
+                            {item.digit}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="text-xs text-muted-foreground text-center space-y-1">
+                    <div>Select a digit in Over or Under column to see win/loss predictions</div>
+                    <div className="flex justify-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <span>Winning digits</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                        <span>Losing digits</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="md:col-span-2 space-y-6">
