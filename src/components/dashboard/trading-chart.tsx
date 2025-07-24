@@ -31,15 +31,7 @@ function getChartTabLabel(instrument: string): string {
   }
 }
 
-// Helper function to get update interval based on instrument type
-function getUpdateInterval(instrument: string): number {
-  // (1s) indices update every 1 second (1000ms)
-  if (instrument.includes('(1s)')) {
-    return 1000;
-  }
-  // Regular volatility indices update every 2 seconds (2000ms)
-  return 2000;
-}
+
 
 const chartConfig = {
   price: {
