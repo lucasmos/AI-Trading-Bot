@@ -203,8 +203,13 @@ export function useStreamingChart({
         
         setChartData(streamingData);
         lastIndicatorUpdateRef.current = Date.now();
-        
-        console.log('[useStreamingChart] Initial streaming data loaded successfully');
+
+        console.log(`[useStreamingChart] Initial streaming data loaded successfully for ${instrument}:`, {
+          candleCount: candles.length,
+          streamingDataCount: streamingData.length,
+          firstPoint: streamingData[0],
+          lastPoint: streamingData[streamingData.length - 1]
+        });
       } else {
         setError(`No price data available for ${instrument}`);
       }
@@ -218,19 +223,22 @@ export function useStreamingChart({
 
   // Subscribe to real-time tick updates
   useEffect(() => {
+    console.log(`[useStreamingChart] Setting up WebSocket subscription for ${instrument}`);
     const tickStream = tickStreamRef.current;
-    
+
     const updateConnectionStatus = () => {
-      setConnectionStatus(tickStream.getConnectionStatus());
+      const status = tickStream.getConnectionStatus();
+      console.log(`[useStreamingChart] Connection status for ${instrument}:`, status);
+      setConnectionStatus(status);
     };
-    
+
     updateConnectionStatus();
     const statusInterval = setInterval(updateConnectionStatus, 1000);
-    
+
     const unsubscribe = tickStream.subscribe(instrument, {
       onTick: handleTick,
       onError: (error) => {
-        console.error('[useStreamingChart] Tick stream error:', error);
+        console.error(`[useStreamingChart] Tick stream error for ${instrument}:`, error);
         setError(error.message);
       },
       onConnect: () => {
@@ -243,10 +251,12 @@ export function useStreamingChart({
         setConnectionStatus('disconnected');
       }
     });
-    
+
     unsubscribeRef.current = unsubscribe;
-    
+    console.log(`[useStreamingChart] WebSocket subscription set up for ${instrument}`);
+
     return () => {
+      console.log(`[useStreamingChart] Cleaning up WebSocket subscription for ${instrument}`);
       clearInterval(statusInterval);
       unsubscribe();
       unsubscribeRef.current = null;
