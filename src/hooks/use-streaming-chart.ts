@@ -111,6 +111,7 @@ export function useStreamingChart({
   // Handle incoming tick data - add new tick as data point for real-time chart
   const handleTick = useCallback((tick: PriceTick) => {
     console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price}`);
+    const now = Date.now();
 
     // Increment tick count
     setTickCount(prev => prev + 1);
