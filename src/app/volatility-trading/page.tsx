@@ -52,7 +52,6 @@ import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
 import type { PriceTick } from '@/types';
-import { WebSocketTest } from '@/components/debug/websocket-test';
 
 // Helper function to get clean display names for chart tabs
 function getChartTabLabel(instrument: string): string {
@@ -1422,9 +1421,6 @@ export default function VolatilityTradingPage() {
         </div>
 
         <div className="md:col-span-2 space-y-6">
-             {/* Debug WebSocket Test - Remove this after testing */}
-             <WebSocketTest />
-
              <TradingChart
                 instrument={currentVolatilityInstrument}
                 onInstrumentChange={handleInstrumentChange}
