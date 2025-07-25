@@ -146,20 +146,21 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   const { chartData, isLoading, error, connectionStatus, refresh, tickCount } = useStreamingChart({
     instrument,
     maxDataPoints: 300,
-    indicatorUpdateInterval: 10 // Update indicators every 10 seconds for more responsive charts
+    indicatorUpdateInterval: 5 // Update indicators every 5 seconds for more responsive charts
   });
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
-  // Debug chart data updates
+  // Debug chart data updates and force re-render
   useEffect(() => {
     console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
       dataLength: chartData.length,
       tickCount: tickCount,
       lastDataPoint: chartData[chartData.length - 1],
-      firstDataPoint: chartData[0]
+      firstDataPoint: chartData[0],
+      connectionStatus: connectionStatus
     });
-  }, [chartData, instrument, tickCount]);
+  }, [chartData, instrument, tickCount, connectionStatus]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -296,7 +297,6 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              key={`chart-${chartData.length}`}
               data={chartData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
@@ -334,7 +334,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Price"
                 connectNulls={true}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Line
                 type="monotone"
@@ -345,7 +346,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Upper"
                 connectNulls={true}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Line
                 type="monotone"
@@ -356,7 +358,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Middle"
                 connectNulls={true}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Line
                 type="monotone"
@@ -367,7 +370,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Lower"
                 connectNulls={true}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Line
                 type="monotone"
@@ -378,7 +382,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="EMA (20)"
                 connectNulls={true}
-                isAnimationActive={false}
+                isAnimationActive={true}
+                animationDuration={200}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -405,7 +410,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="RSI"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={true}
+                animationDuration={200}
               />
           </LineChart>
         </ResponsiveContainer>
@@ -432,7 +438,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="MACD Line"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Line
                 type="monotone"
@@ -443,7 +450,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Signal Line"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={true}
+                animationDuration={200}
               />
               <Bar dataKey="macdHistogram" yAxisId="left" name="Histogram">
                 {chartData.map((entry, index) => (
@@ -479,7 +487,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="ATR"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={true}
+                animationDuration={200}
               />
             </LineChart>
           </ResponsiveContainer>
