@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/auth-context';
 
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
+import { WebSocketDiagnostic } from '@/components/debug/WebSocketDiagnostic';
+import { SimpleWebSocketTest } from '@/components/debug/SimpleWebSocketTest';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -1421,6 +1423,10 @@ export default function VolatilityTradingPage() {
         </div>
 
         <div className="md:col-span-2 space-y-6">
+             {/* WebSocket Diagnostic Tools - Temporary for debugging */}
+             <SimpleWebSocketTest />
+             <WebSocketDiagnostic instrument={currentVolatilityInstrument} />
+
              <TradingChart
                 instrument={currentVolatilityInstrument}
                 onInstrumentChange={handleInstrumentChange}

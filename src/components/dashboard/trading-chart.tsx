@@ -143,7 +143,7 @@ interface ChartDataPoint {
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
-  const { chartData, isLoading, error, connectionStatus, refresh, tickCount } = useStreamingChart({
+  const { chartData, isLoading, error, connectionStatus, refresh, tickCount, forceUpdate } = useStreamingChart({
     instrument,
     maxDataPoints: 300,
     indicatorUpdateInterval: 5 // Update indicators every 5 seconds for more responsive charts
@@ -156,11 +156,12 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
     console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
       dataLength: chartData.length,
       tickCount: tickCount,
+      forceUpdate: forceUpdate,
       lastDataPoint: chartData[chartData.length - 1],
       firstDataPoint: chartData[0],
       connectionStatus: connectionStatus
     });
-  }, [chartData, instrument, tickCount, connectionStatus]);
+  }, [chartData, instrument, tickCount, connectionStatus, forceUpdate]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -285,6 +286,11 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <Badge variant="outline">
             {chartData.length} candles
           </Badge>
+          {chartData.length > 0 && (
+            <Badge variant="secondary" className="font-mono">
+              {chartData[chartData.length - 1]?.price?.toFixed(decimalPlaces) || 'N/A'}
+            </Badge>
+          )}
           <Button onClick={refresh} variant="ghost" size="sm">
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -297,6 +303,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
+              key={`price-chart-${chartData.length}-${tickCount}-${forceUpdate}`}
               data={chartData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
@@ -334,8 +341,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Price"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -346,8 +353,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Upper"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -358,8 +365,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Middle"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -370,8 +377,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Lower"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -382,8 +389,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="EMA (20)"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -395,7 +402,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* RSI Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mb-4 mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart key={`rsi-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
@@ -410,8 +417,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="RSI"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
           </LineChart>
         </ResponsiveContainer>
@@ -423,7 +430,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* MACD Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData}>
+            <ComposedChart key={`macd-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
@@ -438,8 +445,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="MACD Line"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -450,8 +457,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Signal Line"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
               <Bar dataKey="macdHistogram" yAxisId="left" name="Histogram">
                 {chartData.map((entry, index) => (
@@ -472,7 +479,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* ATR Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart key={`atr-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
@@ -487,8 +494,8 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="ATR"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                isAnimationActive={false}
+                animationDuration={0}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -500,7 +507,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* Stochastic Oscillator Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart key={`stochastic-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
@@ -521,7 +528,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* Williams %R Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart key={`williams-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" domain={[-100, 0]} tick={{ fontSize: 10 }} tickMargin={5} />
@@ -541,7 +548,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         {/* CCI Chart */}
         <div style={{ width: '100%', height: '100px' }} className="mt-3">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart key={`cci-chart-${chartData.length}-${tickCount}-${forceUpdate}`} data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" domain={[-200, 200]} tick={{ fontSize: 10 }} tickMargin={5} />
