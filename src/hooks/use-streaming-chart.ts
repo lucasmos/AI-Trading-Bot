@@ -109,16 +109,37 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add each tick as a new data point
   const handleTick = useCallback((tick: PriceTick) => {
+    console.log(`[useStreamingChart] Received tick for ${instrument}:`, tick);
     const now = Date.now();
-    
-    // Check if we need to update indicators
+
+    // Always add the tick to chart data for real-time updates
+    setChartData(prevData => {
+      const newDataPoint: StreamingDataPoint = {
+        time: tick.time,
+        epoch: tick.epoch,
+        price: tick.price,
+        ...getIndicatorValues(candleDataRef.current.length - 1, candleDataRef.current.length)
+      };
+
+      console.log(`[useStreamingChart] Adding new data point:`, newDataPoint);
+      const updatedData = [...prevData, newDataPoint];
+
+      // Keep only the last N data points for smooth performance
+      if (updatedData.length > maxDataPoints) {
+        return updatedData.slice(-maxDataPoints);
+      }
+
+      return updatedData;
+    });
+
+    // Check if we need to update indicators (less frequently for performance)
     const shouldUpdateIndicators = (now - lastIndicatorUpdateRef.current) >= (indicatorUpdateInterval * 1000);
-    
+
     if (shouldUpdateIndicators) {
       // Update candle data for indicator calculations
       const currentTime = Math.floor(tick.epoch / 60) * 60; // Round to minute
       const lastCandle = candleDataRef.current[candleDataRef.current.length - 1];
-      
+
       if (!lastCandle || lastCandle.epoch !== currentTime) {
         // New candle
         candleDataRef.current.push({
@@ -135,12 +156,12 @@ export function useStreamingChart({
         lastCandle.low = Math.min(lastCandle.low, tick.price);
         lastCandle.close = tick.price;
       }
-      
+
       // Keep only last 120 candles for indicator calculations
       if (candleDataRef.current.length > 120) {
         candleDataRef.current = candleDataRef.current.slice(-120);
       }
-      
+
       // Recalculate indicators
       calculateIndicators(candleDataRef.current).then(newIndicators => {
         if (newIndicators) {
@@ -149,24 +170,6 @@ export function useStreamingChart({
         }
       });
     }
-    
-    setChartData(prevData => {
-      const newDataPoint: StreamingDataPoint = {
-        time: tick.time,
-        epoch: tick.epoch,
-        price: tick.price,
-        ...getIndicatorValues(candleDataRef.current.length - 1, candleDataRef.current.length)
-      };
-      
-      const updatedData = [...prevData, newDataPoint];
-      
-      // Keep only the last N data points for smooth performance
-      if (updatedData.length > maxDataPoints) {
-        return updatedData.slice(-maxDataPoints);
-      }
-      
-      return updatedData;
-    });
   }, [calculateIndicators, getIndicatorValues, maxDataPoints, indicatorUpdateInterval]);
 
   // Load initial historical data and convert to streaming format

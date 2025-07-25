@@ -146,7 +146,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   const { chartData, isLoading, error, connectionStatus, refresh } = useStreamingChart({
     instrument,
     maxDataPoints: 300,
-    indicatorUpdateInterval: 60
+    indicatorUpdateInterval: 10 // Update indicators every 10 seconds for more responsive charts
   });
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
@@ -288,11 +288,13 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
             >
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
               <XAxis
-                dataKey="time"
+                dataKey="epoch"
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
-                type="category"
-                scale="point"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(value) => new Date(value * 1000).toLocaleTimeString()}
               />
               <YAxis
                 yAxisId="left"
@@ -304,7 +306,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               />
               <ChartTooltip
                 content={<ChartTooltipContent indicator="line" />}
-                labelFormatter={(value) => new Date(value).toLocaleTimeString()}
+                labelFormatter={(value) => new Date(value * 1000).toLocaleTimeString()}
                 formatter={(value: any, name: string) => [
                   typeof value === 'number' ? value.toFixed(decimalPlaces) : value,
                   name
