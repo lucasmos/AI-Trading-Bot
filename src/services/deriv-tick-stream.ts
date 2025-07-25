@@ -2,15 +2,9 @@
 import type { InstrumentType, PriceTick } from '@/types';
 import { instrumentToDerivSymbol } from './deriv';
 
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL
+const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL 
   ? `${process.env.NEXT_PUBLIC_DERIV_WS_URL}?app_id=${process.env.NEXT_PUBLIC_DERIV_APP_ID}`
   : 'wss://ws.derivws.com/websockets/v3?app_id=80447';
-
-console.log('[DerivTickStream] Environment check:', {
-  NEXT_PUBLIC_DERIV_WS_URL: process.env.NEXT_PUBLIC_DERIV_WS_URL,
-  NEXT_PUBLIC_DERIV_APP_ID: process.env.NEXT_PUBLIC_DERIV_APP_ID,
-  DERIV_API_URL: DERIV_API_URL
-});
 
 export interface TickStreamOptions {
   onTick: (tick: PriceTick) => void;
@@ -39,44 +33,22 @@ export class DerivTickStream {
     console.log('[DerivTickStream] Connecting to Deriv WebSocket...');
     console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
 
-    try {
-      this.ws = new WebSocket(DERIV_API_URL);
+    this.ws = new WebSocket(DERIV_API_URL);
 
-      // Set a connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (this.isConnecting) {
-          console.error('[DerivTickStream] Connection timeout - closing WebSocket');
-          this.ws?.close();
-          this.isConnecting = false;
-          this.subscriptions.forEach(options => {
-            options.onError(new Error('WebSocket connection timeout'));
-          });
-        }
-      }, 10000); // 10 second timeout
-
-      this.ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully!');
-        this.isConnecting = false;
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 1000;
-
-        console.log('[DerivTickStream] Notifying', this.subscriptions.size, 'subscribers of connection');
-        this.subscriptions.forEach(options => {
-          options.onConnect?.();
-        });
-
-        this.resubscribeAll();
-      };
-    } catch (error) {
-      console.error('[DerivTickStream] Failed to create WebSocket:', error);
+    this.ws.onopen = () => {
+      console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully!');
       this.isConnecting = false;
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      this.reconnectDelay = 1000;
+
+      console.log('[DerivTickStream] Notifying', this.subscriptions.size, 'subscribers of connection');
       this.subscriptions.forEach(options => {
-        options.onError(new Error(`Failed to create WebSocket: ${error}`));
+        options.onConnect?.();
       });
-      return;
-    }
+
+      this.resubscribeAll();
+    };
 
     this.ws.onmessage = (event) => {
       try {
@@ -89,15 +61,10 @@ export class DerivTickStream {
 
     this.ws.onerror = (error) => {
       console.error('[DerivTickStream] ❌ WebSocket error:', error);
-      console.error('[DerivTickStream] Error details:', {
-        type: error.type,
-        target: error.target,
-        currentTarget: error.currentTarget
-      });
       this.isConnecting = false;
       this.isConnected = false;
       this.subscriptions.forEach(options => {
-        options.onError(new Error(`WebSocket connection error: ${error.type || 'Unknown error'}`));
+        options.onError(new Error('WebSocket connection error'));
       });
     };
 

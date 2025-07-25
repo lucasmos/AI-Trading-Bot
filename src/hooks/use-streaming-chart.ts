@@ -41,7 +41,6 @@ export function useStreamingChart({
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [tickCount, setTickCount] = useState<number>(0);
-  const [forceUpdate, setForceUpdate] = useState<number>(0);
   
   const tickStreamRef = useRef(getTickStream());
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -111,8 +110,7 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add new tick as data point for real-time chart
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price} at ${tick.time}`);
-    console.log(`[useStreamingChart] Current chart data length: ${chartData.length}`);
+    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price}`);
     const now = Date.now();
 
     // Increment tick count
@@ -144,9 +142,6 @@ export function useStreamingChart({
       console.log(`[useStreamingChart] ✅ CHART UPDATED - New price: ${tick.price}, Total points: ${result.length}`);
       return result;
     });
-
-    // Force a re-render to ensure charts update
-    setForceUpdate(prev => prev + 1);
 
     // Check if we need to update indicators (less frequently for performance)
     const shouldUpdateIndicators = (now - lastIndicatorUpdateRef.current) >= (indicatorUpdateInterval * 1000);
@@ -316,7 +311,6 @@ export function useStreamingChart({
     error,
     connectionStatus,
     tickCount,
-    forceUpdate,
     refresh: loadInitialData
   };
 }
