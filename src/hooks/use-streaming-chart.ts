@@ -109,71 +109,96 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add each tick as a new data point
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] 🎯 Received tick for ${instrument}:`, tick);
+    console.log(`[useStreamingChart] Received tick for ${instrument}:`, tick);
     const now = Date.now();
 
     // Always add the tick to chart data for real-time updates
     setChartData(prevData => {
+      // Create a deep copy of the last data point to get the most recent indicators
+      const lastDataPoint = prevData.length > 0 ? {...prevData[prevData.length - 1]} : {};
+
       const newDataPoint: StreamingDataPoint = {
         time: tick.time,
         epoch: tick.epoch,
         price: tick.price,
-        ...getIndicatorValues(candleDataRef.current.length - 1, candleDataRef.current.length)
+        // Use the previous indicator values until we recalculate them
+        rsi: lastDataPoint.rsi,
+        macdLine: lastDataPoint.macdLine,
+        macdSignal: lastDataPoint.macdSignal,
+        macdHistogram: lastDataPoint.macdHistogram,
+        bbUpper: lastDataPoint.bbUpper,
+        bbMiddle: lastDataPoint.bbMiddle,
+        bbLower: lastDataPoint.bbLower,
+        ema: lastDataPoint.ema,
+        atr: lastDataPoint.atr
       };
 
-      console.log(`[useStreamingChart] ➕ Adding new data point for ${instrument}:`, newDataPoint);
+      console.log(`[useStreamingChart] Adding new data point:`, newDataPoint);
       const updatedData = [...prevData, newDataPoint];
 
       // Keep only the last N data points for smooth performance
       if (updatedData.length > maxDataPoints) {
-        const trimmedData = updatedData.slice(-maxDataPoints);
-        console.log(`[useStreamingChart] 📊 Chart data trimmed from ${updatedData.length} to ${trimmedData.length} points`);
-        return trimmedData;
+        return updatedData.slice(-maxDataPoints);
       }
 
-      console.log(`[useStreamingChart] 📊 Chart data updated: ${updatedData.length} total points`);
       return updatedData;
     });
 
     // Check if we need to update indicators (less frequently for performance)
     const shouldUpdateIndicators = (now - lastIndicatorUpdateRef.current) >= (indicatorUpdateInterval * 1000);
 
+    // Update candle data for indicator calculations (always do this for each tick)
+    const currentTime = Math.floor(tick.epoch / 60) * 60; // Round to minute
+    const lastCandle = candleDataRef.current[candleDataRef.current.length - 1];
+
+    if (!lastCandle || lastCandle.epoch !== currentTime) {
+      // New candle
+      candleDataRef.current.push({
+        time: new Date(currentTime * 1000).toISOString(),
+        epoch: currentTime,
+        open: tick.price,
+        high: tick.price,
+        low: tick.price,
+        close: tick.price
+      });
+    } else {
+      // Update existing candle
+      lastCandle.high = Math.max(lastCandle.high, tick.price);
+      lastCandle.low = Math.min(lastCandle.low, tick.price);
+      lastCandle.close = tick.price;
+    }
+
+    // Keep only last 120 candles for indicator calculations
+    if (candleDataRef.current.length > 120) {
+      candleDataRef.current = candleDataRef.current.slice(-120);
+    }
+
     if (shouldUpdateIndicators) {
-      // Update candle data for indicator calculations
-      const currentTime = Math.floor(tick.epoch / 60) * 60; // Round to minute
-      const lastCandle = candleDataRef.current[candleDataRef.current.length - 1];
-
-      if (!lastCandle || lastCandle.epoch !== currentTime) {
-        // New candle
-        candleDataRef.current.push({
-          time: new Date(currentTime * 1000).toISOString(),
-          epoch: currentTime,
-          open: tick.price,
-          high: tick.price,
-          low: tick.price,
-          close: tick.price
-        });
-      } else {
-        // Update existing candle
-        lastCandle.high = Math.max(lastCandle.high, tick.price);
-        lastCandle.low = Math.min(lastCandle.low, tick.price);
-        lastCandle.close = tick.price;
-      }
-
-      // Keep only last 120 candles for indicator calculations
-      if (candleDataRef.current.length > 120) {
-        candleDataRef.current = candleDataRef.current.slice(-120);
-      }
-
       // Recalculate indicators
       calculateIndicators(candleDataRef.current).then(newIndicators => {
         if (newIndicators) {
           indicatorDataRef.current = newIndicators;
           lastIndicatorUpdateRef.current = now;
+
+          // Important: Update all existing chart data points with new indicator values
+          setChartData(prevData => {
+            return prevData.map((point, index) => {
+              // Only update the points that correspond to actual candles
+              if (index < prevData.length - 1) {
+                return point; // Keep older points unchanged
+              }
+
+              // Update the latest point with fresh indicators
+              return {
+                ...point,
+                ...getIndicatorValues(candleDataRef.current.length - 1, candleDataRef.current.length)
+              };
+            });
+          });
         }
       });
     }
-  }, [calculateIndicators, getIndicatorValues, maxDataPoints, indicatorUpdateInterval]);
+  }, [calculateIndicators, getIndicatorValues, maxDataPoints, indicatorUpdateInterval, instrument]);
 
   // Load initial historical data and convert to streaming format
   const loadInitialData = useCallback(async () => {
@@ -226,12 +251,8 @@ export function useStreamingChart({
 
   // Subscribe to real-time tick updates
   useEffect(() => {
-    console.log(`[useStreamingChart] 🔌 Setting up WebSocket subscription for ${instrument}`);
+    console.log(`[useStreamingChart] Setting up WebSocket subscription for ${instrument}`);
     const tickStream = tickStreamRef.current;
-
-    // Check initial connection status
-    const initialStatus = tickStream.getConnectionStatus();
-    console.log(`[useStreamingChart] Initial connection status: ${initialStatus}`);
 
     const updateConnectionStatus = () => {
       const status = tickStream.getConnectionStatus();
@@ -243,14 +264,10 @@ export function useStreamingChart({
     const statusInterval = setInterval(updateConnectionStatus, 1000);
 
     const unsubscribe = tickStream.subscribe(instrument, {
-      onTick: (tick) => {
-        console.log(`[useStreamingChart] Tick received for ${instrument}:`, tick);
-        handleTick(tick);
-      },
+      onTick: handleTick,
       onError: (error) => {
         console.error(`[useStreamingChart] Tick stream error for ${instrument}:`, error);
         setError(error.message);
-        setConnectionStatus('disconnected');
       },
       onConnect: () => {
         console.log(`[useStreamingChart] Connected to tick stream for ${instrument}`);
@@ -269,30 +286,15 @@ export function useStreamingChart({
     return () => {
       console.log(`[useStreamingChart] Cleaning up WebSocket subscription for ${instrument}`);
       clearInterval(statusInterval);
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
+      unsubscribe();
       unsubscribeRef.current = null;
     };
   }, [instrument, handleTick]);
 
   // Load initial data when instrument changes
   useEffect(() => {
-    console.log(`[useStreamingChart] 🔄 Loading initial data for ${instrument}`);
     loadInitialData();
   }, [loadInitialData]);
-
-  // Debug effect to monitor chart data changes
-  useEffect(() => {
-    console.log(`[useStreamingChart] 📊 Chart data changed for ${instrument}:`, {
-      length: chartData.length,
-      connectionStatus,
-      isLoading,
-      error,
-      lastPoint: chartData[chartData.length - 1],
-      firstPoint: chartData[0]
-    });
-  }, [chartData, instrument, connectionStatus, isLoading, error]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -151,30 +151,14 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
-  // Force re-render when chart data changes
-  const [renderKey, setRenderKey] = useState(0);
-
-  useEffect(() => {
-    if (chartData.length > 0) {
-      setRenderKey(prev => prev + 1);
-    }
-  }, [chartData.length]);
-
   // Debug chart data updates
   useEffect(() => {
     console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
       dataLength: chartData.length,
       lastDataPoint: chartData[chartData.length - 1],
-      firstDataPoint: chartData[0],
-      connectionStatus,
-      isLoading,
-      error
+      firstDataPoint: chartData[0]
     });
-
-    if (chartData.length > 0) {
-      console.log(`[TradingChart] Sample of recent data points:`, chartData.slice(-5));
-    }
-  }, [chartData, instrument, connectionStatus, isLoading, error]);
+  }, [chartData, instrument]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -308,7 +292,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              key={`chart-${instrument}-${renderKey}-${chartData.length}`}
+              key={`chart-${chartData.length}`}
               data={chartData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
