@@ -28,15 +28,15 @@ export class DerivTickStream {
 
   private connect() {
     if (this.isConnecting || this.isConnected) return;
-    
+
     this.isConnecting = true;
     console.log('[DerivTickStream] Connecting to Deriv WebSocket...');
-    
+    console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
+
     this.ws = new WebSocket(DERIV_API_URL);
-    
+
     this.ws.onopen = () => {
-      console.log('[DerivTickStream] Connected to Deriv WebSocket');
-      console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
+      console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully!');
       this.isConnecting = false;
       this.isConnected = true;
       this.reconnectAttempts = 0;
@@ -60,21 +60,28 @@ export class DerivTickStream {
     };
 
     this.ws.onerror = (error) => {
-      console.error('[DerivTickStream] WebSocket error:', error);
+      console.error('[DerivTickStream] ❌ WebSocket error:', error);
       this.isConnecting = false;
       this.isConnected = false;
+      this.subscriptions.forEach(options => {
+        options.onError(new Error('WebSocket connection error'));
+      });
     };
 
-    this.ws.onclose = () => {
-      console.log('[DerivTickStream] WebSocket connection closed');
+    this.ws.onclose = (event) => {
+      console.log(`[DerivTickStream] 🔌 WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
       this.isConnecting = false;
       this.isConnected = false;
-      
+
       this.subscriptions.forEach(options => {
         options.onDisconnect?.();
       });
-      
-      this.attemptReconnect();
+
+      // Only attempt reconnect if it wasn't a clean close
+      if (!event.wasClean) {
+        console.log('[DerivTickStream] 🔄 Connection was not clean, attempting to reconnect...');
+        this.attemptReconnect();
+      }
     };
   }
 
@@ -103,9 +110,9 @@ export class DerivTickStream {
             time: new Date(response.tick.epoch * 1000).toISOString()
           };
 
-          // Only log occasionally to reduce console spam
-          if (Math.random() < 0.05) { // Only log ~5% of processed ticks
-            console.log(`[DerivTickStream] Processing tick for ${symbol}:`, tick.price);
+          // Log every 10th tick to monitor activity
+          if (Math.random() < 0.1) {
+            console.log(`[DerivTickStream] 📊 Processing tick for ${symbol}: ${tick.price} at ${tick.time}`);
           }
 
           options.onTick(tick);

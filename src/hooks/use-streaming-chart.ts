@@ -40,6 +40,7 @@ export function useStreamingChart({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+  const [tickCount, setTickCount] = useState<number>(0);
   
   const tickStreamRef = useRef(getTickStream());
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -111,6 +112,9 @@ export function useStreamingChart({
   const handleTick = useCallback((tick: PriceTick) => {
     console.log(`[useStreamingChart] Received tick for ${instrument}:`, tick);
     const now = Date.now();
+
+    // Increment tick count
+    setTickCount(prev => prev + 1);
 
     // Always add the tick to chart data for real-time updates
     setChartData(prevData => {
@@ -204,7 +208,8 @@ export function useStreamingChart({
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+    setTickCount(0); // Reset tick count when loading new instrument
+
     try {
       console.log('[useStreamingChart] Loading initial data for', instrument);
       const candles = await getCandles(instrument, 120, 60);
@@ -310,6 +315,7 @@ export function useStreamingChart({
     isLoading,
     error,
     connectionStatus,
+    tickCount,
     refresh: loadInitialData
   };
 }

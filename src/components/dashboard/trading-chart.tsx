@@ -143,7 +143,7 @@ interface ChartDataPoint {
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
-  const { chartData, isLoading, error, connectionStatus, refresh } = useStreamingChart({
+  const { chartData, isLoading, error, connectionStatus, refresh, tickCount } = useStreamingChart({
     instrument,
     maxDataPoints: 300,
     indicatorUpdateInterval: 10 // Update indicators every 10 seconds for more responsive charts
@@ -155,10 +155,11 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
   useEffect(() => {
     console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
       dataLength: chartData.length,
+      tickCount: tickCount,
       lastDataPoint: chartData[chartData.length - 1],
       firstDataPoint: chartData[0]
     });
-  }, [chartData, instrument]);
+  }, [chartData, instrument, tickCount]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -278,6 +279,9 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
             <span className="text-sm">{getConnectionStatusText()}</span>
           </div>
           <Badge variant={connectionStatus === 'connected' ? 'default' : 'secondary'}>
+            {tickCount || 0} ticks
+          </Badge>
+          <Badge variant="outline">
             {chartData.length} candles
           </Badge>
           <Button onClick={refresh} variant="ghost" size="sm">
