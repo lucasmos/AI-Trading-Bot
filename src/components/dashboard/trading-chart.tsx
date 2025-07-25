@@ -151,6 +151,15 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
+  // Debug chart data updates
+  useEffect(() => {
+    console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
+      dataLength: chartData.length,
+      lastDataPoint: chartData[chartData.length - 1],
+      firstDataPoint: chartData[0]
+    });
+  }, [chartData, instrument]);
+
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
     switch (connectionStatus) {
@@ -283,18 +292,17 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
+              key={`chart-${chartData.length}`}
               data={chartData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
               <XAxis
-                dataKey="epoch"
+                dataKey="time"
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
-                type="number"
-                scale="time"
-                domain={['dataMin', 'dataMax']}
-                tickFormatter={(value) => new Date(value * 1000).toLocaleTimeString()}
+                type="category"
+                tickFormatter={(value) => new Date(value).toLocaleTimeString()}
               />
               <YAxis
                 yAxisId="left"
@@ -306,7 +314,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
               />
               <ChartTooltip
                 content={<ChartTooltipContent indicator="line" />}
-                labelFormatter={(value) => new Date(value * 1000).toLocaleTimeString()}
+                labelFormatter={(value) => new Date(value).toLocaleTimeString()}
                 formatter={(value: any, name: string) => [
                   typeof value === 'number' ? value.toFixed(decimalPlaces) : value,
                   name
@@ -322,7 +330,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Price"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -333,7 +341,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Upper"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -344,7 +352,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Middle"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -355,7 +363,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Lower"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
@@ -366,7 +374,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="EMA (20)"
                 connectNulls={true}
-                animationDuration={0}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
