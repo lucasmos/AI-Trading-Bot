@@ -27,28 +27,37 @@ export class DerivTickStream {
   }
 
   private connect() {
-    if (this.isConnecting || this.isConnected) return;
-    
+    if (this.isConnecting || this.isConnected) {
+      console.log('[DerivTickStream] Already connecting or connected, skipping...');
+      return;
+    }
+
     this.isConnecting = true;
     console.log('[DerivTickStream] Connecting to Deriv WebSocket...');
-    
-    this.ws = new WebSocket(DERIV_API_URL);
-    
-    this.ws.onopen = () => {
-      console.log('[DerivTickStream] Connected to Deriv WebSocket');
-      console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
+    console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
+
+    try {
+      this.ws = new WebSocket(DERIV_API_URL);
+
+      this.ws.onopen = () => {
+        console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully');
+        this.isConnecting = false;
+        this.isConnected = true;
+        this.reconnectAttempts = 0;
+        this.reconnectDelay = 1000;
+
+        console.log('[DerivTickStream] Notifying', this.subscriptions.size, 'subscribers of connection');
+        this.subscriptions.forEach(options => {
+          options.onConnect?.();
+        });
+
+        this.resubscribeAll();
+      };
+    } catch (error) {
+      console.error('[DerivTickStream] ❌ Failed to create WebSocket connection:', error);
       this.isConnecting = false;
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-      this.reconnectDelay = 1000;
-
-      console.log('[DerivTickStream] Notifying', this.subscriptions.size, 'subscribers of connection');
-      this.subscriptions.forEach(options => {
-        options.onConnect?.();
-      });
-
-      this.resubscribeAll();
-    };
+      this.scheduleReconnect();
+    }
 
     this.ws.onmessage = (event) => {
       try {
@@ -60,20 +69,33 @@ export class DerivTickStream {
     };
 
     this.ws.onerror = (error) => {
-      console.error('[DerivTickStream] WebSocket error:', error);
+      console.error('[DerivTickStream] ❌ WebSocket error:', error);
+      console.error('[DerivTickStream] Error details:', {
+        type: error.type,
+        target: error.target?.readyState,
+        url: DERIV_API_URL
+      });
       this.isConnecting = false;
       this.isConnected = false;
+
+      this.subscriptions.forEach(options => {
+        options.onError(new Error(`WebSocket connection error: ${error.type}`));
+      });
     };
 
-    this.ws.onclose = () => {
-      console.log('[DerivTickStream] WebSocket connection closed');
+    this.ws.onclose = (event) => {
+      console.log('[DerivTickStream] 🔌 WebSocket connection closed:', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean
+      });
       this.isConnecting = false;
       this.isConnected = false;
-      
+
       this.subscriptions.forEach(options => {
         options.onDisconnect?.();
       });
-      
+
       this.attemptReconnect();
     };
   }
@@ -144,15 +166,20 @@ export class DerivTickStream {
   subscribe(instrument: InstrumentType, options: TickStreamOptions): () => void {
     const symbol = instrumentToDerivSymbol(instrument);
     console.log(`[DerivTickStream] Setting up subscription for ${instrument} -> ${symbol}`);
+
+    // If already subscribed to this symbol, update the options but don't resubscribe
+    const wasAlreadySubscribed = this.subscriptions.has(symbol);
     this.subscriptions.set(symbol, options);
 
-    if (this.isConnected && this.ws) {
+    if (this.isConnected && this.ws && !wasAlreadySubscribed) {
       const request = {
         ticks: symbol,
         subscribe: 1
       };
       console.log(`[DerivTickStream] Sending subscription request:`, request);
       this.ws.send(JSON.stringify(request));
+    } else if (wasAlreadySubscribed) {
+      console.log(`[DerivTickStream] Already subscribed to ${symbol}, updating options only`);
     } else {
       console.log(`[DerivTickStream] WebSocket not connected yet, subscription will be sent when connected`);
     }

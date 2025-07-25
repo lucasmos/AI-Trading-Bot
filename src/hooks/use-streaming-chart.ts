@@ -109,7 +109,7 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add each tick as a new data point
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] Received tick for ${instrument}:`, tick);
+    console.log(`[useStreamingChart] 🎯 Received tick for ${instrument}:`, tick);
     const now = Date.now();
 
     // Always add the tick to chart data for real-time updates
@@ -121,14 +121,17 @@ export function useStreamingChart({
         ...getIndicatorValues(candleDataRef.current.length - 1, candleDataRef.current.length)
       };
 
-      console.log(`[useStreamingChart] Adding new data point:`, newDataPoint);
+      console.log(`[useStreamingChart] ➕ Adding new data point for ${instrument}:`, newDataPoint);
       const updatedData = [...prevData, newDataPoint];
 
       // Keep only the last N data points for smooth performance
       if (updatedData.length > maxDataPoints) {
-        return updatedData.slice(-maxDataPoints);
+        const trimmedData = updatedData.slice(-maxDataPoints);
+        console.log(`[useStreamingChart] 📊 Chart data trimmed from ${updatedData.length} to ${trimmedData.length} points`);
+        return trimmedData;
       }
 
+      console.log(`[useStreamingChart] 📊 Chart data updated: ${updatedData.length} total points`);
       return updatedData;
     });
 
@@ -223,8 +226,12 @@ export function useStreamingChart({
 
   // Subscribe to real-time tick updates
   useEffect(() => {
-    console.log(`[useStreamingChart] Setting up WebSocket subscription for ${instrument}`);
+    console.log(`[useStreamingChart] 🔌 Setting up WebSocket subscription for ${instrument}`);
     const tickStream = tickStreamRef.current;
+
+    // Check initial connection status
+    const initialStatus = tickStream.getConnectionStatus();
+    console.log(`[useStreamingChart] Initial connection status: ${initialStatus}`);
 
     const updateConnectionStatus = () => {
       const status = tickStream.getConnectionStatus();
@@ -236,10 +243,14 @@ export function useStreamingChart({
     const statusInterval = setInterval(updateConnectionStatus, 1000);
 
     const unsubscribe = tickStream.subscribe(instrument, {
-      onTick: handleTick,
+      onTick: (tick) => {
+        console.log(`[useStreamingChart] Tick received for ${instrument}:`, tick);
+        handleTick(tick);
+      },
       onError: (error) => {
         console.error(`[useStreamingChart] Tick stream error for ${instrument}:`, error);
         setError(error.message);
+        setConnectionStatus('disconnected');
       },
       onConnect: () => {
         console.log(`[useStreamingChart] Connected to tick stream for ${instrument}`);
@@ -258,15 +269,30 @@ export function useStreamingChart({
     return () => {
       console.log(`[useStreamingChart] Cleaning up WebSocket subscription for ${instrument}`);
       clearInterval(statusInterval);
-      unsubscribe();
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
       unsubscribeRef.current = null;
     };
   }, [instrument, handleTick]);
 
   // Load initial data when instrument changes
   useEffect(() => {
+    console.log(`[useStreamingChart] 🔄 Loading initial data for ${instrument}`);
     loadInitialData();
   }, [loadInitialData]);
+
+  // Debug effect to monitor chart data changes
+  useEffect(() => {
+    console.log(`[useStreamingChart] 📊 Chart data changed for ${instrument}:`, {
+      length: chartData.length,
+      connectionStatus,
+      isLoading,
+      error,
+      lastPoint: chartData[chartData.length - 1],
+      firstPoint: chartData[0]
+    });
+  }, [chartData, instrument, connectionStatus, isLoading, error]);
 
   // Cleanup on unmount
   useEffect(() => {
