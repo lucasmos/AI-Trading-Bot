@@ -108,44 +108,38 @@ export function useStreamingChart({
     };
   }, []);
 
-  // Handle incoming tick data - add each tick as a new data point
+  // Handle incoming tick data - add new tick as data point for real-time chart
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] Received tick for ${instrument}:`, tick);
-    const now = Date.now();
+    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price}`);
 
     // Increment tick count
     setTickCount(prev => prev + 1);
 
-    // Always add the tick to chart data for real-time updates
+    // Add new tick as a data point to show real-time price movement
     setChartData(prevData => {
-      // Create a deep copy of the last data point to get the most recent indicators
-      const lastDataPoint = prevData.length > 0 ? {...prevData[prevData.length - 1]} : {};
-
       const newDataPoint: StreamingDataPoint = {
         time: tick.time,
         epoch: tick.epoch,
         price: tick.price,
-        // Use the previous indicator values until we recalculate them
-        rsi: lastDataPoint.rsi,
-        macdLine: lastDataPoint.macdLine,
-        macdSignal: lastDataPoint.macdSignal,
-        macdHistogram: lastDataPoint.macdHistogram,
-        bbUpper: lastDataPoint.bbUpper,
-        bbMiddle: lastDataPoint.bbMiddle,
-        bbLower: lastDataPoint.bbLower,
-        ema: lastDataPoint.ema,
-        atr: lastDataPoint.atr
+        // Copy indicators from last point (will be recalculated later)
+        rsi: prevData.length > 0 ? prevData[prevData.length - 1].rsi : undefined,
+        macdLine: prevData.length > 0 ? prevData[prevData.length - 1].macdLine : undefined,
+        macdSignal: prevData.length > 0 ? prevData[prevData.length - 1].macdSignal : undefined,
+        macdHistogram: prevData.length > 0 ? prevData[prevData.length - 1].macdHistogram : undefined,
+        bbUpper: prevData.length > 0 ? prevData[prevData.length - 1].bbUpper : undefined,
+        bbMiddle: prevData.length > 0 ? prevData[prevData.length - 1].bbMiddle : undefined,
+        bbLower: prevData.length > 0 ? prevData[prevData.length - 1].bbLower : undefined,
+        ema: prevData.length > 0 ? prevData[prevData.length - 1].ema : undefined,
+        atr: prevData.length > 0 ? prevData[prevData.length - 1].atr : undefined
       };
 
-      console.log(`[useStreamingChart] Adding new data point:`, newDataPoint);
       const updatedData = [...prevData, newDataPoint];
 
-      // Keep only the last N data points for smooth performance
-      if (updatedData.length > maxDataPoints) {
-        return updatedData.slice(-maxDataPoints);
-      }
+      // Keep only recent data points for performance
+      const result = updatedData.length > maxDataPoints ? updatedData.slice(-maxDataPoints) : updatedData;
 
-      return updatedData;
+      console.log(`[useStreamingChart] ✅ CHART UPDATED - New price: ${tick.price}, Total points: ${result.length}`);
+      return result;
     });
 
     // Check if we need to update indicators (less frequently for performance)
