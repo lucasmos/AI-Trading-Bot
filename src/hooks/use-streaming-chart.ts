@@ -15,9 +15,10 @@ const formatTickTime = (epoch: number): string => {
   const date = new Date(epoch * 1000);
   if (isNaN(date.getTime())) {
     console.error(`[formatTickTime] Invalid epoch: ${epoch}`);
-    return new Date().toISOString(); // Fallback to current time if invalid
+    return new Date().toLocaleTimeString(); // Fallback to current time if invalid
   }
-  return date.toISOString(); // Use ISO string format for consistent parsing
+  // Format: HH:MM:SS
+  return date.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
 export interface StreamingDataPoint {
@@ -154,22 +155,24 @@ export function useStreamingChart({
     });
 
     // Add new tick as a data point to show real-time price movement
-    setChartData(prevData => {
+    setChartData((prevData: StreamingDataPoint[]) => {
+      // Ensure we have the last point's indicators
+      const lastPoint = prevData.length > 0 ? prevData[prevData.length - 1] : null;
+      
       const newDataPoint: StreamingDataPoint = {
-        time: tickTime, // Use validated ISO string time format
+        time: tickTime, // Use validated time format
         epoch: tick.epoch,
         price: tick.price,
         // Copy previous indicator values until next update
-        rsi: prevData.length > 0 ? prevData[prevData.length - 1].rsi : undefined,
-        macdLine: prevData.length > 0 ? prevData[prevData.length - 1].macdLine : undefined,
-        macdSignal: prevData.length > 0 ? prevData[prevData.length - 1].macdSignal : undefined,
-        macdHistogram: prevData.length > 0 ? prevData[prevData.length - 1].macdHistogram : undefined,
-        bbUpper: prevData.length > 0 ? prevData[prevData.length - 1].bbUpper : undefined,
-        bbMiddle: prevData.length > 0 ? prevData[prevData.length - 1].bbMiddle : undefined,
-        bbLower: prevData.length > 0 ? prevData[prevData.length - 1].bbLower : undefined,
-        ema: prevData.length > 0 ? prevData[prevData.length - 1].ema : undefined,
-        atr: prevData.length > 0 ? prevData[prevData.length - 1].atr : undefined
-        atr: prevData.length > 0 ? prevData[prevData.length - 1].atr : undefined
+        rsi: lastPoint?.rsi,
+        macdLine: lastPoint?.macdLine,
+        macdSignal: lastPoint?.macdSignal,
+        macdHistogram: lastPoint?.macdHistogram,
+        bbUpper: lastPoint?.bbUpper,
+        bbMiddle: lastPoint?.bbMiddle,
+        bbLower: lastPoint?.bbLower,
+        ema: lastPoint?.ema,
+        atr: lastPoint?.atr
       };
 
       const updatedData = [...prevData, newDataPoint];
@@ -213,14 +216,20 @@ export function useStreamingChart({
 
     if (shouldUpdateIndicators) {
       // Recalculate indicators
-      calculateIndicators(candleDataRef.current).then(newIndicators => {
+      calculateIndicators(candleDataRef.current).then((newIndicators: {
+        rsi: number[];
+        macd: Array<{ macd: number; signal: number; histogram: number }>;
+        bb: Array<{ upper: number; middle: number; lower: number }>;
+        ema: number[];
+        atr: number[];
+      } | null) => {
         if (newIndicators) {
           indicatorDataRef.current = newIndicators;
           lastIndicatorUpdateRef.current = now;
 
           // Important: Update all existing chart data points with new indicator values
-          setChartData(prevData => {
-            return prevData.map((point, index) => {
+          setChartData((prevData: StreamingDataPoint[]) => {
+            return prevData.map((point: StreamingDataPoint, index: number) => {
               // Only update the points that correspond to actual candles
               if (index < prevData.length - 1) {
                 return point; // Keep older points unchanged
@@ -292,26 +301,40 @@ export function useStreamingChart({
   useEffect(() => {
     console.log(`[useStreamingChart] Setting up WebSocket subscription for ${instrument}`);
     const tickStream = tickStreamRef.current;
+    
+    // Reset state on subscription setup
+    setConnectionStatus('connecting');
+    setError(null);
+    setTickCount(0);
 
     const updateConnectionStatus = () => {
       const status = tickStream.getConnectionStatus();
       console.log(`[useStreamingChart] Connection status for ${instrument}:`, status);
       setConnectionStatus(status);
+      
+      // If disconnected, attempt reconnection
+      if (status === 'disconnected') {
+        tickStream.reconnect();
+      }
     };
 
     updateConnectionStatus();
-    const statusInterval = setInterval(updateConnectionStatus, 1000);
+    const statusInterval = setInterval(updateConnectionStatus, 5000); // Check every 5 seconds
 
     const unsubscribe = tickStream.subscribe(instrument, {
       onTick: handleTick,
-      onError: (error) => {
+      onError: (error: Error) => {
         console.error(`[useStreamingChart] Tick stream error for ${instrument}:`, error);
         setError(error.message);
+        // Attempt reconnection on error
+        tickStream.reconnect();
       },
       onConnect: () => {
         console.log(`[useStreamingChart] Connected to tick stream for ${instrument}`);
         setConnectionStatus('connected');
         setError(null);
+        // Reset chart data on fresh connection
+        loadInitialData();
       },
       onDisconnect: () => {
         console.log(`[useStreamingChart] Disconnected from tick stream for ${instrument}`);
