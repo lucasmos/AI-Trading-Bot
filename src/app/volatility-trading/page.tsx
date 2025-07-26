@@ -50,8 +50,8 @@ import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 import { Bot, Square, Briefcase, UserCheck, Activity, DollarSign } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
-import { ListenerStatus } from '@/services/deriv-balance-listener';
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
+import type { PriceTick } from '@/types';
 
 // Helper function to get clean display names for chart tabs
 function getChartTabLabel(instrument: string): string {
@@ -163,7 +163,6 @@ export default function VolatilityTradingPage() {
   const [consecutiveAiCallCount, setConsecutiveAiCallCount] = useState(0);
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
-
 
   const { toast } = useToast();
 
@@ -569,7 +568,7 @@ export default function VolatilityTradingPage() {
     selectedUserTradeTypeForLoop,
     executionMode, numberOfBulkTrades, currentVolatilityInstrument,
     tradingMode, selectedAiStrategyId
-  ]);
+]);
 
   const handleStopAiAutoTrade = () => {
     console.log("[VolatilityPage] handleStopAiAutoTrade called. Resetting isAutoTradingActive and isAiLoading.");
@@ -637,15 +636,15 @@ export default function VolatilityTradingPage() {
           setProfitsClaimable(prevProfits => ({
             totalNetProfit: prevProfits.totalNetProfit + pnl,
             tradeCount: prevProfits.tradeCount + 1,
-            winningTrades: pnl > 0 ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
-            losingTrades: pnl <= 0 ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+            winningTrades: prevProfits.winningTrades,
+            losingTrades: prevProfits.losingTrades + 1,
           }));
-          return {
-            ...trade,
-            status: 'closed_manual',
-            pnl,
+          return { 
+            ...trade, 
+            status: 'closed_manual', 
+            pnl, 
             profitLoss: pnl, // Update both legacy and new fields
-            reasoning: (trade.reasoning || "") + " Manually stopped.",
+            reasoning: (trade.reasoning || "") + " Manually stopped.", 
             endTime: Date.now(), // Add end time for proper record keeping
             exitPrice: trade.currentPrice // Set exit price to current price for proper display
           };

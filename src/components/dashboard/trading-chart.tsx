@@ -143,43 +143,13 @@ interface ChartDataPoint {
 }
 
 function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDisplayProps) {
-  const { chartData, isLoading, error, connectionStatus, refresh, tickCount } = useStreamingChart({
+  const { chartData, isLoading, error, connectionStatus, refresh } = useStreamingChart({
     instrument,
     maxDataPoints: 300,
-    indicatorUpdateInterval: 5 // Update indicators every 5 seconds for more responsive charts
+    indicatorUpdateInterval: 60
   });
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
-
-  // Force re-render when chart data changes to ensure the chart updates
-  const [renderKey, setRenderKey] = useState(0);
-  useEffect(() => {
-    setRenderKey(prev => prev + 1);
-  }, [chartData.length, tickCount, connectionStatus]);
-
-  // Debug chart data updates and force re-render
-  useEffect(() => {
-    console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
-      dataLength: chartData.length,
-      tickCount: tickCount,
-      lastDataPoint: chartData[chartData.length - 1],
-      firstDataPoint: chartData[0],
-      connectionStatus: connectionStatus,
-      isLoading: isLoading,
-      error: error
-    });
-
-    // Additional debugging for date formatting issues
-    if (chartData.length > 0) {
-      const samplePoint = chartData[chartData.length - 1];
-      console.log(`[TradingChart] Sample data point time format:`, {
-        rawTime: samplePoint.time,
-        timeType: typeof samplePoint.time,
-        parsedDate: new Date(samplePoint.time),
-        isValidDate: !isNaN(new Date(samplePoint.time).getTime())
-      });
-    }
-  }, [chartData, instrument, tickCount, connectionStatus, isLoading, error]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -299,18 +269,10 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
             <span className="text-sm">{getConnectionStatusText()}</span>
           </div>
           <Badge variant={connectionStatus === 'connected' ? 'default' : 'secondary'}>
-            {tickCount || 0} ticks
+            {chartData.length} candles
           </Badge>
-          <Badge variant="outline">
-            {chartData.length} points
-          </Badge>
-          {error && (
-            <Badge variant="destructive" className="text-xs">
-              Error: {error}
-            </Badge>
-          )}
-          <Button onClick={refresh} variant="ghost" size="sm" disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <Button onClick={refresh} variant="ghost" size="sm">
+            <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -318,7 +280,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
       <ChartContainer config={typedChartConfig} className="min-h-[200px] w-full">
         <>
           {/* Price + Bollinger Bands Chart */}
-          <div key={`price-chart-${renderKey}`} style={{ width: '100%', height: '250px' }} className="mb-4">
+          <div style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
@@ -330,72 +292,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
                 type="category"
-                tickFormatter={(value) => {
-                  try {
-                    // Handle different time formats
-                    if (typeof value === 'string') {
-                      // Check if it's already a formatted time string (HH:MM:SS)
-                      if (/^\d{2}:\d{2}:\d{2}$/.test(value)) {
-                        return value; // Already formatted, return as-is
-                      }
-                      // Try to parse as ISO string or other date format
-                      const date = new Date(value);
-                      if (!isNaN(date.getTime())) {
-                        return date.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: false
-                        });
-                      }
-
-                      // If it looks like a timestamp string, try parsing as number
-                      const numValue = parseFloat(value);
-                      if (!isNaN(numValue)) {
-                        const date = new Date(numValue * 1000);
-                        if (!isNaN(date.getTime())) {
-                          return date.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: false
-                          });
-                        }
-                      }
-                    } else if (typeof value === 'number') {
-                      // Handle epoch timestamps (both seconds and milliseconds)
-                      let date: Date;
-                      if (value > 1e12) {
-                        // Likely milliseconds
-                        date = new Date(value);
-                      } else {
-                        // Likely seconds
-                        date = new Date(value * 1000);
-                      }
-
-                      if (!isNaN(date.getTime())) {
-                        return date.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: false
-                        });
-                      }
-                    }
-
-                    console.warn('[TradingChart] Unable to format time value:', value, typeof value);
-                    // Better fallback - show current time format
-                    return new Date().toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: false
-                    });
-                  } catch (error) {
-                    console.error('[TradingChart] Error formatting time:', error, 'Value:', value);
-                    return '--:--:--';
-                  }
-                }}
+                scale="point"
               />
               <YAxis
                 yAxisId="left"
@@ -423,8 +320,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Price"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -435,8 +331,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Upper"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -447,8 +342,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Middle"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -459,8 +353,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="BB Lower"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -471,8 +364,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="EMA (20)"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -486,26 +378,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="time" 
-                tick={{ fontSize: 10 }} 
-                tickMargin={5} 
-                hide
-                tickFormatter={(time) => {
-                  // Parse the ISO string and format it as HH:MM:SS
-                  try {
-                    const date = new Date(time);
-                    return date.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: false,
-                    });
-                  } catch (e) {
-                    return 'Invalid';
-                  }
-                }}
-              />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
@@ -518,8 +391,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="RSI"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
           </LineChart>
         </ResponsiveContainer>
@@ -533,26 +405,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="time" 
-                tick={{ fontSize: 10 }} 
-                tickMargin={5} 
-                hide
-                tickFormatter={(time) => {
-                  // Parse the ISO string and format it as HH:MM:SS
-                  try {
-                    const date = new Date(time);
-                    return date.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: false,
-                    });
-                  } catch (e) {
-                    return 'Invalid';
-                  }
-                }}
-              />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Legend content={<ChartLegendContent />} />
@@ -565,8 +418,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="MACD Line"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Line
                 type="monotone"
@@ -577,8 +429,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="Signal Line"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
               <Bar dataKey="macdHistogram" yAxisId="left" name="Histogram">
                 {chartData.map((entry, index) => (
@@ -601,26 +452,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="time" 
-                tick={{ fontSize: 10 }} 
-                tickMargin={5} 
-                hide
-                tickFormatter={(time) => {
-                  // Parse the ISO string and format it as HH:MM:SS
-                  try {
-                    const date = new Date(time);
-                    return date.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: false,
-                    });
-                  } catch (e) {
-                    return 'Invalid';
-                  }
-                }}
-              />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
@@ -633,8 +465,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 yAxisId="left"
                 name="ATR"
                 connectNulls={true}
-                isAnimationActive={true}
-                animationDuration={200}
+                animationDuration={0}
               />
             </LineChart>
           </ResponsiveContainer>
