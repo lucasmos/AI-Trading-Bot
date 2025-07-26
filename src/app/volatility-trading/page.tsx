@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
+import { WebSocketDebug } from '@/components/debug/websocket-debug';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +51,10 @@ import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 import { Bot, Square, Briefcase, UserCheck, Activity, DollarSign } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
+<<<<<<< HEAD
+import { useRouter } from 'next/navigation';
+import { ListenerStatus } from '@/services/deriv-balance-listener';
+=======
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
 import type { PriceTick } from '@/types';
 
@@ -90,6 +95,7 @@ const mapDerivStatusToLocal = (derivStatus?: string): ActiveAutomatedVolatilityT
       return 'pending_execution';
   }
 };
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
 
 export default function VolatilityTradingPage() {
   const router = useRouter();
@@ -164,6 +170,36 @@ export default function VolatilityTradingPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000;
 
+<<<<<<< HEAD
+  const [selectedAccountType, setSelectedAccountType] = useState<'demo' | 'real' | null>(userInfo?.derivAccounts?.length ? 'real' : null);
+  const [displayAccountId, setDisplayAccountId] = useState<string | null>(userInfo?.derivAccounts?.[0]?.accountId || null);
+  const [syncStatus, setSyncStatus] = useState<ListenerStatus>('idle');
+
+  const currentBalance = selectedAccountType === 'real' 
+    ? liveBalance 
+    : selectedAccountType === 'demo' 
+      ? paperBalance 
+      : paperBalance;
+
+  useEffect(() => {
+    const listener = window.DerivBalanceListener;
+    if (selectedAccountType === 'real' && displayAccountId) {
+      listener.start(displayAccountId, {
+        onUpdate: (newBalance: number) => setLiveBalance(newBalance),
+        onStatusChange: setSyncStatus
+      });
+    } else if (selectedAccountType === 'demo') {
+      listener.startDemo(displayAccountId || 'default', {
+        onUpdate: setPaperBalance,
+        onStatusChange: setSyncStatus
+      });
+    }
+    return () => listener.stop();
+  }, [selectedAccountType, displayAccountId]);
+
+  // const router = useRouter(); // already added above
+=======
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
   const { toast } = useToast();
 
   const [freshDemoBalance, setFreshDemoBalance] = useState<number | null>(null);
@@ -562,6 +598,9 @@ export default function VolatilityTradingPage() {
         setIsAiLoading(false);
       }
     }
+<<<<<<< HEAD
+  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setProfitsClaimable, userInfo, selectedAiStrategyId]);
+=======
   }, [
     authStatus, userInfo, selectedDerivAccountType, autoTradeTotalStake, currentBalance,
     consecutiveAiCallCount, lastAiCallTimestamp, router, toast,
@@ -569,6 +608,7 @@ export default function VolatilityTradingPage() {
     executionMode, numberOfBulkTrades, currentVolatilityInstrument,
     tradingMode, selectedAiStrategyId
 ]);
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
 
   const handleStopAiAutoTrade = () => {
     console.log("[VolatilityPage] handleStopAiAutoTrade called. Resetting isAutoTradingActive and isAiLoading.");
@@ -631,6 +671,23 @@ export default function VolatilityTradingPage() {
             .then(closedTrade => console.log('[VolatilityPage] Manual stop sim trade closed:', closedTrade?.id))
             .catch(error => console.error("[VolatilityPage] Error processing manually stopped sim trade:", error));
           }
+<<<<<<< HEAD
+          
+          setTimeout(() => {
+            if (paperTradingMode === 'paper') {
+              setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            } else {
+              setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            }
+            setProfitsClaimable(prevProfits => ({
+              totalNetProfit: prevProfits.totalNetProfit + pnl,
+              tradeCount: prevProfits.tradeCount + 1,
+              winningTrades: prevProfits.winningTrades, 
+              losingTrades: prevProfits.losingTrades + 1, 
+            }));
+          }, 0);
+          return { ...trade, status: 'lost_duration', pnl, reasoning: (trade.reasoning || "") + " Manually stopped." };
+=======
 
           // Update profits immediately without setTimeout
           setProfitsClaimable(prevProfits => ({
@@ -648,6 +705,7 @@ export default function VolatilityTradingPage() {
             endTime: Date.now(), // Add end time for proper record keeping
             exitPrice: trade.currentPrice // Set exit price to current price for proper display
           };
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
         }
         return trade;
       })
@@ -946,6 +1004,28 @@ export default function VolatilityTradingPage() {
                   .then(closedTrade => console.log('[VolatilityPage] Sim trade closed:', closedTrade?.id))
                   .catch(error => console.error("[VolatilityPage] Error processing sim trade DB:", error));
                 }
+<<<<<<< HEAD
+                
+                setTimeout(() => { 
+                  if (paperTradingMode === 'paper') {
+                    setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  } else {
+                    setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  }
+                  setProfitsClaimable(prevProfits => ({
+                    totalNetProfit: prevProfits.totalNetProfit + pnl,
+                    tradeCount: prevProfits.tradeCount + 1,
+                    winningTrades: newStatus === 'won' ? prevProfits.winningTrades + 1 : prevProfits.winningTrades,
+                    losingTrades: (newStatus === 'lost_duration' || newStatus === 'lost_stoploss') ? prevProfits.losingTrades + 1 : prevProfits.losingTrades,
+                  }));
+                  
+                  toast({
+                    title: `Auto-Trade Ended (Volatility - ${paperTradingMode}): ${currentTrade.instrument}`,
+                    description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
+                    variant: pnl > 0 ? "default" : "destructive"
+                  });
+                }, 0);
+=======
 
                 // Update profits immediately without setTimeout
                 setProfitsClaimable(prevProfits => ({
@@ -959,6 +1039,7 @@ export default function VolatilityTradingPage() {
                   description: `Status: ${newStatus}, P/L: $${pnl.toFixed(2)}`,
                   variant: pnl > 0 ? "default" : "destructive"
                 });
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
               } else {
                 allSimulatedTradesConcluded = false;
               }
@@ -981,6 +1062,9 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
+<<<<<<< HEAD
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setPaperBalance, setLiveBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
+=======
   }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
 
   // Real-time WebSocket price streaming for trade type cards
@@ -1057,15 +1141,24 @@ export default function VolatilityTradingPage() {
       }
     };
   }, []);
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
 
 
   return (
     <div className="container mx-auto py-2 space-y-6">
       <BalanceDisplay
+<<<<<<< HEAD
+        balance={currentBalance}
+        selectedAccountType={selectedAccountType}
+        displayAccountId={displayAccountId}
+        syncStatus={syncStatus}
+        currency="USD"
+=======
         balance={currentBalance ?? DEFAULT_PAPER_BALANCE}
         selectedAccountType={selectedDerivAccountType}
         displayAccountId={currentDisplayAccountId}
         syncStatus={currentSyncStatus}
+>>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
       />
       <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><Activity className="h-8 w-8 text-primary" />AI Volatility Index Trading</h1>
 
@@ -1421,6 +1514,9 @@ export default function VolatilityTradingPage() {
         </div>
 
         <div className="md:col-span-2 space-y-6">
+             {/* Debug component - remove after fixing */}
+             <WebSocketDebug instrument={currentVolatilityInstrument} />
+
              <TradingChart
                 instrument={currentVolatilityInstrument}
                 onInstrumentChange={handleInstrumentChange}

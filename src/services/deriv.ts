@@ -43,12 +43,12 @@ const DERIV_INSTRUMENT_MAP: Partial<Record<InstrumentType, string>> = {
 
 // Define formatTickTime function
 const formatTickTime = (epoch: number): string => {
-  return new Date(epoch * 1000).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  // Create a Date object from the epoch timestamp
+  const date = new Date(epoch * 1000);
+  
+  // Format the date as an ISO string that Recharts can properly parse
+  // This ensures the X-axis displays correctly
+  return date.toISOString();
 };
 
 /**
