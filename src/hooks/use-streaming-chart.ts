@@ -2,13 +2,23 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { InstrumentType, PriceTick, CandleData } from '@/types';
 import { getTickStream } from '@/services/deriv-tick-stream';
 import { getCandles } from '@/services/deriv';
-import { 
-  calculateFullRSI, 
-  calculateFullMACD, 
-  calculateFullBollingerBands, 
-  calculateFullEMA, 
-  calculateFullATR 
+import {
+  calculateFullRSI,
+  calculateFullMACD,
+  calculateFullBollingerBands,
+  calculateFullEMA,
+  calculateFullATR
 } from '@/lib/technical-analysis';
+
+// Use the same time formatting as the candles and tick stream
+const formatTickTime = (epoch: number): string => {
+  return new Date(epoch * 1000).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
 
 export interface StreamingDataPoint {
   time: string;
@@ -46,6 +56,9 @@ export function useStreamingChart({
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastIndicatorUpdateRef = useRef<number>(0);
   const candleDataRef = useRef<CandleData[]>([]);
+  const maxDataPointsRef = useRef(maxDataPoints);
+  const indicatorUpdateIntervalRef = useRef(indicatorUpdateInterval);
+  const instrumentRef = useRef(instrument);
   const indicatorDataRef = useRef<{
     rsi: number[];
     macd: Array<{ macd: number; signal: number; histogram: number }>;
@@ -53,6 +66,13 @@ export function useStreamingChart({
     ema: number[];
     atr: number[];
   } | null>(null);
+
+  // Update refs when props change
+  useEffect(() => {
+    maxDataPointsRef.current = maxDataPoints;
+    indicatorUpdateIntervalRef.current = indicatorUpdateInterval;
+    instrumentRef.current = instrument;
+  }, [maxDataPoints, indicatorUpdateInterval, instrument]);
 
   // Calculate technical indicators from candle data
   const calculateIndicators = useCallback(async (candles: CandleData[]) => {
@@ -110,7 +130,7 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add new tick as data point for real-time chart
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price} at ${tick.time}`);
+    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrumentRef.current}: ${tick.price} at ${tick.time}`);
     const now = Date.now();
 
     // Validate tick data
@@ -147,14 +167,15 @@ export function useStreamingChart({
       const updatedData = [...prevData, newDataPoint];
 
       // Keep only recent data points for performance
-      const result = updatedData.length > maxDataPoints ? updatedData.slice(-maxDataPoints) : updatedData;
+      const maxPoints = maxDataPointsRef.current;
+      const result = updatedData.length > maxPoints ? updatedData.slice(-maxPoints) : updatedData;
 
       console.log(`[useStreamingChart] ✅ CHART UPDATED - New price: ${tick.price}, Total points: ${result.length}, Time: ${tick.time}`);
       return result;
     });
 
     // Check if we need to update indicators (less frequently for performance)
-    const shouldUpdateIndicators = (now - lastIndicatorUpdateRef.current) >= (indicatorUpdateInterval * 1000);
+    const shouldUpdateIndicators = (now - lastIndicatorUpdateRef.current) >= (indicatorUpdateIntervalRef.current * 1000);
 
     // Update candle data for indicator calculations (always do this for each tick)
     const currentTime = Math.floor(tick.epoch / 60) * 60; // Round to minute
@@ -163,7 +184,7 @@ export function useStreamingChart({
     if (!lastCandle || lastCandle.epoch !== currentTime) {
       // New candle
       candleDataRef.current.push({
-        time: new Date(currentTime * 1000).toISOString(),
+        time: formatTickTime(currentTime),
         epoch: currentTime,
         open: tick.price,
         high: tick.price,
@@ -207,7 +228,7 @@ export function useStreamingChart({
         }
       });
     }
-  }, [calculateIndicators, getIndicatorValues, maxDataPoints, indicatorUpdateInterval, instrument]);
+  }, [calculateIndicators, getIndicatorValues]);
 
   // Load initial historical data and convert to streaming format
   const loadInitialData = useCallback(async () => {
@@ -299,7 +320,7 @@ export function useStreamingChart({
       unsubscribe();
       unsubscribeRef.current = null;
     };
-  }, [instrument, handleTick]);
+  }, [instrument]);
 
   // Load initial data when instrument changes
   useEffect(() => {
