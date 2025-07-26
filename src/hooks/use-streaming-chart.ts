@@ -110,16 +110,26 @@ export function useStreamingChart({
 
   // Handle incoming tick data - add new tick as data point for real-time chart
   const handleTick = useCallback((tick: PriceTick) => {
-    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price}`);
+    console.log(`[useStreamingChart] 📊 TICK RECEIVED for ${instrument}: ${tick.price} at ${tick.time}`);
     const now = Date.now();
 
+    // Validate tick data
+    if (!tick || typeof tick.price !== 'number' || !tick.time || !tick.epoch) {
+      console.error(`[useStreamingChart] Invalid tick data received:`, tick);
+      return;
+    }
+
     // Increment tick count
-    setTickCount(prev => prev + 1);
+    setTickCount(prev => {
+      const newCount = prev + 1;
+      console.log(`[useStreamingChart] Tick count updated: ${newCount}`);
+      return newCount;
+    });
 
     // Add new tick as a data point to show real-time price movement
     setChartData(prevData => {
       const newDataPoint: StreamingDataPoint = {
-        time: tick.time,
+        time: tick.time, // This should be an ISO string from the tick stream
         epoch: tick.epoch,
         price: tick.price,
         // Copy indicators from last point (will be recalculated later)
@@ -139,7 +149,7 @@ export function useStreamingChart({
       // Keep only recent data points for performance
       const result = updatedData.length > maxDataPoints ? updatedData.slice(-maxDataPoints) : updatedData;
 
-      console.log(`[useStreamingChart] ✅ CHART UPDATED - New price: ${tick.price}, Total points: ${result.length}`);
+      console.log(`[useStreamingChart] ✅ CHART UPDATED - New price: ${tick.price}, Total points: ${result.length}, Time: ${tick.time}`);
       return result;
     });
 

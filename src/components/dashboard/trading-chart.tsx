@@ -151,6 +151,12 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
+  // Force re-render when chart data changes to ensure the chart updates
+  const [renderKey, setRenderKey] = useState(0);
+  useEffect(() => {
+    setRenderKey(prev => prev + 1);
+  }, [chartData.length, tickCount]);
+
   // Debug chart data updates and force re-render
   useEffect(() => {
     console.log(`[TradingChart] Chart data updated for ${instrument}:`, {
@@ -158,9 +164,22 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
       tickCount: tickCount,
       lastDataPoint: chartData[chartData.length - 1],
       firstDataPoint: chartData[0],
-      connectionStatus: connectionStatus
+      connectionStatus: connectionStatus,
+      isLoading: isLoading,
+      error: error
     });
-  }, [chartData, instrument, tickCount, connectionStatus]);
+
+    // Additional debugging for date formatting issues
+    if (chartData.length > 0) {
+      const samplePoint = chartData[chartData.length - 1];
+      console.log(`[TradingChart] Sample data point time format:`, {
+        rawTime: samplePoint.time,
+        timeType: typeof samplePoint.time,
+        parsedDate: new Date(samplePoint.time),
+        isValidDate: !isNaN(new Date(samplePoint.time).getTime())
+      });
+    }
+  }, [chartData, instrument, tickCount, connectionStatus, isLoading, error]);
 
   // Connection status indicator functions
   const getConnectionStatusIcon = () => {
@@ -283,10 +302,15 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
             {tickCount || 0} ticks
           </Badge>
           <Badge variant="outline">
-            {chartData.length} candles
+            {chartData.length} points
           </Badge>
-          <Button onClick={refresh} variant="ghost" size="sm">
-            <RefreshCw className="h-4 w-4" />
+          {error && (
+            <Badge variant="destructive" className="text-xs">
+              Error: {error}
+            </Badge>
+          )}
+          <Button onClick={refresh} variant="ghost" size="sm" disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
@@ -294,7 +318,7 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
       <ChartContainer config={typedChartConfig} className="min-h-[200px] w-full">
         <>
           {/* Price + Bollinger Bands Chart */}
-          <div style={{ width: '100%', height: '250px' }} className="mb-4">
+          <div key={`price-chart-${renderKey}`} style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
@@ -306,7 +330,44 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                 tick={{ fontSize: 10 }}
                 tickMargin={5}
                 type="category"
-                tickFormatter={(value) => new Date(value).toLocaleTimeString()}
+                tickFormatter={(value) => {
+                  try {
+                    // Handle different time formats
+                    if (typeof value === 'string') {
+                      // Check if it's already a formatted time string (HH:MM:SS)
+                      if (/^\d{2}:\d{2}:\d{2}$/.test(value)) {
+                        return value; // Already formatted, return as-is
+                      }
+                      // Try to parse as ISO string or other date format
+                      const date = new Date(value);
+                      if (!isNaN(date.getTime())) {
+                        return date.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: false
+                        });
+                      }
+                    } else if (typeof value === 'number') {
+                      // Handle epoch timestamps
+                      const date = new Date(value * 1000);
+                      if (!isNaN(date.getTime())) {
+                        return date.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: false
+                        });
+                      }
+                    }
+
+                    console.warn('[TradingChart] Unable to format time value:', value);
+                    return String(value).substring(0, 8); // Fallback to first 8 characters
+                  } catch (error) {
+                    console.error('[TradingChart] Error formatting time:', error, 'Value:', value);
+                    return 'Error';
+                  }
+                }}
               />
               <YAxis
                 yAxisId="left"

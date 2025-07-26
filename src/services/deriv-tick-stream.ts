@@ -104,20 +104,37 @@ export class DerivTickStream {
       if (symbol && this.subscriptions.has(symbol)) {
         const options = this.subscriptions.get(symbol)!;
         try {
+          // Validate tick data before processing
+          if (!response.tick || typeof response.tick.epoch !== 'number' || typeof response.tick.quote !== 'number') {
+            console.error(`[DerivTickStream] Invalid tick data received for ${symbol}:`, response.tick);
+            return;
+          }
+
           const tick: PriceTick = {
             epoch: response.tick.epoch,
             price: parseFloat(response.tick.quote),
-            time: new Date(response.tick.epoch * 1000).toISOString()
+            time: new Date(response.tick.epoch * 1000).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false,
+            })
           };
+
+          // Validate the created tick object
+          if (isNaN(tick.price) || isNaN(tick.epoch) || !tick.time) {
+            console.error(`[DerivTickStream] Invalid tick object created for ${symbol}:`, tick);
+            return;
+          }
 
           // Log every 10th tick to monitor activity
           if (Math.random() < 0.1) {
-            console.log(`[DerivTickStream] 📊 Processing tick for ${symbol}: ${tick.price} at ${tick.time}`);
+            console.log(`[DerivTickStream] 📊 Processing tick for ${symbol}: ${tick.price} at ${tick.time} (epoch: ${tick.epoch})`);
           }
 
           options.onTick(tick);
         } catch (error) {
-          console.error(`[DerivTickStream] Error processing tick for ${symbol}:`, error);
+          console.error(`[DerivTickStream] Error processing tick for ${symbol}:`, error, 'Raw response:', response);
           options.onError(error instanceof Error ? error : new Error('Error processing tick'));
         }
       } else {
