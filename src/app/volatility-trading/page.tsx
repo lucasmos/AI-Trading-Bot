@@ -69,15 +69,7 @@ function getChartTabLabel(instrument: string): string {
   }
 }
 
-// Helper function to get update interval based on instrument type
-function getUpdateInterval(instrument: string): number {
-  // (1s) indices update every 1 second (1000ms)
-  if (instrument.includes('(1s)')) {
-    return 1000;
-  }
-  // Regular volatility indices update every 2 seconds (2000ms)
-  return 2000;
-}
+
 import { DerivBalanceListener, type ListenerStatus } from '@/services/deriv-balance-listener';
 
 const DEFAULT_PAPER_BALANCE = 10000;
@@ -990,75 +982,77 @@ export default function VolatilityTradingPage() {
     };
   }, [activeAutomatedTrades, isAutoTradingActive, selectedDerivAccountType, toast, isAiLoading, userInfo, selectedAiStrategyId, tradingMode, selectedUserTradeTypeForLoop]);
 
-  // Real-time price streaming for trade type cards
+  // Real-time WebSocket price streaming for trade type cards
   useEffect(() => {
     if (!selectedUserTradeTypeForLoop || (selectedUserTradeTypeForLoop !== 'DigitsEvenOdd' && selectedUserTradeTypeForLoop !== 'DigitsOverUnder')) {
       return;
     }
 
-    // Allow Over/Under cards to show even without digit selection
+    console.log('[VolatilityPage] Setting up WebSocket streaming for', currentVolatilityInstrument);
 
-    let priceStreamInterval: NodeJS.Timeout;
-    let lastPrice = 0;
-    let isInitialized = false;
+    let unsubscribe: (() => void) | null = null;
 
-    const streamPrices = async () => {
+    // Import the tick stream service and set up subscription
+    const setupWebSocketStreaming = async () => {
       try {
-        // Get initial price from API only once
-        if (!isInitialized) {
-          const candles = await getCandles(currentVolatilityInstrument, 60);
-          if (candles && candles.length > 0) {
-            lastPrice = candles[candles.length - 1].close;
-            isInitialized = true;
-          }
-        }
+        const { getTickStream } = await import('@/services/deriv-tick-stream');
+        const tickStream = getTickStream();
 
-        if (lastPrice > 0) {
-          // Simulate real-time price movements like Deriv
+        const handleTick = (tick: PriceTick) => {
+          console.log('[VolatilityPage] Received tick:', tick);
+
           const decimalPlaces = getInstrumentDecimalPlaces(currentVolatilityInstrument);
-          const volatility = currentVolatilityInstrument.includes('100') ? 0.003 :
-                            currentVolatilityInstrument.includes('75') ? 0.002 :
-                            currentVolatilityInstrument.includes('50') ? 0.0015 :
-                            currentVolatilityInstrument.includes('25') ? 0.001 :
-                            currentVolatilityInstrument.includes('10') ? 0.0008 : 0.001;
-
-          const priceChange = (Math.random() - 0.5) * volatility * lastPrice;
-          const newPrice = lastPrice + priceChange;
-          const adjustedPrice = parseFloat(newPrice.toFixed(decimalPlaces));
-
-          lastPrice = adjustedPrice;
-          const priceStr = adjustedPrice.toFixed(decimalPlaces);
+          const priceStr = tick.price.toFixed(decimalPlaces);
           const lastDigit = parseInt(priceStr.charAt(priceStr.length - 1));
 
-          setCurrentStreamingPrice(adjustedPrice);
+          // Update current streaming price
+          setCurrentStreamingPrice(tick.price);
 
-          // Add to sequence with real-time updates
-          const now = Date.now();
+          // Add to sequence with real WebSocket tick data
           setPriceSequence(prev => {
             const newSequence = [...prev, {
-              price: adjustedPrice,
+              price: tick.price,
               digit: lastDigit,
-              timestamp: now
+              timestamp: tick.epoch * 1000 // Convert to milliseconds
             }];
             // Keep only last 150 items for performance (to support 100 tick display)
             return newSequence.slice(-150);
           });
-        }
+        };
+
+        const handleError = (error: Error) => {
+          console.error('[VolatilityPage] WebSocket tick stream error:', error);
+        };
+
+        const handleConnect = () => {
+          console.log('[VolatilityPage] Connected to WebSocket tick stream for', currentVolatilityInstrument);
+        };
+
+        const handleDisconnect = () => {
+          console.log('[VolatilityPage] Disconnected from WebSocket tick stream for', currentVolatilityInstrument);
+        };
+
+        // Subscribe to real-time ticks
+        unsubscribe = tickStream.subscribe(currentVolatilityInstrument, {
+          onTick: handleTick,
+          onError: handleError,
+          onConnect: handleConnect,
+          onDisconnect: handleDisconnect
+        });
+
+        console.log('[VolatilityPage] WebSocket streaming setup complete for', currentVolatilityInstrument);
       } catch (error) {
-        console.error('Error streaming prices for trade type cards:', error);
+        console.error('[VolatilityPage] Error setting up WebSocket streaming:', error);
       }
     };
 
-    // Initial load
-    streamPrices();
+    setupWebSocketStreaming();
 
-    // Use dynamic interval based on instrument type
-    const updateInterval = getUpdateInterval(currentVolatilityInstrument);
-    priceStreamInterval = setInterval(streamPrices, updateInterval);
-
+    // Cleanup function
     return () => {
-      if (priceStreamInterval) {
-        clearInterval(priceStreamInterval);
+      if (unsubscribe) {
+        console.log('[VolatilityPage] Unsubscribing from WebSocket tick stream for', currentVolatilityInstrument);
+        unsubscribe();
       }
     };
   }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument]);
