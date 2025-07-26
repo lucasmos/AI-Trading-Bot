@@ -151,11 +151,28 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
-  // Force re-render when chart data changes to ensure the chart updates
+  // Memoize chart data processing
+  const processedChartData = useMemo(() => {
+    return chartData.map(point => ({
+      ...point,
+      // Ensure time is properly formatted for chart display
+      formattedTime: new Date(point.time).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      })
+    }));
+  }, [chartData]);
+
+  // Update render key when significant changes occur
   const [renderKey, setRenderKey] = useState(0);
   useEffect(() => {
-    setRenderKey(prev => prev + 1);
-  }, [chartData.length, tickCount]);
+    if (processedChartData.length > 0 && connectionStatus === 'connected') {
+      setRenderKey(prev => prev + 1);
+      console.log(`[TradingChart] Updating chart - Tick count: ${tickCount}, Data points: ${processedChartData.length}`);
+    }
+  }, [processedChartData, connectionStatus, tickCount]);
 
   // Debug chart data updates and force re-render
   useEffect(() => {

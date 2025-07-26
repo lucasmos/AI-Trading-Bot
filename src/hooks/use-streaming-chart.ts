@@ -10,14 +10,14 @@ import {
   calculateFullATR
 } from '@/lib/technical-analysis';
 
-// Use the same time formatting as the candles and tick stream
+// Ensure consistent time formatting across the application
 const formatTickTime = (epoch: number): string => {
-  return new Date(epoch * 1000).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
+  const date = new Date(epoch * 1000);
+  if (isNaN(date.getTime())) {
+    console.error(`[formatTickTime] Invalid epoch: ${epoch}`);
+    return new Date().toISOString(); // Fallback to current time if invalid
+  }
+  return date.toISOString(); // Use ISO string format for consistent parsing
 };
 
 export interface StreamingDataPoint {
@@ -139,7 +139,14 @@ export function useStreamingChart({
       return;
     }
 
-    // Increment tick count
+    // Force data type for time
+    const tickTime = formatTickTime(tick.epoch);
+    if (!tickTime) {
+      console.error(`[useStreamingChart] Invalid time format for tick:`, tick);
+      return;
+    }
+
+    // Increment tick count and trigger update
     setTickCount(prev => {
       const newCount = prev + 1;
       console.log(`[useStreamingChart] Tick count updated: ${newCount}`);
@@ -149,10 +156,10 @@ export function useStreamingChart({
     // Add new tick as a data point to show real-time price movement
     setChartData(prevData => {
       const newDataPoint: StreamingDataPoint = {
-        time: tick.time, // This should be an ISO string from the tick stream
+        time: tickTime, // Use validated ISO string time format
         epoch: tick.epoch,
         price: tick.price,
-        // Copy indicators from last point (will be recalculated later)
+        // Copy previous indicator values until next update
         rsi: prevData.length > 0 ? prevData[prevData.length - 1].rsi : undefined,
         macdLine: prevData.length > 0 ? prevData[prevData.length - 1].macdLine : undefined,
         macdSignal: prevData.length > 0 ? prevData[prevData.length - 1].macdSignal : undefined,
@@ -161,6 +168,7 @@ export function useStreamingChart({
         bbMiddle: prevData.length > 0 ? prevData[prevData.length - 1].bbMiddle : undefined,
         bbLower: prevData.length > 0 ? prevData[prevData.length - 1].bbLower : undefined,
         ema: prevData.length > 0 ? prevData[prevData.length - 1].ema : undefined,
+        atr: prevData.length > 0 ? prevData[prevData.length - 1].atr : undefined
         atr: prevData.length > 0 ? prevData[prevData.length - 1].atr : undefined
       };
 
