@@ -22,6 +22,7 @@ import { VOLATILITY_INSTRUMENTS } from "../../config/instruments";
 import { calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateATR, calculateFullRSI, calculateFullMACD, calculateFullBollingerBands, calculateFullEMA, calculateFullATR } from '@/lib/technical-analysis';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
 import { useRouter } from 'next/navigation';
+import { ListenerStatus } from '@/services/deriv-balance-listener';
 
 export default function VolatilityTradingPage() {
   const router = useRouter();
@@ -55,8 +56,31 @@ export default function VolatilityTradingPage() {
   const [lastAiCallTimestamp, setLastAiCallTimestamp] = useState<number | null>(null);
   const AI_COOLDOWN_DURATION_MS = 2 * 60 * 1000; // 2 minutes
 
-  const currentBalance = paperTradingMode === 'paper' ? paperBalance : liveBalance;
-  const setCurrentBalance = paperTradingMode === 'paper' ? setPaperBalance : setLiveBalance;
+  const [selectedAccountType, setSelectedAccountType] = useState<'demo' | 'real' | null>(userInfo?.derivAccounts?.length ? 'real' : null);
+  const [displayAccountId, setDisplayAccountId] = useState<string | null>(userInfo?.derivAccounts?.[0]?.accountId || null);
+  const [syncStatus, setSyncStatus] = useState<ListenerStatus>('idle');
+
+  const currentBalance = selectedAccountType === 'real' 
+    ? liveBalance 
+    : selectedAccountType === 'demo' 
+      ? paperBalance 
+      : paperBalance;
+
+  useEffect(() => {
+    const listener = window.DerivBalanceListener;
+    if (selectedAccountType === 'real' && displayAccountId) {
+      listener.start(displayAccountId, {
+        onUpdate: (newBalance: number) => setLiveBalance(newBalance),
+        onStatusChange: setSyncStatus
+      });
+    } else if (selectedAccountType === 'demo') {
+      listener.startDemo(displayAccountId || 'default', {
+        onUpdate: setPaperBalance,
+        onStatusChange: setSyncStatus
+      });
+    }
+    return () => listener.stop();
+  }, [selectedAccountType, displayAccountId]);
 
   // const router = useRouter(); // already added above
   const { toast } = useToast();
@@ -255,7 +279,7 @@ export default function VolatilityTradingPage() {
     } finally {
       setIsAiLoading(false); 
     }
-  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setCurrentBalance, setProfitsClaimable, userInfo, selectedAiStrategyId]);
+  }, [autoTradeTotalStake, tradingMode, toast, paperTradingMode, currentBalance, authStatus, setProfitsClaimable, userInfo, selectedAiStrategyId]);
 
   const handleStopAiAutoTrade = () => {
     setIsAutoTradingActive(false); 
@@ -329,7 +353,11 @@ export default function VolatilityTradingPage() {
           }
           
           setTimeout(() => {
-            setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            if (paperTradingMode === 'paper') {
+              setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            } else {
+              setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+            }
             setProfitsClaimable(prevProfits => ({
               totalNetProfit: prevProfits.totalNetProfit + pnl,
               tradeCount: prevProfits.tradeCount + 1,
@@ -453,7 +481,11 @@ export default function VolatilityTradingPage() {
                 }
                 
                 setTimeout(() => { 
-                  setCurrentBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  if (paperTradingMode === 'paper') {
+                    setPaperBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  } else {
+                    setLiveBalance(prevBal => parseFloat((prevBal + pnl).toFixed(2)));
+                  }
                   setProfitsClaimable(prevProfits => ({
                     totalNetProfit: prevProfits.totalNetProfit + pnl,
                     tradeCount: prevProfits.tradeCount + 1,
@@ -490,15 +522,17 @@ export default function VolatilityTradingPage() {
       tradeIntervals.current.forEach(intervalId => clearInterval(intervalId));
       tradeIntervals.current.clear();
     };
-  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setCurrentBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
+  }, [activeAutomatedTrades, isAutoTradingActive, paperTradingMode, setPaperBalance, setLiveBalance, setProfitsClaimable, toast, isAiLoading, userInfo, selectedAiStrategyId]);
 
 
   return (
     <div className="container mx-auto py-2 space-y-6">
-      <BalanceDisplay 
-        balance={currentBalance} 
-        selectedAccountType={paperTradingMode as 'demo' | 'real' | null} 
-        displayAccountId={null} 
+      <BalanceDisplay
+        balance={currentBalance}
+        selectedAccountType={selectedAccountType}
+        displayAccountId={displayAccountId}
+        syncStatus={syncStatus}
+        currency="USD"
       />
       <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><Activity className="h-8 w-8 text-primary" />AI Volatility Index Trading</h1>
       

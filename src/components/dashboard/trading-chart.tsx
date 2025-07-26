@@ -290,7 +290,25 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
         <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fontSize: 10 }} 
+                tickMargin={5}
+                tickFormatter={(time) => {
+                  // Parse the ISO string and format it as HH:MM:SS
+                  try {
+                    const date = new Date(time);
+                    return date.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                    });
+                  } catch (e) {
+                    return 'Invalid';
+                  }
+                }}
+              />
             <YAxis
                 yAxisId="left"
                 orientation="left"
@@ -318,7 +336,26 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fontSize: 10 }} 
+                tickMargin={5} 
+                hide
+                tickFormatter={(time) => {
+                  // Parse the ISO string and format it as HH:MM:SS
+                  try {
+                    const date = new Date(time);
+                    return date.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                    });
+                  } catch (e) {
+                    return 'Invalid';
+                  }
+                }}
+              />
               <YAxis yAxisId="left" orientation="left" domain={[0, 100]} tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
@@ -335,7 +372,26 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fontSize: 10 }} 
+                tickMargin={5} 
+                hide
+                tickFormatter={(time) => {
+                  // Parse the ISO string and format it as HH:MM:SS
+                  try {
+                    const date = new Date(time);
+                    return date.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                    });
+                  } catch (e) {
+                    return 'Invalid';
+                  }
+                }}
+              />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Legend content={<ChartLegendContent />} />
@@ -362,7 +418,26 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 10 }} tickMargin={5} hide />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fontSize: 10 }} 
+                tickMargin={5} 
+                hide
+                tickFormatter={(time) => {
+                  // Parse the ISO string and format it as HH:MM:SS
+                  try {
+                    const date = new Date(time);
+                    return date.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false,
+                    });
+                  } catch (e) {
+                    return 'Invalid';
+                  }
+                }}
+              />
               <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 10 }} tickMargin={5} />
               <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
               <Legend content={<ChartLegendContent />} />
