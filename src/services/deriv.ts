@@ -326,6 +326,17 @@ export const instrumentToDerivSymbol = (instrument: InstrumentType): string => {
       return 'R_75';
     case 'Volatility 100 Index':
       return 'R_100';
+    // 1-Second Volatility Indices
+    case 'Volatility 10 (1s) Index':
+      return '1HZ10V';
+    case 'Volatility 25 (1s) Index':
+      return '1HZ25V';
+    case 'Volatility 50 (1s) Index':
+      return '1HZ50V';
+    case 'Volatility 75 (1s) Index':
+      return '1HZ75V';
+    case 'Volatility 100 (1s) Index':
+      return '1HZ100V';
     default:
       // This case handles any string that wasn't explicitly matched.
       // It might be an instrument symbol not yet in TradingInstrument type,
@@ -358,7 +369,7 @@ export async function getCandles(
 
   const ws = new WebSocket(DERIV_API_URL);
   let operationTimeout: ReturnType<typeof setTimeout> | null = null;
-  const timeoutDuration = 15000; // 15 seconds for candles
+  const timeoutDuration = 25000; // Increased to 25 seconds for candles
   const symbolForTimeoutLog = symbol; // Capture for timeout log
 
   const cleanup = (isError: boolean = false, message?: string) => {
@@ -491,6 +502,154 @@ export async function getCandles(
     })
   ]);
 }
+
+// --- START OF NEW getTicks FUNCTION ---
+/**
+ * Fetches historical tick data for a given instrument from Deriv API.
+ * @param instrument The trading instrument.
+ * @param count Number of ticks to fetch (default 100).
+ * @param token Optional Deriv API token for authorization.
+ * @returns A promise that resolves to an array of PriceTick.
+ */
+export async function getTicks(
+  instrument: InstrumentType,
+  count: number = 100, // Default to 100 ticks
+  token?: string
+): Promise<PriceTick[]> {
+  const symbol = instrumentToDerivSymbol(instrument);
+  const decimalPlaces = getInstrumentDecimalPlaces(instrument); // For formatting price if needed, though ticks are usually raw
+
+  const ws = new WebSocket(DERIV_API_URL);
+  let operationTimeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutDuration = 25000; // Increased to 25 seconds for ticks history
+  const symbolForTimeoutLog = symbol;
+
+  const cleanup = (isError: boolean = false, message?: string) => {
+    if (operationTimeout) {
+      clearTimeout(operationTimeout);
+      operationTimeout = null;
+    }
+    if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+      const logMessage = `[DerivService/getTicks] Closing WebSocket for ${symbolForTimeoutLog}. ${message || (isError ? "Error occurred" : "Operation complete")}`;
+      if (isError) console.error(logMessage); else console.log(logMessage);
+      ws.close(1000, message || (isError ? "Error occurred" : "Operation complete"));
+    }
+  };
+
+  const promiseLogic = new Promise<PriceTick[]>((resolve, reject) => {
+    ws.onopen = () => {
+      let authorized = false;
+      if (token) {
+        console.log('[DerivService/getTicks] Authorizing with provided token.');
+        ws.send(JSON.stringify({ authorize: token }));
+        authorized = true;
+      } else if (DERIV_API_TOKEN) { // Fallback to global demo token
+        console.log('[DerivService/getTicks] Authorizing with global DERIV_API_TOKEN.');
+        ws.send(JSON.stringify({ authorize: DERIV_API_TOKEN }));
+        authorized = true;
+      } else {
+        console.log('[DerivService/getTicks] No token provided, proceeding without explicit authorization for ticks.');
+      }
+
+      setTimeout(() => {
+        const request = {
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count: count,
+          end: 'latest',
+          style: 'ticks', // Crucial difference: 'ticks' instead of 'candles'
+          // granularity is NOT used with style: 'ticks'
+        };
+        console.log('[DerivService/getTicks] Sending ticks_history request (style:ticks):', JSON.stringify(request));
+        ws.send(JSON.stringify(request));
+      }, authorized ? 500 : 0);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const response = JSON.parse(event.data as string);
+
+        if (response.error) {
+          console.error('[DerivService/getTicks] API Error:', response.error);
+          cleanup(true, response.error.message);
+          reject(new Error(response.error.message || 'Unknown API error fetching ticks'));
+          return;
+        }
+
+        if (response.msg_type === 'history') { // For style: 'ticks', msg_type is 'history'
+          const prices = response.history?.prices || [];
+          const times = response.history?.times || [];
+          const ticks: PriceTick[] = prices.map((price: number, index: number) => ({
+            epoch: times[index],
+            price: parseFloat(price.toFixed(decimalPlaces)), // Apply decimal formatting
+            time: formatTickTime(times[index]),
+          }));
+          cleanup(false, "Ticks received successfully");
+          resolve(ticks.slice(-count)); // Ensure we only return the requested count
+          return;
+        } else if (response.msg_type === 'authorize') {
+          if (response.error) {
+            console.error('[DerivService/getTicks] Authorization Error:', response.error.message);
+          } else {
+            console.log('[DerivService/getTicks] Authorization successful/response received.');
+          }
+        } else if (response.msg_type === 'candles') {
+             console.warn('[DerivService/getTicks] Received candles msg_type when history (for ticks) was expected. This might indicate an issue.');
+             cleanup(true, "Received 'candles' msg_type when 'history' (for ticks) was expected.");
+             reject(new Error("Received 'candles' msg_type when 'history' (for ticks) was expected."));
+             return;
+        }
+      } catch (e) {
+        console.error('[DerivService/getTicks] Error processing message:', e);
+        cleanup(true, (e as Error).message);
+        reject(e);
+      }
+    };
+
+    ws.onerror = (event) => {
+      let errorMessage = 'WebSocket error fetching ticks.';
+      if (event && typeof event === 'object') {
+        if ('message' in event && (event as any).message) {
+            errorMessage = `WebSocket Error: ${(event as any).message}`;
+        } else {
+            errorMessage = `WebSocket Error: type=${event.type}. Check browser console for the full event object.`;
+        }
+      }
+      console.error('[DerivService/getTicks] WebSocket Error Event:', event);
+      cleanup(true, errorMessage);
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      console.log(`[DerivService/getTicks] WebSocket connection closed for ${symbolForTimeoutLog}. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
+      // cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      // If promise is not settled, timeout should handle it. Avoid calling cleanup again if already called by resolve/reject.
+      if (operationTimeout) { // Check if timeout is still active (meaning promise hasn't settled via other paths)
+          cleanup(event.wasClean ? false : true, `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      }
+    };
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<PriceTick[]>((_, rejectTimeout) => {
+      operationTimeout = setTimeout(() => {
+        const reason = `getTicks operation timed out for symbol ${symbolForTimeoutLog}`;
+        console.error(`[DerivService/getTicks] ${reason}`);
+        // Ensure cleanup is called ONLY if the WebSocket is still in a state where it might need closing by timeout logic.
+        // If it closed and promiseLogic already called cleanup, this might be redundant or error-prone.
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+            cleanup(true, "Operation timed out");
+        } else if (!ws) {
+            // If ws is null, it means onopen might not have even fired.
+             console.warn(`[DerivService/getTicks] Timeout occurred but WebSocket instance was null for ${symbolForTimeoutLog}.`);
+        }
+        rejectTimeout(new Error(reason));
+      }, timeoutDuration);
+    })
+  ]);
+}
+// --- END OF NEW getTicks FUNCTION ---
 
 // Local definitions of DerivMarketTimes, DerivTradingEvent, DerivSymbolSpecificTradingData are removed.
 
@@ -1616,8 +1775,14 @@ export interface TradeDetails {
   currency: string;
   stop_loss?: number;
   take_profit?: number;
-  basis: string;
-  token: string;
+  basis: "stake" | "payout"; // Usually "stake"
+  token: string; // API token
+
+  // Optional parameters based on contract_type
+  barrier?: string | number; // For Higher/Lower (price offset/value), Touch/No Touch (price offset/value), Digits Over/Under (predicted digit 0-9)
+  // barrier2?: string | number; // For some contracts like Ends In/Out, not in current scope
+
+  // For Multipliers (though not the primary focus now, good to keep if generalizing)
   multiplier?: number;
 }
 
@@ -1738,37 +1903,242 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             // Base proposal request
             const proposalRequest: any = {
               proposal: 1,
-              subscribe: 1,
+              subscribe: 1, // Subscribe to proposal updates
               amount: tradeDetails.amount,
-              basis: tradeDetails.basis,
+              basis: tradeDetails.basis, // "stake" or "payout"
               contract_type: apiContractType,
               currency: tradeDetails.currency,
               symbol: tradeDetails.symbol,
             };
 
-            // Type-specific parameter handling
-            if (apiContractType === 'MULTUP' || apiContractType === 'MULTDOWN') {
-              // Multiplier is mandatory for these types
-              if (typeof tradeDetails.multiplier === 'number') {
-                proposalRequest.multiplier = tradeDetails.multiplier;
-              } else {
-                // This will be caught by the main try...catch in onmessage,
-                // which calls cleanupAndLog and reject.
-                throw new Error(`Multiplier is required for ${apiContractType} contract but was not provided. Symbol: ${tradeDetails.symbol}`);
-              }
-              // Duration, duration_unit, and product_type are explicitly NOT added for Multipliers.
-            } else {
-              // For non-multiplier contracts (e.g., CALL/PUT)
+            // Add duration and duration_unit for contract types that require them
+            // These are typically NOT used for Multipliers.
+            if (apiContractType !== 'MULTUP' && apiContractType !== 'MULTDOWN') {
               if (tradeDetails.duration && tradeDetails.duration_unit) {
                 proposalRequest.duration = tradeDetails.duration;
                 proposalRequest.duration_unit = tradeDetails.duration_unit;
+              } else {
+                // For non-multiplier types, duration is usually mandatory.
+                // For Digits, duration and duration_unit are critical.
+                if (apiContractType.startsWith("DIGIT")) {
+                    throw new Error(`Duration and duration_unit are required for ${apiContractType} contract. Symbol: ${tradeDetails.symbol}`);
+                }
+                console.warn(`[DerivService/placeTrade] Duration or duration_unit might be missing for non-multiplier contract ${apiContractType} on symbol ${tradeDetails.symbol}`);
               }
-              // Add product_type: "basic" for non-multiplier contracts based on observed API logs for CALL.
-              proposalRequest.product_type = "basic";
             }
 
-            // limit_order handling (common for contracts that support it)
-            if (tradeDetails.take_profit !== undefined || tradeDetails.stop_loss !== undefined) {
+
+            // Type-specific parameter handling for barriers and multipliers
+            switch (apiContractType) {
+              case 'CALL': // Rise/Fall (Rise), Higher/Lower (Higher)
+              case 'PUT':  // Rise/Fall (Fall), Higher/Lower (Lower)
+                if (tradeDetails.barrier !== undefined) { // For Higher/Lower
+                  // Barrier for CALL/PUT (Higher/Lower) is a price level (string starting with +/-, or absolute)
+                  proposalRequest.barrier = String(tradeDetails.barrier);
+                }
+                // No specific barrier for simple Rise/Fall (entry spot is implicit barrier)
+                // product_type "basic" is usually needed for these options.
+                proposalRequest.product_type = "basic";
+                break;
+              case 'ONETOUCH':
+              case 'NOTOUCH':
+                if (tradeDetails.barrier !== undefined) {
+                  // Barrier for Touch/NoTouch is a price level (string starting with +/-, or absolute)
+                  proposalRequest.barrier = String(tradeDetails.barrier);
+                } else {
+                  throw new Error(`Barrier is required for ${apiContractType} contract. Symbol: ${tradeDetails.symbol}`);
+                }
+                proposalRequest.product_type = "basic";
+                break;
+              case 'DIGITEVEN':
+              case 'DIGITODD':
+                // No 'barrier' parameter for these specific contract types in proposal.
+                // Prediction is inherent in contract_type.
+                // Duration must be in ticks.
+                if (tradeDetails.duration_unit !== 't') {
+                    throw new Error(`Duration unit must be 't' (ticks) for ${apiContractType}. Symbol: ${tradeDetails.symbol}`);
+                }
+                proposalRequest.product_type = "basic";
+                break;
+              case 'DIGITOVER':
+              case 'DIGITUNDER':
+                if (tradeDetails.barrier !== undefined &&
+                    !isNaN(Number(tradeDetails.barrier)) &&
+                    Number(tradeDetails.barrier) >= 0 && Number(tradeDetails.barrier) <= 9) {
+                   // Barrier here is the predicted digit (0-9), sent as a string.
+                  proposalRequest.barrier = String(Math.floor(Number(tradeDetails.barrier)));
+                } else {
+                  throw new Error(`A valid integer barrier (predicted digit 0-9) is required for ${apiContractType}. Symbol: ${tradeDetails.symbol}`);
+                }
+                 // Duration must be in ticks.
+                if (tradeDetails.duration_unit !== 't') {
+                    throw new Error(`Duration unit must be 't' (ticks) for ${apiContractType}. Symbol: ${tradeDetails.symbol}`);
+                }
+                proposalRequest.product_type = "basic";
+                break;
+              case 'MULTUP':
+              case 'MULTDOWN':
+                if (typeof tradeDetails.multiplier === 'number') {
+                  proposalRequest.multiplier = tradeDetails.multiplier;
+                } else {
+                  throw new Error(`Multiplier is required for ${apiContractType} contract. Symbol: ${tradeDetails.symbol}`);
+                }
+                // Stop Loss and Take Profit for Multipliers
+                if (tradeDetails.stop_loss !== undefined || tradeDetails.take_profit !== undefined) {
+                  proposalRequest.limit_order = {};
+                  if (tradeDetails.stop_loss !== undefined) {
+                    proposalRequest.limit_order.stop_loss = tradeDetails.stop_loss;
+                  }
+                  if (tradeDetails.take_profit !== undefined) {
+                    proposalRequest.limit_order.take_profit = tradeDetails.take_profit;
+                  }
+                }
+                // product_type is NOT used for multipliers
+                break;
+              default:
+                // This case should ideally not be hit if contract_type is validated upstream
+                // or if all supported types are explicitly handled.
+                cleanupAndLog(`Unsupported or unknown contract_type for proposal construction: ${apiContractType}. Symbol: ${tradeDetails.symbol}`, true);
+                throw new Error(`Unsupported contract_type for proposal: ${apiContractType}`);
+            }
+
+            // Note: product_type="basic" is added within the switch for relevant cases.
+            // If a contract type was missed, it might lack product_type if needed.
+
+            console.log('[DerivService/placeTrade] Sending proposal request:', JSON.stringify(proposalRequest));
+            ws!.send(JSON.stringify(proposalRequest));
+
+          } else {
+            // Authorization itself failed (e.g., invalid token)
+            const authFailedMsg = 'Authorization failed. No loginid in response.';
+            console.error(`[DerivService/placeTrade] ${authFailedMsg}`, JSON.stringify(response));
+            cleanupAndLog(authFailedMsg, true);
+            reject(new Error(authFailedMsg));
+            return;
+          }
+        } else if (response.msg_type === 'proposal') {
+            if (response.error) { // Explicit error in proposal response
+                console.error(`[DerivService/placeTrade] Full error response on proposal (msg_type: proposal):`, JSON.stringify(response, null, 2));
+                cleanupAndLog(`API Error on proposal: ${response.error.message}`, true);
+                if (response.subscription && response.subscription.id) {
+                    console.log('[DerivService/placeTrade] Attempting to forget subscription from erroring proposal:', response.subscription.id);
+                    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
+                }
+                reject(new Error(response.error.message || `Proposal API error for account ${accountId}. Details: ${response.error.code}`));
+                return;
+            }
+
+            if (response.proposal && response.proposal.id && response.proposal.spot !== undefined) { // spot can be 0
+              proposalId = response.proposal.id;
+              entrySpot = response.proposal.spot;
+              console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Proposal Spot: ${entrySpot}. Buying contract...`);
+
+              if (response.subscription && response.subscription.id) {
+                proposalSubscriptionId = response.subscription.id;
+                console.log(`[DerivService/placeTrade] Stored proposal subscription ID: ${proposalSubscriptionId}`);
+              }
+
+              const buyRequest = { buy: proposalId, price: tradeDetails.amount };
+              console.log(`[DerivService/placeTrade] Sending buy request for account ${accountId}:`, JSON.stringify(buyRequest));
+              ws!.send(JSON.stringify(buyRequest));
+            } else {
+              const errorMsg = `Invalid proposal response structure for account ${accountId}. Proposal ID or Spot missing.`;
+              cleanupAndLog(errorMsg + `: ${JSON.stringify(response)}`, true);
+              if (response.subscription && response.subscription.id) {
+                  console.log('[DerivService/placeTrade] Attempting to forget subscription from malformed proposal:', response.subscription.id);
+                  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: response.subscription.id }));
+              }
+              reject(new Error(errorMsg));
+            }
+        } else if (response.msg_type === 'buy') {
+            let buyError = false;
+            if (response.buy && response.buy.contract_id) { // Successful buy
+              cleanupAndLog(`Contract purchased successfully on account ${accountId}: ${JSON.stringify(response.buy)}`);
+              resolve({
+                contract_id: response.buy.contract_id,
+                buy_price: response.buy.buy_price,
+                longcode: response.buy.longcode,
+                entry_spot: entrySpot !== null ? entrySpot : (response.buy.purchase_time_spot !== undefined ? response.buy.purchase_time_spot : 0),
+              });
+            } else { // Error in buy response or malformed success
+              buyError = true;
+              // Error should have been caught by the top-level if(response.error)
+              // This branch handles cases where `response.error` is not set but `response.buy` is malformed.
+              const errorMsg = response.error?.message || `Malformed buy response on account ${accountId}. Contract ID missing.`;
+              console.error(`[DerivService/placeTrade] Buy Error/Malformed: ${errorMsg}`, JSON.stringify(response));
+              cleanupAndLog(`Buy Error/Malformed: ${errorMsg}`, true);
+              reject(new Error(errorMsg));
+            }
+
+            if (proposalSubscriptionId) {
+              console.log(`[DerivService/placeTrade] Forgetting subscription ${proposalSubscriptionId} after buy message processed (Error: ${buyError}).`);
+              if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
+              proposalSubscriptionId = null;
+            }
+        } else {
+          console.log(`[DerivService/placeTrade] Received other message type for ${accountId}: ${response.msg_type}`, response);
+        }
+      } catch (e: any) {
+        cleanupAndLog(`Error processing message for account ${accountId}: ${e?.message || String(e)}`, true);
+        if (proposalSubscriptionId) {
+            console.log(`[DerivService/placeTrade] Attempting to forget active subscription ${proposalSubscriptionId} due to processing error.`);
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ forget: proposalSubscriptionId }));
+            proposalSubscriptionId = null;
+        }
+        reject(e instanceof Error ? e : new Error(`Failed to process message from Deriv API for account ${accountId}.`));
+      }
+    };
+
+    ws.onerror = (event) => {
+      let errorMessage = 'WebSocket error during trade placement.';
+      if (event && typeof event === 'object' && 'message' in event && (event as any).message) {
+        errorMessage = `WebSocket Error: ${(event as any).message}`;
+      } else if (event) {
+        errorMessage = `WebSocket Error: type=${event.type}. Check console for details.`;
+      }
+      cleanupAndLog(`WebSocket Error Event for account ${accountId}: ${errorMessage}`, true, ws);
+      if (proposalSubscriptionId) {
+          console.log(`[DerivService/placeTrade] WebSocket error occurred with active proposal subscription ${proposalSubscriptionId}. It is now implicitly forgotten.`);
+          proposalSubscriptionId = null;
+      }
+      reject(new Error(errorMessage));
+    };
+
+    ws.onclose = (event) => {
+      const duration = Date.now() - startTime;
+      console.log(`[DerivService/placeTrade] WebSocket connection closed for accountId: ${accountId}. Code: ${event.code}, Reason: '${event.reason}', WasClean: ${event.wasClean}. Duration: ${duration}ms.`);
+      if (operationTimeout) clearTimeout(operationTimeout);
+      if (proposalSubscriptionId) {
+          console.log(`[DerivService/placeTrade] WebSocket closed with active proposal subscription ${proposalSubscriptionId}. It is now implicitly forgotten.`);
+          proposalSubscriptionId = null;
+      }
+    };
+  });
+
+  return Promise.race([
+    promiseLogic,
+    new Promise<PlaceTradeResponse>((_, reject) => {
+      operationTimeout = setTimeout(() => {
+        const reason = `Trade operation timed out after ${timeoutDuration / 1000} seconds for accountId: ${accountId}.`;
+        console.error(`[DerivService/placeTrade] Timeout: ${reason}`);
+        if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+          console.log(`[DerivService/placeTrade] Timeout: Attempting to close WebSocket for accountId: ${accountId}.`);
+          ws.close(1000, "Operation timed out");
+        } else if (!ws) {
+           console.log(`[DerivService/placeTrade] Timeout: WebSocket instance was null for accountId: ${accountId}.`);
+        }
+        if (proposalSubscriptionId) {
+            console.log(`[DerivService/placeTrade] Timeout occurred with active proposal subscription ${proposalSubscriptionId}. It is now implicitly forgotten.`);
+            proposalSubscriptionId = null;
+        }
+        reject(new Error(reason));
+      }, timeoutDuration);
+    })
+  ]);
+}
+
+
+/**
               const limitOrderDetails: any = {};
               if (typeof tradeDetails.take_profit === 'number') {
                 limitOrderDetails.take_profit = tradeDetails.take_profit;

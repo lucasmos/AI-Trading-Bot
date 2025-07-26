@@ -1,6 +1,4 @@
-'use client';
-
-import { RSI, MACD, BollingerBands, SMA, EMA, ATR } from 'technicalindicators';
+import { RSI, MACD, BollingerBands, SMA, EMA, ATR, Stochastic, WilliamsR, CCI } from 'technicalindicators';
 // Specific Input/Output types are not explicitly exported by the library for static calculate methods.
 // We rely on the structure the calculate methods expect.
 
@@ -16,7 +14,7 @@ export function calculateFullRSI(prices: number[], period: number = 14): number[
   }
   // The RSI.calculate method expects an object with period and values properties.
   const rsiResults = RSI.calculate({ period, values: prices });
-  return rsiResults.map(val => parseFloat(val.toFixed(2)));
+  return rsiResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -48,9 +46,9 @@ export function calculateFullMACD(
     .filter(val => val.MACD !== undefined && val.signal !== undefined && val.histogram !== undefined)
     .map(val => ({
       // At this point, val.MACD, val.signal, val.histogram are guaranteed to be numbers by the filter
-      macd: parseFloat((val.MACD!).toFixed(2)), 
-      signal: parseFloat((val.signal!).toFixed(2)),
-      histogram: parseFloat((val.histogram!).toFixed(2)),
+      macd: (val.MACD !== undefined && val.MACD !== null) ? parseFloat((val.MACD!).toFixed(2)) : 0,
+      signal: (val.signal !== undefined && val.signal !== null) ? parseFloat((val.signal!).toFixed(2)) : 0,
+      histogram: (val.histogram !== undefined && val.histogram !== null) ? parseFloat((val.histogram!).toFixed(2)) : 0,
     }));
 }
 
@@ -76,9 +74,9 @@ export function calculateFullBollingerBands(
   };
   const bbResults = BollingerBands.calculate(bbInput);
   return bbResults.map(val => ({
-    upper: parseFloat(val.upper.toFixed(2)),
-    middle: parseFloat(val.middle.toFixed(2)),
-    lower: parseFloat(val.lower.toFixed(2)),
+    upper: (val.upper !== undefined && val.upper !== null) ? parseFloat(val.upper.toFixed(2)) : 0,
+    middle: (val.middle !== undefined && val.middle !== null) ? parseFloat(val.middle.toFixed(2)) : 0,
+    lower: (val.lower !== undefined && val.lower !== null) ? parseFloat(val.lower.toFixed(2)) : 0,
   }));
 }
 
@@ -119,7 +117,7 @@ export function calculateFullSMA(prices: number[], period: number): number[] {
     return [];
   }
   const smaResults = SMA.calculate({ period, values: prices });
-  return smaResults.map(val => parseFloat(val.toFixed(2)));
+  return smaResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -144,7 +142,7 @@ export function calculateFullEMA(prices: number[], period: number = 20): number[
     return [];
   }
   const emaResults = EMA.calculate({ period, values: prices });
-  return emaResults.map(val => parseFloat(val.toFixed(2)));
+  return emaResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 /**
@@ -171,7 +169,7 @@ export function calculateFullATR(
     period
   };
   const atrResults = ATR.calculate(atrInput);
-  return atrResults.map(val => parseFloat(val.toFixed(2)));
+  return atrResults.map(val => (val !== undefined && val !== null) ? parseFloat(val.toFixed(2)) : 0);
 }
 
 // Add single value calculation functions for latest values
@@ -188,6 +186,107 @@ export function calculateATR(
 ): number | undefined {
   const fullATR = calculateFullATR(highPrices, lowPrices, closePrices, period);
   return fullATR.length > 0 ? fullATR[fullATR.length - 1] : undefined;
+}
+
+/**
+ * Calculates Stochastic Oscillator for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param kPeriod %K period (default 14).
+ * @param dPeriod %D period (default 3).
+ * @returns Stochastic result object (%K and %D values).
+ */
+export function calculateStochastic(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  kPeriod: number = 14,
+  dPeriod: number = 3
+): { k: number; d: number } | undefined {
+  if (highPrices.length < kPeriod || lowPrices.length < kPeriod || closePrices.length < kPeriod) {
+    return undefined;
+  }
+
+  const stochInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: kPeriod,
+    signalPeriod: dPeriod,
+  };
+
+  const stochResults = Stochastic.calculate(stochInput);
+  if (stochResults.length === 0) return undefined;
+
+  const latest = stochResults[stochResults.length - 1];
+  if (!latest || latest.k === undefined || latest.d === undefined) return undefined;
+  return {
+    k: parseFloat(latest.k.toFixed(2)),
+    d: parseFloat(latest.d.toFixed(2)),
+  };
+}
+
+/**
+ * Calculates Williams %R for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param period Period for calculation (default 14).
+ * @returns Williams %R value.
+ */
+export function calculateWilliamsR(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  period: number = 14
+): number | undefined {
+  if (highPrices.length < period || lowPrices.length < period || closePrices.length < period) {
+    return undefined;
+  }
+
+  const wrInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: period,
+  };
+
+  const wrResults = WilliamsR.calculate(wrInput);
+  if (wrResults.length === 0) return undefined;
+  const latest = wrResults[wrResults.length - 1];
+  return (latest !== undefined && latest !== null) ? parseFloat(latest.toFixed(2)) : undefined;
+}
+
+/**
+ * Calculates Commodity Channel Index (CCI) for a series of prices.
+ * @param highPrices Array of high prices.
+ * @param lowPrices Array of low prices.
+ * @param closePrices Array of closing prices.
+ * @param period Period for calculation (default 20).
+ * @returns CCI value.
+ */
+export function calculateCCI(
+  highPrices: number[],
+  lowPrices: number[],
+  closePrices: number[],
+  period: number = 20
+): number | undefined {
+  if (highPrices.length < period || lowPrices.length < period || closePrices.length < period) {
+    return undefined;
+  }
+
+  const cciInput = {
+    high: highPrices,
+    low: lowPrices,
+    close: closePrices,
+    period: period,
+  };
+
+  const cciResults = CCI.calculate(cciInput);
+  if (cciResults.length === 0) return undefined;
+  const latest = cciResults[cciResults.length - 1];
+  return (latest !== undefined && latest !== null) ? parseFloat(latest.toFixed(2)) : undefined;
 }
 
 // Import types needed for calculateAllIndicators - adjust path if your project structure is different
@@ -264,8 +363,26 @@ export function calculateAllIndicators(
         if (atrValue !== undefined) {
             indicators.atr = atrValue;
         }
+
+        // Stochastic Oscillator - requires high, low, and close prices
+        const stochasticValue = calculateStochastic(highPrices, lowPrices, prices);
+        if (stochasticValue !== undefined) {
+            indicators.stochastic = stochasticValue;
+        }
+
+        // Williams %R - requires high, low, and close prices
+        const williamsRValue = calculateWilliamsR(highPrices, lowPrices, prices);
+        if (williamsRValue !== undefined) {
+            indicators.williamsR = williamsRValue;
+        }
+
+        // CCI - requires high, low, and close prices
+        const cciValue = calculateCCI(highPrices, lowPrices, prices);
+        if (cciValue !== undefined) {
+            indicators.cci = cciValue;
+        }
     } else {
-        console.warn("[calculateAllIndicators] Not all candles have high, low, and close prices. Skipping ATR calculation.");
+        console.warn("[calculateAllIndicators] Not all candles have high, low, and close prices. Skipping ATR, Stochastic, Williams %R, and CCI calculations.");
     }
 
     return indicators;

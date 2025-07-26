@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { contractId, exitPrice, profit, status, closeTime } = await request.json();
+
+    if (!contractId) {
+      return NextResponse.json(
+        { error: 'Contract ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Update the trade in the database
+    const updatedTrade = await prisma.trade.update({
+      where: {
+        derivContractId: contractId
+      },
+      data: {
+        exitPrice: exitPrice,
+        profit: profit,
+        status: status === 'won' ? 'CLOSED' : 'CLOSED',
+        closeTime: new Date(closeTime),
+        metadata: {
+          update: true,
+          outcome: status,
+          finalProfit: profit,
+          exitPrice: exitPrice
+        }
+      }
+    });
+
+    console.log(`[API] Updated trade completion for contract ${contractId}: ${status} with profit ${profit}`);
+
+    return NextResponse.json({
+      success: true,
+      tradeId: updatedTrade.id,
+      profit: profit,
+      status: status
+    });
+
+  } catch (error) {
+    console.error('[API] Trade completion update error:', error);
+    
+    // If trade not found, it might be a different type of trade
+    if (error instanceof Error && error.message.includes('Record to update not found')) {
+      return NextResponse.json(
+        { error: 'Trade not found in database' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to update trade completion' },
+      { status: 500 }
+    );
+  }
+}

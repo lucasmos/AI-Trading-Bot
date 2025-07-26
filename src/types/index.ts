@@ -6,6 +6,11 @@ export type VolatilityInstrumentType =
   | 'Volatility 50 Index'
   | 'Volatility 75 Index'
   | 'Volatility 100 Index'
+  | 'Volatility 10 (1s) Index'
+  | 'Volatility 25 (1s) Index'
+  | 'Volatility 50 (1s) Index'
+  | 'Volatility 75 (1s) Index'
+  | 'Volatility 100 (1s) Index'
   | 'Boom 500 Index'
   | 'Boom 600 Index'
   | 'Boom 900 Index'
@@ -20,19 +25,17 @@ export type VolatilityInstrumentType =
   | 'Jump 75 Index'
   | 'Jump 100 Index';
 
-export type ForexCryptoCommodityInstrumentType =
+export type ForexCommodityInstrumentType =
   | 'EUR/USD'
   | 'GBP/USD'
-  | 'BTC/USD'
   | 'XAU/USD' // Gold
-  | 'ETH/USD'
   | 'Palladium/USD'
   | 'Platinum/USD'
   | 'Silver/USD';
 
-export type VolatilityIndexInstrumentType = string; // Refined later
+export type VolatilityIndexInstrumentType = VolatilityInstrumentType | JumpInstrumentType;
 
-export type InstrumentType = ForexCryptoCommodityInstrumentType | VolatilityIndexInstrumentType;
+export type InstrumentType = ForexCommodityInstrumentType | VolatilityIndexInstrumentType;
 
 export type TradingMode = 'conservative' | 'balanced' | 'aggressive';
 
@@ -55,10 +58,13 @@ export type InstrumentIndicatorData = {
   bollingerBands?: { upper: number; middle: number; lower: number };
   ema?: number;
   atr?: number;
+  stochastic?: { k: number; d: number };
+  williamsR?: number;
+  cci?: number;
 };
 
-export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Crypto/Commodity)
-  instrument: ForexCryptoCommodityInstrumentType;
+export interface AutomatedTradeProposal { // For binary options auto-trading (Forex/Commodity)
+  instrument: ForexCommodityInstrumentType;
   action: 'CALL' | 'PUT';
   stake: number;
   durationString: string;
@@ -68,7 +74,7 @@ export interface AutomatedTradeProposal { // For binary options auto-trading (Fo
 
 export interface ActiveAutomatedTrade { // For binary options auto-trading
   id: string; // Deriv's contract_id (ensure it's a string if Deriv ID is number)
-  instrument: ForexCryptoCommodityInstrumentType;
+  instrument: ForexCommodityInstrumentType;
   derivSymbol: string;
   action: 'CALL' | 'PUT';
   stake: number;
@@ -107,15 +113,15 @@ export interface ProfitsClaimable {
   losingTrades: number;
 }
 
-// For AI Flow (Binary options auto-trading - Forex/Crypto/Commodity)
+// For AI Flow (Binary options auto-trading - Forex/Commodity)
 export type AutomatedTradingStrategyInput = {
   totalStake: number;
-  instruments: ForexCryptoCommodityInstrumentType[];
+  instruments: ForexCommodityInstrumentType[];
   tradingMode: TradingMode;
   aiStrategyId?: string; // The selected AI trading strategy ID.
   stopLossPercentage?: number; // User-defined stop-loss percentage (e.g., 1 to 50)
-  instrumentTicks: Record<ForexCryptoCommodityInstrumentType, PriceTick[]>; 
-  instrumentIndicators?: Record<ForexCryptoCommodityInstrumentType, InstrumentIndicatorData>;
+  instrumentTicks: Record<ForexCommodityInstrumentType, PriceTick[]>;
+  instrumentIndicators?: Record<ForexCommodityInstrumentType, InstrumentIndicatorData>;
   formattedIndicatorsString?: string;
   instrumentOfferings?: {
     [key: string]: { // Instrument symbol e.g., "frxEURUSD"
@@ -134,20 +140,41 @@ export interface AutomatedTradingStrategyOutput {
 // For AI Flow (Volatility auto-trading)
 export interface VolatilityTradeProposal {
   instrument: InstrumentType;
-  action: 'CALL' | 'PUT';
+  action: 'CALL' | 'PUT'; // This is the AI's directional suggestion for simple Rise/Fall in current page simulation
   stake: number;
   durationSeconds: number;
   reasoning: string;
+  // If AI were to output specific Deriv contract types, it would be here.
+  // For now, the page simulation implies Rise/Fall based on CALL/PUT.
 }
 
-export interface ActiveAutomatedVolatilityTrade extends VolatilityTradeProposal {
+export interface ActiveAutomatedVolatilityTrade { // Updated to match Deriv's trading table format
   id: string;
-  entryPrice: number;
-  stopLossPrice: number;
-  startTime: number;
-  status: 'active' | 'won' | 'lost_duration' | 'lost_stoploss' | 'closed_manual';
-  pnl?: number;
-  currentPrice?: number;
+  instrument: InstrumentType;
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under", "Rise/Fall", "Touch/No Touch"
+  entryPrice: number; // Price when trade began
+  exitPrice?: number; // Price when trade concluded (only for completed trades)
+  buyPrice: number; // Price of the contract (stake amount)
+  profitLoss?: number; // Profit/Loss after trade completion
+  status: 'active' | 'won' | 'lost' | 'pending' | 'cancelled'; // Simplified status matching Deriv
+  startTime: number; // When trade started
+  endTime?: number; // When trade ended (for completed trades)
+  duration?: number; // Trade duration in seconds
+  reasoning?: string; // AI reasoning for the trade
+
+  // Legacy fields for backward compatibility (will be removed gradually)
+  stake?: number; // Use buyPrice instead
+  durationSeconds?: number; // Use duration instead
+  stopLossPrice?: number; // Not used in volatility trading
+  currentPrice?: number; // For live price updates
+  pnl?: number; // Use profitLoss instead
+
+  // New fields for better type display and future real trading
+  derivContractType: string; // e.g., "CALL", "PUT", "DIGITEVEN", "DIGITOVER" - this will store proposal.action for now
+  userSelectedTradeType?: string; // e.g., "RiseFall", "DigitsEvenOdd" - if available from UI selection
+  barrier?: string | number | null; // Store barrier if applicable (e.g. for DigitsOverUnder)
+  error?: string; // To store placement errors for real trades
+  actionDirection?: 'CALL' | 'PUT'; // For simulation trades to track direction
 }
 
 export interface VolatilityTradingStrategyInput {
@@ -298,18 +325,23 @@ export interface Trade {
   id: string;
   userId: string;
   instrument: InstrumentType;
-  type: 'CALL' | 'PUT';
-  entryPrice: number;
-  exitPrice?: number;
-  stake: number;
-  duration: number; // in seconds
-  durationUnit: 's' | 'm' | 'h';
-  entryTime: Date;
-  exitTime?: Date;
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under", "Rise/Fall", "Touch/No Touch"
+  entryPrice: number; // Price when trade began
+  exitPrice?: number; // Price when trade concluded
+  buyPrice: number; // Price of the contract (stake amount)
+  profitLoss?: number; // Profit/Loss after trade completion
   status: 'open' | 'won' | 'lost' | 'cancelled';
-  profitOrLoss?: number;
+  entryTime: Date; // When trade started
+  exitTime?: Date; // When trade ended
+  duration?: number; // Trade duration in seconds
   isPaperTrade: boolean;
-  metadata?: Record<string, any>; // For any extra info, like AI reasoning snapshot
+  metadata?: Record<string, any>; // For AI reasoning and other trade details
+
+  // Legacy fields for backward compatibility
+  type?: 'CALL' | 'PUT'; // Use tradeType instead
+  stake?: number; // Use buyPrice instead
+  durationUnit?: 's' | 'm' | 'h'; // Not needed with duration in seconds
+  profitOrLoss?: number; // Use profitLoss instead
 }
 
 export interface HistoricalTrade extends Trade {}
@@ -317,14 +349,21 @@ export interface HistoricalTrade extends Trade {}
 export interface TradeHistoryData {
   tradeId: string;
   instrument: string;
-  entryTime: string;
-  exitTime: string;
-  type: string;
-  entryPrice: string;
-  exitPrice: string;
-  stake: string;
-  profitOrLoss: string;
+  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under"
+  entryPrice: string; // Price when trade began
+  exitPrice: string; // Price when trade concluded
+  buyPrice: string; // Price of the contract
+  profitLoss: string; // Profit/Loss after trade completion
   status: string;
+  entryTime: string; // When trade started
+  exitTime: string; // When trade ended
+  date: string; // Date when trade was executed (YYYY-MM-DD format)
+  time: string; // Time when trade was completed (HH:MM:SS format)
+
+  // Legacy fields for backward compatibility
+  type?: string; // Use tradeType instead
+  stake?: string; // Use buyPrice instead
+  profitOrLoss?: string; // Use profitLoss instead
 }
 
 export interface AiRecommendation {

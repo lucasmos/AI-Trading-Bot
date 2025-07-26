@@ -16,9 +16,10 @@ import type { TradingInstrument, PriceTick } from '@/types'; // TradingMode remo
 const TradingInstrumentEnum = z.nativeEnum({
   EUR_USD: 'EUR/USD',
   GBP_USD: 'GBP/USD',
-  BTC_USD: 'BTC/USD',
   XAU_USD: 'XAU/USD',
-  ETH_USD: 'ETH/USD',
+  Palladium_USD: 'Palladium/USD',
+  Platinum_USD: 'Platinum/USD',
+  Silver_USD: 'Silver/USD',
 } as const);
 
 const PriceTickSchema = z.object({

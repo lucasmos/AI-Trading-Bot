@@ -10,7 +10,11 @@ export async function POST(request: Request) {
     requestBody = await request.json();
     // email and name are no longer strictly needed here for user creation, 
     // as /api/auth/verify should handle user reconciliation.
-    const { userId, symbol, type, amount, price, metadata, aiStrategyId } = requestBody;
+    const {
+      userId, symbol, type, amount, price, metadata, aiStrategyId,
+      // New Deriv-style fields
+      tradeType, entryPrice, buyPrice
+    } = requestBody;
 
     console.log('[Create Trade API] Attempting to create trade with data:', {
       userId, symbol, type, amount, price,
@@ -64,6 +68,12 @@ export async function POST(request: Request) {
         amount,
         price,
         totalValue,
+
+        // New Deriv-style fields
+        tradeType: tradeType || null,
+        entryPrice: entryPrice || price,
+        buyPrice: buyPrice || amount,
+
         status: 'open', // Default status for a new trade
         openTime: new Date(),
         metadata: metadata || {},

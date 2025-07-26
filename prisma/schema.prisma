@@ -143,14 +143,24 @@ model Trade {
   id                String    @id @default(uuid())
   userId            String
   symbol            String
+
+  // New Deriv-style fields
+  tradeType         String?   // e.g., 'Higher/Lower', 'Even/Odd', 'Over/Under', 'Rise/Fall', 'Touch/No Touch'
+  entryPrice        Float?    // Price when trade began
+  exitPrice         Float?    // Price when trade concluded
+  buyPrice          Float?    // Price of the contract (stake amount)
+  profitLoss        Float?    // Profit/Loss after trade completion
+
+  // Legacy fields (kept for backward compatibility)
   type              String    // e.g., 'CALL', 'PUT', 'BUY', 'SELL'
   amount            Float     // Stake or investment amount
   price             Float     // Entry price
-  totalValue        Float     // For binary options, this is typically the stake amount. For CFD/Forex, it could be stake * leverage or contract value.
+  totalValue        Float     // For binary options, this is typically the stake amount
+  profit            Float?    // Legacy profit field
+
   status            String    // e.g., 'OPEN', 'WON', 'LOST', 'CLOSED'
   openTime          DateTime  @default(now())
   closeTime         DateTime?
-  profit            Float?
   metadata          Json?     // For AI reasoning, selected strategy, other trade parameters
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

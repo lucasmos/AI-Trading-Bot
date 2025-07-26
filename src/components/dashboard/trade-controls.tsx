@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import type { TradingMode, TradeDuration, InstrumentType, ForexCryptoCommodityInstrumentType } from '@/types'; // Removed PaperTradingMode
+import type { TradingMode, TradeDuration, InstrumentType, ForexCommodityInstrumentType } from '@/types'; // Removed PaperTradingMode
 import { TrendingUp, TrendingDown, Bot, DollarSign, Play, Square, Briefcase, UserCheck } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 
@@ -33,7 +33,7 @@ interface TradeControlsProps {
   isAutoTradingActive: boolean;
   disableManualControls?: boolean;
   currentBalance: number; 
-  supportedInstrumentsForManualAi: ForexCryptoCommodityInstrumentType[];
+  supportedInstrumentsForManualAi: ForexCommodityInstrumentType[];
   currentSelectedInstrument: InstrumentType;
   isMarketOpenForSelected: boolean;
   marketStatusMessage: string | null;
@@ -129,9 +129,8 @@ export function TradeControls({
 
   // Determines if the current selected instrument is a Forex/Commodity that has specific market hours
   // (excluding 24/7 crypto like BTC/USD, ETH/USD and Volatility Indices).
-  const isForexOrCommoditySubjectToMarketHours = 
-    supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) &&
-    !['BTC/USD', 'ETH/USD'].includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) && // Assuming BTC/ETH are 24/7
+  const isForexOrCommoditySubjectToMarketHours =
+    supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCommodityInstrumentType) &&
     !currentSelectedInstrument.startsWith('Volatility'); // Volatility indices are typically 24/7
 
   // Consolidated boolean for disabling the "Get Manual AI Recommendation" button.
@@ -285,7 +284,7 @@ export function TradeControls({
               className="w-full bg-gradient-to-r from-primary to-purple-600 text-primary-foreground hover:opacity-90 transition-opacity"
               disabled={isManualAiRecommendationDisabled}
               title={
-                !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCryptoCommodityInstrumentType) 
+                !supportedInstrumentsForManualAi.includes(currentSelectedInstrument as ForexCommodityInstrumentType)
                   ? `AI for ${currentSelectedInstrument} is available on its specific trading page (e.g., Volatility Trading).` 
                   : (isForexOrCommoditySubjectToMarketHours && !isMarketOpenForSelected) 
                     ? marketStatusMessage || `Market for ${currentSelectedInstrument} is closed.`

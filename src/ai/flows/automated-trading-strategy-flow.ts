@@ -7,16 +7,16 @@
  * - AutomatedTradingStrategyOutput - The return type.
  */
 
-import { ai } from '@/ai/genkit';
+import { ai, getEnhancedAI } from '@/ai/genkit';
 import * as zod from 'zod'; // Use 'zod' to avoid conflict if 'z' is used elsewhere
-import type { 
-  ForexCryptoCommodityInstrumentType, 
-  TradingMode, 
-  PriceTick, 
+import type {
+  ForexCommodityInstrumentType,
+  TradingMode,
+  PriceTick,
   AutomatedTradingStrategyOutput as ImportedAutomatedTradingStrategyOutput,
   AutomatedTradeProposal as ImportedAutomatedTradeProposal
 } from '@/types';
-import { FOREX_CRYPTO_COMMODITY_INSTRUMENTS } from '@/config/instruments';
+import { FOREX_COMMODITY_INSTRUMENTS } from '@/config/instruments';
 
 // Define a schema for individual instrument indicators (can be shared or redefined)
 const InstrumentIndicatorDataSchema = zod.object({
@@ -33,16 +33,16 @@ const PriceTickSchema = zod.object({
   time: zod.string(),
 });
 
-const ForexCryptoCommodityInstrumentTypeSchema = zod.string(); // This will be replaced by zod.enum
+const ForexCommodityInstrumentTypeSchema = zod.string(); // This will be replaced by zod.enum
 
 const AutomatedTradingStrategyInputZodSchema = zod.object({ // Renamed to avoid conflict with exported type alias
   totalStake: zod.number().min(1),
-  instruments: zod.array(zod.enum(FOREX_CRYPTO_COMMODITY_INSTRUMENTS as [string, ...string[]])),
+  instruments: zod.array(zod.enum(FOREX_COMMODITY_INSTRUMENTS as [string, ...string[]])),
   tradingMode: zod.enum(['conservative', 'balanced', 'aggressive']),
   aiStrategyId: zod.string().optional().describe('The selected AI trading strategy ID.'),
   stopLossPercentage: zod.number().min(1).max(50).optional().describe('User-defined stop-loss percentage (e.g., 1-50%). Default is 5% if not provided.'),
-  instrumentTicks: zod.record(ForexCryptoCommodityInstrumentTypeSchema, zod.array(PriceTickSchema)),
-  instrumentIndicators: zod.record(ForexCryptoCommodityInstrumentTypeSchema, InstrumentIndicatorDataSchema).optional().describe('Calculated technical indicators for each instrument.'),
+  instrumentTicks: zod.record(ForexCommodityInstrumentTypeSchema, zod.array(PriceTickSchema)),
+  instrumentIndicators: zod.record(ForexCommodityInstrumentTypeSchema, InstrumentIndicatorDataSchema).optional().describe('Calculated technical indicators for each instrument.'),
   formattedIndicatorsString: zod.string().optional().describe('Pre-formatted string of technical indicators for the prompt.'),
   instrumentOfferings: zod.record(
     zod.string(), // Instrument symbol (e.g., "frxEURUSD")
@@ -70,7 +70,7 @@ type AutomatedTradingStrategyFlowInput = zod.infer<typeof AutomatedTradingStrate
 export type AutomatedTradingStrategyInput = AutomatedTradingStrategyFlowInput; 
 
 const AutomatedTradeProposalZodSchema = zod.object({
-  instrument: ForexCryptoCommodityInstrumentTypeSchema,
+  instrument: ForexCommodityInstrumentTypeSchema,
   action: zod.string().describe("The specific contract type name from Deriv API. For Rise/Fall, use 'CALL' or 'PUT'. For Multipliers, use 'MULTUP' (for price increase expectation) or 'MULTDOWN' (for price decrease expectation)."),
   stake: zod.number().min(0.01).describe("The monetary value to stake."),
   durationString: zod.string().optional().describe("Duration string like '15m', '60s'. Required for contract types like CALL/PUT. May not be applicable for 'multiplier' types which might be 'no_expiry'."),
@@ -89,7 +89,7 @@ const prompt = ai.definePrompt({
   name: 'automatedTradingStrategyPrompt',
   input: {schema: AutomatedTradingStrategyInputZodSchema},
   output: {schema: InferredAutomatedTradingStrategyOutputSchema},
-  prompt: `You are an expert AI trading strategist for Forex, Cryptocurrencies, and Commodities. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data.\r\r\nYou MUST aim for a minimum 83% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Instruments (Forex/Crypto/Commodities): {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\nUser-defined Stop-Loss Percentage: {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (This will override the default system stop-loss){{else}}System Default 5%{{/if}}\r\n\r\nRecent Price Ticks (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
+  prompt: `You are an expert AI trading strategist for Forex and Commodities. Your goal is to devise a set of trades to maximize profit based on the user's total stake, preferred instruments, trading mode, and recent price data.\r\r\nYou MUST aim for a minimum 83% win rate across the proposed trades. Prioritize high-probability setups.\r\n\r\nUser's Total Stake for this session: {{{totalStake}}} (Must be at least 1)\r\nAvailable Instruments (Forex/Commodities): {{#each instruments}}{{{this}}}{{#unless @last}}, {{/unless}}{{/each}}\r\nTrading Mode: {{{tradingMode}}}\r\nUser-defined Stop-Loss Percentage: {{#if stopLossPercentage}}{{{stopLossPercentage}}}% (This will override the default system stop-loss){{else}}System Default 5%{{/if}}\r\n\r\nRecent Price Ticks (latest tick is the most recent price):\r\n{{#each instrumentTicks}}\r\nInstrument: {{@key}}\r\n  {{#each this}}\r\n  - Time: {{time}}, Price: {{price}}\r\n  {{/each}}\r\n{{/each}}
 {{{formattedIndicatorsString}}}
 Available Trade Offerings by Instrument (IMPORTANT!):
 {{#if instrumentOfferings}}
@@ -147,19 +147,18 @@ Each trade's 'stake' must be a number (e.g., 10.50) and at least 0.01.
 
 Example of a single trade object within the 'tradesToExecute' array:
 {
-  "instrument": "cryBTCUSD",
-  "action": "MULTUP",
-  "stake": 10,
-  "multiplier": 50, // Example, chosen from valid range
-  "reasoning": "Strong bullish signals observed."
-  // No durationString, takeProfit, or stopLoss for this MULTUP example
-}
-{
   "instrument": "frxEURUSD",
   "action": "CALL",
   "stake": 20,
   "durationString": "5m", // Example
   "reasoning": "Expecting short-term rise."
+}
+{
+  "instrument": "frxXAUUSD",
+  "action": "PUT",
+  "stake": 15,
+  "durationString": "15m", // Example
+  "reasoning": "Gold showing bearish signals."
 }
 
 
@@ -177,7 +176,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     if (input.instrumentIndicators) { 
       formattedIndicators = '\n\nCalculated Technical Indicators:\n';
       for (const inst in input.instrumentIndicators) {
-        const ind = input.instrumentIndicators[inst as ForexCryptoCommodityInstrumentType];
+        const ind = input.instrumentIndicators[inst as ForexCommodityInstrumentType];
         if (ind) {
             formattedIndicators += `Instrument: ${inst}\n`;
             formattedIndicators += `  RSI: ${ind.rsi?.toFixed(4) ?? 'N/A'}\n`;
@@ -231,12 +230,130 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     };
     // stopLossPercentage will be passed through via ...input if present
 
-    const result = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
-    console.log('[AI_FLOW_DEBUG] Raw AI Output:', JSON.stringify(result?.output, null, 2));
-    if (!result || !result.output) {
-      throw new Error("AI failed to generate an automated trading strategy for Forex/Crypto/Commodities.");
+    let output: ImportedAutomatedTradingStrategyOutput | null = null;
+
+    try {
+      // Try Gemini first (now primary) with enhanced AI service
+      const enhancedAI = getEnhancedAI();
+
+      console.log('[AI_FLOW_DEBUG] Attempting Gemini generation (primary) for automated trading');
+
+        // Build a simplified prompt for enhanced AI service
+        const systemPrompt = `You are an expert AI trading strategist for Forex and Commodities. Return a JSON response matching the exact schema for automated trading strategy.`;
+
+        // Filter instruments by market status and prepare market status information
+        const marketStatusInfo = promptInput.instrumentOfferings ?
+          Object.entries(promptInput.instrumentOfferings).map(([instrument, data]) =>
+            `${instrument}: ${data.isMarketCurrentlyOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}`
+          ).join('\n') : 'Market status information not available';
+
+        // Get only open market instruments for trading
+        const openMarketInstruments = promptInput.instrumentOfferings ?
+          Object.entries(promptInput.instrumentOfferings)
+            .filter(([instrument, data]) => data.isMarketCurrentlyOpen)
+            .map(([instrument]) => instrument) : promptInput.instruments;
+
+        // Calculate adjusted stake per instrument for open markets
+        const adjustedStakePerInstrument = openMarketInstruments.length > 0 ?
+          promptInput.totalStake / openMarketInstruments.length : 0;
+
+        // Categorize instruments by type for AI guidance (no crypto)
+        const forexInstruments = openMarketInstruments.filter(inst =>
+          inst.includes('EUR') || inst.includes('GBP') || inst.includes('USD') && !inst.includes('XAU') && !inst.includes('Silver') && !inst.includes('Palladium') && !inst.includes('Platinum')
+        );
+        const commodityInstruments = openMarketInstruments.filter(inst =>
+          inst.includes('XAU') || inst.includes('Silver') || inst.includes('Palladium') || inst.includes('Platinum') || inst.includes('Gold')
+        );
+
+        const userPrompt = `
+Analyze the provided data and generate trading strategy:
+
+Total Stake: ${promptInput.totalStake}
+Available Instruments: ${promptInput.instruments.join(', ')}
+Trading Mode: ${promptInput.tradingMode}
+
+MARKET STATUS (CRITICAL - Only trade instruments with MARKET OPEN):
+${marketStatusInfo}
+
+TRADEABLE INSTRUMENTS (Markets Currently Open): ${openMarketInstruments.join(', ')}
+${openMarketInstruments.length === 0 ? 'WARNING: No markets are currently open for trading!' : ''}
+
+INSTRUMENT CATEGORIZATION:
+- FOREX (use CALL/PUT): ${forexInstruments.join(', ') || 'None'}
+- COMMODITIES (use CALL/PUT): ${commodityInstruments.join(', ') || 'None'}
+
+Suggested Stake Per Open Market: $${adjustedStakePerInstrument.toFixed(2)}
+
+Recent Price Data:
+${Object.entries(promptInput.instrumentTicks).map(([instrument, ticks]) =>
+  `${instrument}: ${ticks.map(tick => `${tick.time}: ${tick.price}`).join(', ')}`
+).join('\n')}
+
+${promptInput.formattedIndicatorsString}
+
+IMPORTANT TRADING RULES:
+1. ONLY trade instruments where market status shows "MARKET OPEN"
+2. If no markets are open, return empty tradesToExecute array
+3. Distribute the total stake evenly among open market instruments
+4. Focus your analysis on instruments with open markets
+5. Consider ALL available open market instruments, not just a subset
+
+CONTRACT TYPE SELECTION RULES:
+- For FOREX instruments (EUR/USD, GBP/USD, etc.): Use "CALL" or "PUT" with duration (e.g., "15m", "30m")
+- For COMMODITY instruments (XAU/USD, Silver/USD, etc.): Use "CALL" or "PUT" with duration (e.g., "15m", "30m")
+
+TRADING GUIDELINES:
+- For CALL/PUT trades, include "durationString" field with appropriate duration
+- Do NOT include "multiplier" field for CALL/PUT trades
+- Ensure you consider ALL open market instruments for trading opportunities
+
+Return ONLY a JSON object with this structure:
+{
+  "overallReasoning": "your strategy explanation including market status considerations and why you selected these specific instruments",
+  "tradesToExecute": [
+    {
+      "instrument": "instrument_name",
+      "action": "CALL/PUT",
+      "stake": number,
+      "durationString": "duration_required",
+      "reasoning": "trade reasoning"
     }
-    const output = result.output;
+  ]
+}
+
+Ensure total stakes don't exceed ${promptInput.totalStake}.`;
+
+        const enhancedResponse = await enhancedAI.generateStructuredWithFallback<ImportedAutomatedTradingStrategyOutput>(
+          userPrompt,
+          InferredAutomatedTradingStrategyOutputSchema,
+          systemPrompt
+        );
+
+        output = enhancedResponse;
+        console.log('[AI_FLOW_DEBUG] Enhanced AI generation successful (Gemini primary) for automated trading');
+    } catch (geminiError) {
+      console.warn('[AI_FLOW_DEBUG] Gemini failed for automated trading, falling back to DeepSeek:', geminiError instanceof Error ? geminiError.message : 'Unknown error');
+
+      try {
+        // Fallback to DeepSeek through the standard prompt
+        const deepSeekResult = await prompt(promptInput) as { output: ImportedAutomatedTradingStrategyOutput | null };
+        output = deepSeekResult.output;
+
+        if (output) {
+          console.log('[AI_FLOW_DEBUG] DeepSeek fallback successful for automated trading');
+        } else {
+          throw new Error('DeepSeek returned null output for automated trading');
+        }
+      } catch (deepSeekError) {
+        console.error('[AI_FLOW_DEBUG] Both Gemini and DeepSeek failed for automated trading:', deepSeekError);
+        throw new Error(`All AI services failed for automated trading. Gemini: ${geminiError instanceof Error ? geminiError.message : 'Unknown'}. DeepSeek: ${deepSeekError instanceof Error ? deepSeekError.message : 'Unknown'}`);
+      }
+    }
+
+    console.log('[AI_FLOW_DEBUG] Raw AI Output:', JSON.stringify(output, null, 2));
+    if (!output) {
+      throw new Error("AI failed to generate an automated trading strategy for Forex/Commodities.");
+    }
 
     output.tradesToExecute = output.tradesToExecute.filter(trade => {
       const isStakeValid = typeof trade.stake === 'number' && trade.stake >= 0.01;
@@ -256,7 +373,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
     totalProposedStake = parseFloat(totalProposedStake.toFixed(2));
 
     if (totalProposedStake > input.totalStake) {
-      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${input.totalStake} (Forex/Crypto/Commodities). Trades may be capped or rejected by execution logic.`);
+      console.warn(`AI proposed total stake ${totalProposedStake} which exceeds user's limit ${input.totalStake} (Forex/Commodities). Trades may be capped or rejected by execution logic.`);
     }
 
     // Map AI output to final structure and apply system-calculated TP/SL for Multipliers
@@ -269,7 +386,7 @@ const automatedTradingStrategyFlow = ai.defineFlow(
 
         // Map to the final AutomatedTradeProposal structure (from src/types/index.ts)
         const finalTradeProposal: ImportedAutomatedTradeProposal & { tradeType?: string } = {
-          instrument: aiProposedTrade.instrument as ForexCryptoCommodityInstrumentType,
+          instrument: aiProposedTrade.instrument as ForexCommodityInstrumentType,
           action: aiProposedTrade.action, // Changed to source from aiProposedTrade.action
           tradeType: aiProposedTrade.action, // Add tradeType property with same value as action for validation in page.tsx
           stake: aiProposedTrade.stake,

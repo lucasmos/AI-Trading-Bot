@@ -134,7 +134,21 @@ export class DerivBalanceListener {
       console.error(`[DerivBalanceListener] (${this.accountId}) API Error: ${errorMsg}`, response.error);
       this.onError(new Error(errorMsg));
       this.onStatusChange('error', errorMsg);
-      if (response.error.code === 'AuthorizationRequired' || response.error.code === 'InvalidToken' || response.error.code === 'AccountSwitchFailed') {
+
+      // Enhanced error handling for better balance sync reliability
+      if (response.error.code === 'AuthorizationRequired' || response.error.code === 'InvalidToken') {
+        console.log(`[DerivBalanceListener] (${this.accountId}) Authorization error, will attempt reconnection...`);
+        if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(errorMsg));
+        this.onStatusChange('disconnected', 'Authorization error, will retry.');
+        this.close(false); // Allow reconnection for auth errors
+        // Attempt reconnection after a short delay
+        setTimeout(() => {
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            console.log(`[DerivBalanceListener] (${this.accountId}) Attempting to reconnect after auth error...`);
+            this.connect();
+          }
+        }, 2000);
+      } else if (response.error.code === 'AccountSwitchFailed') {
         if (this.rejectConnectionPromise) this.rejectConnectionPromise(new Error(errorMsg));
         this.onStatusChange('disconnected', 'Critical API error.');
         this.close(true); // Permanent error, stop and don't reconnect.
@@ -195,6 +209,16 @@ export class DerivBalanceListener {
     if (!this.isSubscribed) {
         console.log(`[DerivBalanceListener] (${this.accountId}) Sending balance subscription request.`);
         this.sendMessage({ balance: 1, subscribe: 1 });
+    }
+  }
+
+  // Method to force a balance refresh - useful after trade completion
+  public forceBalanceRefresh() {
+    if (this.isAuthorized && this.ws?.readyState === WebSocket.OPEN) {
+      console.log(`[DerivBalanceListener] (${this.accountId}) Forcing balance refresh...`);
+      this.sendMessage({ balance: 1 });
+    } else {
+      console.warn(`[DerivBalanceListener] (${this.accountId}) Cannot force balance refresh - not connected or authorized`);
     }
   }
 

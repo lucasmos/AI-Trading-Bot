@@ -11,6 +11,8 @@ interface BalanceDisplayProps {
   selectedAccountType: 'demo' | 'real' | null;
   displayAccountId: string | null;
   syncStatus?: ListenerStatus;
+  sessionProfitLoss?: number;
+  completedTrades?: number;
 }
 
 export function BalanceDisplay({
@@ -18,7 +20,9 @@ export function BalanceDisplay({
   currency = 'USD',
   selectedAccountType,
   displayAccountId,
-  syncStatus = 'idle'
+  syncStatus = 'idle',
+  sessionProfitLoss = 0,
+  completedTrades = 0
 }: BalanceDisplayProps) {
   const [formattedBalance, setFormattedBalance] = useState<string | null>(null);
 
@@ -72,6 +76,20 @@ export function BalanceDisplay({
             ? `Available for trading in your selected Deriv ${selectedAccountType} account.`
             : "Practice balance for trading."}
         </p>
+        {(sessionProfitLoss !== 0 || completedTrades > 0) && (
+          <div className="mt-2 p-2 bg-muted rounded-md">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-muted-foreground">Session:</span>
+              <span className="font-medium">{completedTrades} trades</span>
+            </div>
+            <div className="flex justify-between items-center text-xs mt-1">
+              <span className="text-muted-foreground">P/L:</span>
+              <span className={`font-semibold ${sessionProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {sessionProfitLoss >= 0 ? '+' : ''}${sessionProfitLoss.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
         {isValidDerivAccount && syncStatus !== 'idle' && (
           <p className={`text-xs mt-1 ${
             syncStatus === 'connected' ? 'text-green-500' :
