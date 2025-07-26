@@ -2,21 +2,9 @@
 import type { InstrumentType, PriceTick } from '@/types';
 import { instrumentToDerivSymbol } from './deriv';
 
-const NEXT_PUBLIC_DERIV_WS_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL;
-const NEXT_PUBLIC_DERIV_APP_ID = process.env.NEXT_PUBLIC_DERIV_APP_ID;
-
-console.log('[DerivTickStream] Environment check:', {
-  NEXT_PUBLIC_DERIV_WS_URL,
-  NEXT_PUBLIC_DERIV_APP_ID,
-  hasWsUrl: !!NEXT_PUBLIC_DERIV_WS_URL,
-  hasAppId: !!NEXT_PUBLIC_DERIV_APP_ID
-});
-
-const DERIV_API_URL = NEXT_PUBLIC_DERIV_WS_URL && NEXT_PUBLIC_DERIV_APP_ID
-  ? `${NEXT_PUBLIC_DERIV_WS_URL}?app_id=${NEXT_PUBLIC_DERIV_APP_ID}`
+const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL && process.env.NEXT_PUBLIC_DERIV_APP_ID
+  ? `${process.env.NEXT_PUBLIC_DERIV_WS_URL}?app_id=${process.env.NEXT_PUBLIC_DERIV_APP_ID}`
   : 'wss://ws.derivws.com/websockets/v3?app_id=80447';
-
-console.log('[DerivTickStream] Using WebSocket URL:', DERIV_API_URL);
 
 export interface TickStreamOptions {
   onTick: (tick: PriceTick) => void;
@@ -39,29 +27,21 @@ export class DerivTickStream {
   }
 
   private connect() {
-    if (this.isConnecting || this.isConnected) {
-      console.log(`[DerivTickStream] Connection already in progress or established. isConnecting: ${this.isConnecting}, isConnected: ${this.isConnected}`);
-      return;
-    }
+    if (this.isConnecting || this.isConnected) return;
 
     this.isConnecting = true;
-    console.log('[DerivTickStream] 🔌 Connecting to Deriv WebSocket...');
-    console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
-    console.log('[DerivTickStream] Current subscriptions to restore:', Array.from(this.subscriptions.keys()));
+    console.log('[DerivTickStream] Connecting to Deriv WebSocket...');
 
     this.ws = new WebSocket(DERIV_API_URL);
 
     this.ws.onopen = () => {
-      console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully!');
-      console.log('[DerivTickStream] WebSocket readyState:', this.ws?.readyState);
+      console.log('[DerivTickStream] Connected to Deriv WebSocket successfully!');
       this.isConnecting = false;
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.reconnectDelay = 1000;
 
-      console.log('[DerivTickStream] Notifying', this.subscriptions.size, 'subscribers of connection');
-      this.subscriptions.forEach((options, symbol) => {
-        console.log(`[DerivTickStream] Notifying subscriber for ${symbol}`);
+      this.subscriptions.forEach(options => {
         options.onConnect?.();
       });
 
@@ -104,34 +84,17 @@ export class DerivTickStream {
   }
 
   private handleMessage(response: any) {
-    // Log all messages for debugging (but reduce frequency for ticks)
-    if (response.msg_type !== 'tick' || Math.random() < 0.1) {
-      console.log(`[DerivTickStream] 📨 Received message:`, response);
-    }
-
     if (response.error) {
-      console.error('[DerivTickStream] ❌ API Error:', response.error);
+      console.error('[DerivTickStream] API Error:', response.error);
       this.subscriptions.forEach(options => {
         options.onError(new Error(response.error.message || 'Unknown API error'));
       });
       return;
     }
 
-    // Handle subscription confirmation
-    if (response.msg_type === 'tick' && response.subscription) {
-      console.log(`[DerivTickStream] ✅ Subscription confirmed for:`, response.subscription);
-    }
-
     if (response.msg_type === 'tick') {
       const symbol = response.tick?.symbol;
-      // Log every tick for debugging (we'll reduce this later)
-      console.log(`[DerivTickStream] 📊 Received tick for ${symbol}:`, {
-        symbol,
-        price: response.tick?.quote,
-        epoch: response.tick?.epoch,
-        hasSubscription: this.subscriptions.has(symbol),
-        subscriptions: Array.from(this.subscriptions.keys())
-      });
+      console.log(`[DerivTickStream] Tick received for ${symbol}, price: ${response.tick?.quote}`);
 
       if (symbol && this.subscriptions.has(symbol)) {
         const options = this.subscriptions.get(symbol)!;
@@ -196,29 +159,24 @@ export class DerivTickStream {
 
   private resubscribeAll() {
     if (!this.isConnected || !this.ws) {
-      console.log('[DerivTickStream] Cannot resubscribe - not connected');
       return;
     }
 
-    console.log(`[DerivTickStream] 📡 Resubscribing to ${this.subscriptions.size} symbols:`, Array.from(this.subscriptions.keys()));
     this.subscriptions.forEach((options, symbol) => {
       const request = {
         ticks: symbol,
         subscribe: 1
       };
-      console.log(`[DerivTickStream] 📤 Re-subscribing to ${symbol}:`, JSON.stringify(request));
       this.ws!.send(JSON.stringify(request));
     });
   }
 
   subscribe(instrument: InstrumentType, options: TickStreamOptions): () => void {
     const symbol = instrumentToDerivSymbol(instrument);
-    console.log(`[DerivTickStream] 📋 Setting up subscription for ${instrument} -> ${symbol}`);
     this.subscriptions.set(symbol, options);
 
     // Always try to connect if not connected
     if (!this.isConnected && !this.isConnecting) {
-      console.log(`[DerivTickStream] 🔌 WebSocket not connected, initiating connection...`);
       this.connect();
     }
 
@@ -227,10 +185,7 @@ export class DerivTickStream {
         ticks: symbol,
         subscribe: 1
       };
-      console.log(`[DerivTickStream] 📤 Sending subscription request:`, JSON.stringify(request));
       this.ws.send(JSON.stringify(request));
-    } else {
-      console.log(`[DerivTickStream] ⏳ WebSocket not connected yet, subscription will be sent when connected. Connection status: isConnected=${this.isConnected}, isConnecting=${this.isConnecting}`);
     }
 
     return () => {

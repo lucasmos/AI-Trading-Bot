@@ -9,7 +9,6 @@ import { useAuth } from '@/contexts/auth-context';
 
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
-import { WebSocketTest } from '@/components/debug/websocket-test';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -1062,9 +1061,6 @@ export default function VolatilityTradingPage() {
 
   return (
     <div className="container mx-auto py-2 space-y-6">
-      {/* Debug WebSocket Test - Remove this after debugging */}
-      <WebSocketTest />
-
       <BalanceDisplay
         balance={currentBalance ?? DEFAULT_PAPER_BALANCE}
         selectedAccountType={selectedDerivAccountType}
