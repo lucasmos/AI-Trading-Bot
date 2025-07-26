@@ -2,17 +2,7 @@
 import type { InstrumentType, PriceTick } from '@/types';
 import { instrumentToDerivSymbol } from './deriv';
 
-// Use the same time formatting as the candles
-const formatTickTime = (epoch: number): string => {
-  return new Date(epoch * 1000).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-};
-
-const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL && process.env.NEXT_PUBLIC_DERIV_APP_ID
+const DERIV_API_URL = process.env.NEXT_PUBLIC_DERIV_WS_URL 
   ? `${process.env.NEXT_PUBLIC_DERIV_WS_URL}?app_id=${process.env.NEXT_PUBLIC_DERIV_APP_ID}`
   : 'wss://ws.derivws.com/websockets/v3?app_id=80447';
 
@@ -25,7 +15,7 @@ export interface TickStreamOptions {
 
 export class DerivTickStream {
   private ws: WebSocket | null = null;
-  private subscriptions: Map<string, TickStreamOptions> = new Map();
+  private subscriptions: Map<string, TickStreamOptions[]> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
@@ -37,30 +27,26 @@ export class DerivTickStream {
   }
 
   private connect() {
-    if (this.isConnecting || this.isConnected) {
-      console.log(`[DerivTickStream] Already connecting/connected: isConnecting=${this.isConnecting}, isConnected=${this.isConnected}`);
-      return;
-    }
-
+    if (this.isConnecting || this.isConnected) return;
+    
     this.isConnecting = true;
-    console.log('[DerivTickStream] 🔌 Connecting to Deriv WebSocket...');
-    console.log('[DerivTickStream] WebSocket URL:', DERIV_API_URL);
-
+    console.log('[DerivTickStream] Connecting to Deriv WebSocket...');
+    
     this.ws = new WebSocket(DERIV_API_URL);
-
+    
     this.ws.onopen = () => {
-      console.log('[DerivTickStream] ✅ Connected to Deriv WebSocket successfully!');
-      console.log('[DerivTickStream] WebSocket readyState:', this.ws?.readyState);
+      console.log('[DerivTickStream] Connected to Deriv WebSocket');
       this.isConnecting = false;
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.reconnectDelay = 1000;
-
-      console.log(`[DerivTickStream] Notifying ${this.subscriptions.size} subscribers of connection`);
-      this.subscriptions.forEach(options => {
-        options.onConnect?.();
+      
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onConnect?.();
+        });
       });
-
+      
       this.resubscribeAll();
     };
 
@@ -74,87 +60,50 @@ export class DerivTickStream {
     };
 
     this.ws.onerror = (error) => {
-      console.error('[DerivTickStream] ❌ WebSocket error:', error);
+      console.error('[DerivTickStream] WebSocket error:', error);
       this.isConnecting = false;
       this.isConnected = false;
-      this.subscriptions.forEach(options => {
-        options.onError(new Error('WebSocket connection error'));
-      });
     };
 
-    this.ws.onclose = (event) => {
-      console.log(`[DerivTickStream] 🔌 WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
+    this.ws.onclose = () => {
+      console.log('[DerivTickStream] WebSocket connection closed');
       this.isConnecting = false;
       this.isConnected = false;
-
-      this.subscriptions.forEach(options => {
-        options.onDisconnect?.();
+      
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onDisconnect?.();
+        });
       });
-
-      // Only attempt reconnect if it wasn't a clean close
-      if (!event.wasClean) {
-        console.log('[DerivTickStream] 🔄 Connection was not clean, attempting to reconnect...');
-        this.attemptReconnect();
-      }
+      
+      this.attemptReconnect();
     };
   }
 
   private handleMessage(response: any) {
-    // Log all non-tick messages and some tick messages for debugging
-    if (response.msg_type !== 'tick') {
-      console.log(`[DerivTickStream] 📨 Received message:`, response);
-    }
-
     if (response.error) {
-      console.error('[DerivTickStream] ❌ API Error:', response.error);
-      this.subscriptions.forEach(options => {
-        options.onError(new Error(response.error.message || 'Unknown API error'));
+      console.error('[DerivTickStream] API Error:', response.error);
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onError(new Error(response.error.message || 'Unknown API error'));
+        });
       });
       return;
     }
 
-    // Log subscription confirmations
-    if (response.msg_type === 'tick' && response.subscription) {
-      console.log(`[DerivTickStream] ✅ Subscription confirmed for:`, response.subscription);
-    }
-
     if (response.msg_type === 'tick') {
       const symbol = response.tick?.symbol;
-      console.log(`[DerivTickStream] Tick received for ${symbol}, price: ${response.tick?.quote}`);
-
       if (symbol && this.subscriptions.has(symbol)) {
-        const options = this.subscriptions.get(symbol)!;
-        try {
-          // Validate tick data before processing
-          if (!response.tick || typeof response.tick.epoch !== 'number' || typeof response.tick.quote !== 'number') {
-            console.error(`[DerivTickStream] Invalid tick data received for ${symbol}:`, response.tick);
-            return;
-          }
-
-          const tick: PriceTick = {
-            epoch: response.tick.epoch,
-            price: parseFloat(response.tick.quote),
-            time: formatTickTime(response.tick.epoch)
-          };
-
-          // Validate the created tick object
-          if (isNaN(tick.price) || isNaN(tick.epoch) || !tick.time) {
-            console.error(`[DerivTickStream] Invalid tick object created for ${symbol}:`, tick);
-            return;
-          }
-
-          // Log every 10th tick to monitor activity
-          if (Math.random() < 0.1) {
-            console.log(`[DerivTickStream] 📊 Processing tick for ${symbol}: ${tick.price} at ${tick.time} (epoch: ${tick.epoch})`);
-          }
-
+        const optionsArray = this.subscriptions.get(symbol)!;
+        const tick: PriceTick = {
+          epoch: response.tick.epoch,
+          price: parseFloat(response.tick.quote),
+          time: new Date(response.tick.epoch * 1000).toISOString()
+        };
+        // Broadcast to all subscribers for this symbol
+        optionsArray.forEach(options => {
           options.onTick(tick);
-        } catch (error) {
-          console.error(`[DerivTickStream] Error processing tick for ${symbol}:`, error, 'Raw response:', response);
-          options.onError(error instanceof Error ? error : new Error('Error processing tick'));
-        }
-      } else {
-        console.log(`[DerivTickStream] No subscription found for symbol: ${symbol}, available subscriptions:`, Array.from(this.subscriptions.keys()));
+        });
       }
     }
   }
@@ -162,8 +111,10 @@ export class DerivTickStream {
   private attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[DerivTickStream] Max reconnection attempts reached');
-      this.subscriptions.forEach(options => {
-        options.onError(new Error('Max reconnection attempts reached'));
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onError(new Error('Max reconnection attempts reached'));
+        });
       });
       return;
     }
@@ -179,55 +130,81 @@ export class DerivTickStream {
   }
 
   private resubscribeAll() {
-    if (!this.isConnected || !this.ws) {
-      console.log('[DerivTickStream] Cannot resubscribe - not connected');
-      return;
-    }
+    if (!this.isConnected || !this.ws) return;
 
-    console.log(`[DerivTickStream] 📡 Resubscribing to ${this.subscriptions.size} symbols:`, Array.from(this.subscriptions.keys()));
-    this.subscriptions.forEach((options, symbol) => {
-      const request = {
-        ticks: symbol,
-        subscribe: 1
-      };
-      console.log(`[DerivTickStream] 📤 Sending subscription for ${symbol}:`, JSON.stringify(request));
-      this.ws!.send(JSON.stringify(request));
+    this.subscriptions.forEach((optionsArray, symbol) => {
+      if (optionsArray.length > 0) {
+        const request = {
+          ticks: symbol,
+          subscribe: 1
+        };
+        console.log(`[DerivTickStream] Re-subscribing to ${symbol} (${optionsArray.length} subscribers)`);
+        this.ws!.send(JSON.stringify(request));
+      }
     });
   }
 
   subscribe(instrument: InstrumentType, options: TickStreamOptions): () => void {
     const symbol = instrumentToDerivSymbol(instrument);
-    console.log(`[DerivTickStream] 📋 Setting up subscription for ${instrument} -> ${symbol}`);
-    this.subscriptions.set(symbol, options);
 
-    // Always try to connect if not connected
-    if (!this.isConnected && !this.isConnecting) {
-      console.log('[DerivTickStream] WebSocket not connected, initiating connection...');
-      this.connect();
+    // Add to subscribers array
+    if (!this.subscriptions.has(symbol)) {
+      this.subscriptions.set(symbol, []);
     }
+    this.subscriptions.get(symbol)!.push(options);
 
-    if (this.isConnected && this.ws) {
+    // Only send WebSocket subscription if this is the first subscriber for this symbol
+    const isFirstSubscriber = this.subscriptions.get(symbol)!.length === 1;
+
+    if (isFirstSubscriber && this.isConnected && this.ws) {
       const request = {
         ticks: symbol,
         subscribe: 1
       };
-      console.log(`[DerivTickStream] 📤 Sending immediate subscription for ${symbol}:`, JSON.stringify(request));
+      console.log(`[DerivTickStream] Subscribing to ${symbol} for ${instrument} (first subscriber)`);
       this.ws.send(JSON.stringify(request));
     } else {
-      console.log(`[DerivTickStream] ⏳ WebSocket not ready, subscription will be sent when connected`);
+      console.log(`[DerivTickStream] Added subscriber to ${symbol} for ${instrument} (${this.subscriptions.get(symbol)!.length} total)`);
     }
 
     return () => {
-      this.unsubscribe(instrument);
+      this.unsubscribeOptions(instrument, options);
     };
+  }
+
+  unsubscribeOptions(instrument: InstrumentType, options: TickStreamOptions) {
+    const symbol = instrumentToDerivSymbol(instrument);
+
+    if (this.subscriptions.has(symbol)) {
+      const optionsArray = this.subscriptions.get(symbol)!;
+      const index = optionsArray.indexOf(options);
+
+      if (index > -1) {
+        optionsArray.splice(index, 1);
+        console.log(`[DerivTickStream] Removed subscriber from ${symbol} for ${instrument} (${optionsArray.length} remaining)`);
+
+        // If no more subscribers for this symbol, unsubscribe from WebSocket
+        if (optionsArray.length === 0) {
+          this.subscriptions.delete(symbol);
+
+          if (this.isConnected && this.ws) {
+            const request = {
+              forget_all: 'ticks'
+            };
+            console.log(`[DerivTickStream] Unsubscribing from ${symbol} for ${instrument} (last subscriber)`);
+            this.ws.send(JSON.stringify(request));
+          }
+        }
+      }
+    }
   }
 
   unsubscribe(instrument: InstrumentType) {
     const symbol = instrumentToDerivSymbol(instrument);
-    
+
     if (this.subscriptions.has(symbol)) {
       this.subscriptions.delete(symbol);
-      
+
       if (this.isConnected && this.ws) {
         const request = {
           forget_all: 'ticks'
