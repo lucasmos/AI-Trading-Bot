@@ -15,7 +15,7 @@ export interface TickStreamOptions {
 
 export class DerivTickStream {
   private ws: WebSocket | null = null;
-  private subscriptions: Map<string, TickStreamOptions> = new Map();
+  private subscriptions: Map<string, TickStreamOptions[]> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
@@ -41,8 +41,10 @@ export class DerivTickStream {
       this.reconnectAttempts = 0;
       this.reconnectDelay = 1000;
       
-      this.subscriptions.forEach(options => {
-        options.onConnect?.();
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onConnect?.();
+        });
       });
       
       this.resubscribeAll();
@@ -68,8 +70,10 @@ export class DerivTickStream {
       this.isConnecting = false;
       this.isConnected = false;
       
-      this.subscriptions.forEach(options => {
-        options.onDisconnect?.();
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onDisconnect?.();
+        });
       });
       
       this.attemptReconnect();
@@ -79,8 +83,10 @@ export class DerivTickStream {
   private handleMessage(response: any) {
     if (response.error) {
       console.error('[DerivTickStream] API Error:', response.error);
-      this.subscriptions.forEach(options => {
-        options.onError(new Error(response.error.message || 'Unknown API error'));
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onError(new Error(response.error.message || 'Unknown API error'));
+        });
       });
       return;
     }
@@ -88,13 +94,16 @@ export class DerivTickStream {
     if (response.msg_type === 'tick') {
       const symbol = response.tick?.symbol;
       if (symbol && this.subscriptions.has(symbol)) {
-        const options = this.subscriptions.get(symbol)!;
+        const optionsArray = this.subscriptions.get(symbol)!;
         const tick: PriceTick = {
           epoch: response.tick.epoch,
           price: parseFloat(response.tick.quote),
           time: new Date(response.tick.epoch * 1000).toISOString()
         };
-        options.onTick(tick);
+        // Broadcast to all subscribers for this symbol
+        optionsArray.forEach(options => {
+          options.onTick(tick);
+        });
       }
     }
   }
@@ -102,8 +111,10 @@ export class DerivTickStream {
   private attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[DerivTickStream] Max reconnection attempts reached');
-      this.subscriptions.forEach(options => {
-        options.onError(new Error('Max reconnection attempts reached'));
+      this.subscriptions.forEach(optionsArray => {
+        optionsArray.forEach(options => {
+          options.onError(new Error('Max reconnection attempts reached'));
+        });
       });
       return;
     }
@@ -120,41 +131,80 @@ export class DerivTickStream {
 
   private resubscribeAll() {
     if (!this.isConnected || !this.ws) return;
-    
-    this.subscriptions.forEach((options, symbol) => {
-      const request = {
-        ticks: symbol,
-        subscribe: 1
-      };
-      console.log(`[DerivTickStream] Re-subscribing to ${symbol}`);
-      this.ws!.send(JSON.stringify(request));
+
+    this.subscriptions.forEach((optionsArray, symbol) => {
+      if (optionsArray.length > 0) {
+        const request = {
+          ticks: symbol,
+          subscribe: 1
+        };
+        console.log(`[DerivTickStream] Re-subscribing to ${symbol} (${optionsArray.length} subscribers)`);
+        this.ws!.send(JSON.stringify(request));
+      }
     });
   }
 
   subscribe(instrument: InstrumentType, options: TickStreamOptions): () => void {
     const symbol = instrumentToDerivSymbol(instrument);
-    this.subscriptions.set(symbol, options);
-    
-    if (this.isConnected && this.ws) {
+
+    // Add to subscribers array
+    if (!this.subscriptions.has(symbol)) {
+      this.subscriptions.set(symbol, []);
+    }
+    this.subscriptions.get(symbol)!.push(options);
+
+    // Only send WebSocket subscription if this is the first subscriber for this symbol
+    const isFirstSubscriber = this.subscriptions.get(symbol)!.length === 1;
+
+    if (isFirstSubscriber && this.isConnected && this.ws) {
       const request = {
         ticks: symbol,
         subscribe: 1
       };
-      console.log(`[DerivTickStream] Subscribing to ${symbol} for ${instrument}`);
+      console.log(`[DerivTickStream] Subscribing to ${symbol} for ${instrument} (first subscriber)`);
       this.ws.send(JSON.stringify(request));
+    } else {
+      console.log(`[DerivTickStream] Added subscriber to ${symbol} for ${instrument} (${this.subscriptions.get(symbol)!.length} total)`);
     }
-    
+
     return () => {
-      this.unsubscribe(instrument);
+      this.unsubscribeOptions(instrument, options);
     };
+  }
+
+  unsubscribeOptions(instrument: InstrumentType, options: TickStreamOptions) {
+    const symbol = instrumentToDerivSymbol(instrument);
+
+    if (this.subscriptions.has(symbol)) {
+      const optionsArray = this.subscriptions.get(symbol)!;
+      const index = optionsArray.indexOf(options);
+
+      if (index > -1) {
+        optionsArray.splice(index, 1);
+        console.log(`[DerivTickStream] Removed subscriber from ${symbol} for ${instrument} (${optionsArray.length} remaining)`);
+
+        // If no more subscribers for this symbol, unsubscribe from WebSocket
+        if (optionsArray.length === 0) {
+          this.subscriptions.delete(symbol);
+
+          if (this.isConnected && this.ws) {
+            const request = {
+              forget_all: 'ticks'
+            };
+            console.log(`[DerivTickStream] Unsubscribing from ${symbol} for ${instrument} (last subscriber)`);
+            this.ws.send(JSON.stringify(request));
+          }
+        }
+      }
+    }
   }
 
   unsubscribe(instrument: InstrumentType) {
     const symbol = instrumentToDerivSymbol(instrument);
-    
+
     if (this.subscriptions.has(symbol)) {
       this.subscriptions.delete(symbol);
-      
+
       if (this.isConnected && this.ws) {
         const request = {
           forget_all: 'ticks'
