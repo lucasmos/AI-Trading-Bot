@@ -151,28 +151,11 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
 
   const decimalPlaces = useMemo(() => getInstrumentDecimalPlaces(instrument), [instrument]);
 
-  // Memoize chart data processing
-  const processedChartData = useMemo(() => {
-    return chartData.map(point => ({
-      ...point,
-      // Ensure time is properly formatted for chart display
-      formattedTime: new Date(point.time).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      })
-    }));
-  }, [chartData]);
-
-  // Update render key when significant changes occur
+  // Force re-render when chart data changes to ensure the chart updates
   const [renderKey, setRenderKey] = useState(0);
   useEffect(() => {
-    if (processedChartData.length > 0 && connectionStatus === 'connected') {
-      setRenderKey(prev => prev + 1);
-      console.log(`[TradingChart] Updating chart - Tick count: ${tickCount}, Data points: ${processedChartData.length}`);
-    }
-  }, [processedChartData, connectionStatus, tickCount]);
+    setRenderKey(prev => prev + 1);
+  }, [chartData.length, tickCount, connectionStatus]);
 
   // Debug chart data updates and force re-render
   useEffect(() => {
@@ -337,30 +320,6 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
           {/* Price + Bollinger Bands Chart */}
           <div key={`price-chart-${renderKey}`} style={{ width: '100%', height: '250px' }} className="mb-4">
         <ResponsiveContainer width="100%" height="100%">
-<<<<<<< HEAD
-            <ComposedChart data={chartData}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="time" 
-                tick={{ fontSize: 10 }} 
-                tickMargin={5}
-                tickFormatter={(time) => {
-                  // Parse the ISO string and format it as HH:MM:SS
-                  try {
-                    const date = new Date(time);
-                    return date.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                      hour12: false,
-                    });
-                  } catch (e) {
-                    return 'Invalid';
-                  }
-                }}
-              />
-            <YAxis
-=======
             <LineChart
               data={chartData}
               margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
@@ -389,9 +348,31 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                           hour12: false
                         });
                       }
+
+                      // If it looks like a timestamp string, try parsing as number
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        const date = new Date(numValue * 1000);
+                        if (!isNaN(date.getTime())) {
+                          return date.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          });
+                        }
+                      }
                     } else if (typeof value === 'number') {
-                      // Handle epoch timestamps
-                      const date = new Date(value * 1000);
+                      // Handle epoch timestamps (both seconds and milliseconds)
+                      let date: Date;
+                      if (value > 1e12) {
+                        // Likely milliseconds
+                        date = new Date(value);
+                      } else {
+                        // Likely seconds
+                        date = new Date(value * 1000);
+                      }
+
                       if (!isNaN(date.getTime())) {
                         return date.toLocaleTimeString([], {
                           hour: '2-digit',
@@ -402,16 +383,21 @@ function SingleInstrumentChartDisplay({ instrument }: SingleInstrumentChartDispl
                       }
                     }
 
-                    console.warn('[TradingChart] Unable to format time value:', value);
-                    return String(value).substring(0, 8); // Fallback to first 8 characters
+                    console.warn('[TradingChart] Unable to format time value:', value, typeof value);
+                    // Better fallback - show current time format
+                    return new Date().toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: false
+                    });
                   } catch (error) {
                     console.error('[TradingChart] Error formatting time:', error, 'Value:', value);
-                    return 'Error';
+                    return '--:--:--';
                   }
                 }}
               />
               <YAxis
->>>>>>> 21e6b401d7a938ed992dbe492f76dec2a26eab40
                 yAxisId="left"
                 orientation="left"
                 domain={yDomainPrice}

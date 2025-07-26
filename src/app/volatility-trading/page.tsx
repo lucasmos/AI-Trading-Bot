@@ -51,10 +51,8 @@ import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 import { Bot, Square, Briefcase, UserCheck, Activity, DollarSign } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
 import { AI_TRADING_STRATEGIES, DEFAULT_AI_STRATEGY_ID } from '@/config/ai-strategies';
-import { useRouter } from 'next/navigation';
 import { ListenerStatus } from '@/services/deriv-balance-listener';
 import { generateVolatilityTradingStrategy, type VolatilityTradingStrategyInput } from '@/ai/flows/volatility-trading-strategy-flow';
-import type { PriceTick } from '@/types';
 
 // Helper function to get clean display names for chart tabs
 function getChartTabLabel(instrument: string): string {
