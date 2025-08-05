@@ -141,6 +141,7 @@ export interface VolatilityTradeOptions {
   executionMode: 'turbo' | 'safe';
   numberOfBulkTrades: number;
   selectedInstrument: string;
+  predictionDigit?: number | null; // For Over/Under trade type
 }
 
 // Helper function to wait for next tick using WebSocket
@@ -175,7 +176,8 @@ async function executeTradesWithTickTiming(
   instrumentLatestSpot: Record<string, number | undefined>,
   instrumentATR: Record<string, number | undefined>,
   executionMode: 'turbo' | 'safe',
-  numberOfBulkTrades: number
+  numberOfBulkTrades: number,
+  predictionDigit?: number | null
 ): Promise<VolatilityTradeExecutionResult[]> {
   const results: VolatilityTradeExecutionResult[] = [];
 
@@ -193,7 +195,8 @@ async function executeTradesWithTickTiming(
         userSelectedTradeType,
         totalStakeFromUser,
         instrumentLatestSpot,
-        instrumentATR
+        instrumentATR,
+        predictionDigit
       );
       results.push(result);
     }
@@ -227,7 +230,8 @@ async function executeTradesWithTickTiming(
           userSelectedTradeType,
           totalStakeFromUser,
           instrumentLatestSpot,
-          instrumentATR
+          instrumentATR,
+          predictionDigit
         );
         results.push(result);
       }
@@ -249,7 +253,8 @@ async function executeTradesWithTickTiming(
           userSelectedTradeType,
           totalStakeFromUser,
           instrumentLatestSpot,
-          instrumentATR
+          instrumentATR,
+          predictionDigit
         );
         results.push(result);
       }
@@ -276,7 +281,8 @@ async function executeTradesWithTickTiming(
             userSelectedTradeType,
             totalStakeFromUser,
             instrumentLatestSpot,
-            instrumentATR
+            instrumentATR,
+            predictionDigit
           );
           results.push(result);
         }
@@ -297,7 +303,8 @@ async function executeSingleTrade(
   userSelectedTradeType: UserTradeType,
   totalStakeFromUser: number,
   instrumentLatestSpot: Record<string, number | undefined>,
-  instrumentATR: Record<string, number | undefined>
+  instrumentATR: Record<string, number | undefined>,
+  predictionDigit?: number | null
 ): Promise<VolatilityTradeExecutionResult> {
   let tradeDetailsForApi: TradeDetails | null = null;
   let currentApiSymbol: string | null = null;
@@ -317,14 +324,20 @@ async function executeSingleTrade(
     let calculatedBarrier: string | number | undefined = aiProposal.barrier;
 
     if (userSelectedTradeType === 'DigitsOverUnder') {
-      if (aiProposal.barrier === undefined || aiProposal.barrier === null || String(aiProposal.barrier).trim() === '') {
-        throw new Error(`Barrier (predicted digit) is mandatory for DigitsOverUnder on ${instrumentFromAI} but was not provided by AI.`);
+      // Use prediction digit from user input if provided, otherwise fall back to AI proposal
+      if (predictionDigit !== null && predictionDigit !== undefined) {
+        calculatedBarrier = predictionDigit.toString();
+        console.log(`[TradeAction/SingleTrade] Using user prediction digit: ${calculatedBarrier}`);
+      } else if (aiProposal.barrier !== undefined && aiProposal.barrier !== null && String(aiProposal.barrier).trim() !== '') {
+        const barrierString = String(aiProposal.barrier).trim();
+        if (!/^\d$/.test(barrierString)) {
+          throw new Error(`Invalid barrier '${aiProposal.barrier}' for DigitsOverUnder on ${instrumentFromAI}. Must be a single digit string (0-9).`);
+        }
+        calculatedBarrier = barrierString;
+        console.log(`[TradeAction/SingleTrade] Using AI proposal barrier: ${calculatedBarrier}`);
+      } else {
+        throw new Error(`Barrier (predicted digit) is mandatory for DigitsOverUnder on ${instrumentFromAI} but was not provided by user or AI.`);
       }
-      const barrierString = String(aiProposal.barrier).trim();
-      if (!/^\d$/.test(barrierString)) {
-        throw new Error(`Invalid barrier '${aiProposal.barrier}' for DigitsOverUnder on ${instrumentFromAI}. Must be a single digit string (0-9).`);
-      }
-      calculatedBarrier = barrierString;
     } else if (userSelectedTradeType === 'HigherLower') {
       const latestSpot = instrumentLatestSpot[instrumentFromAI];
       const atr = instrumentATR[instrumentFromAI];
@@ -436,6 +449,7 @@ export async function executeVolatilityAiTradeLoop(
   const executionMode = options?.executionMode || 'safe';
   const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
   const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
+  const predictionDigit = options?.predictionDigit || null;
 
   const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
   const results: VolatilityTradeExecutionResult[] = [];
@@ -575,7 +589,8 @@ export async function executeVolatilityAiTradeLoop(
       instrumentLatestSpot,
       instrumentATR,
       executionMode,
-      numberOfBulkTrades
+      numberOfBulkTrades,
+      predictionDigit
     );
 
     results.push(...executionResults);

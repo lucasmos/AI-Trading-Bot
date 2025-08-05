@@ -113,6 +113,10 @@ export default function VolatilityTradingPage() {
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
   const [selectedUnderDigit, setSelectedUnderDigit] = useState<number | null>(null);
 
+  // State for prediction digit input (for Over/Under trade type)
+  const [predictionDigit, setPredictionDigit] = useState<number | null>(null);
+  const [predictionDigitError, setPredictionDigitError] = useState<string>('');
+
 
 
   // State for real-time price streaming for trade type cards
@@ -139,6 +143,29 @@ export default function VolatilityTradingPage() {
       }
     }
   }, [selectedOverDigit, selectedUnderDigit]);
+
+  // Handler for prediction digit input validation
+  const handlePredictionDigitChange = useCallback((value: string) => {
+    setPredictionDigitError('');
+
+    if (value === '') {
+      setPredictionDigit(null);
+      return;
+    }
+
+    // Validate single digit (0-9)
+    if (!/^\d$/.test(value)) {
+      setPredictionDigitError('Please enter a single digit (0-9)');
+      return;
+    }
+
+    const digit = parseInt(value, 10);
+    if (digit >= 0 && digit <= 9) {
+      setPredictionDigit(digit);
+    } else {
+      setPredictionDigitError('Please enter a digit between 0 and 9');
+    }
+  }, []);
 
   // Legacy state variables (keeping for backward compatibility)
   const [tradingMode, setTradingMode] = useState<TradingMode>('balanced');
@@ -393,6 +420,14 @@ export default function VolatilityTradingPage() {
             return;
         }
 
+        // Validate prediction digit for Over/Under trade type
+        if (selectedUserTradeTypeForLoop === 'DigitsOverUnder' && predictionDigit === null) {
+            toast({ title: "Prediction Digit Required", description: "Please enter a prediction digit (0-9) for Over/Under trading.", variant: "destructive"});
+            setIsAiLoading(false);
+            setIsAutoTradingActive(false);
+            return;
+        }
+
         console.log(`[VolatilityPage] Initiating REAL trade loop. User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
         toast({ title: "Volatility AI Loop Starting...", description: `Attempting to place real trades for type: ${selectedUserTradeTypeForLoop}` });
 
@@ -407,7 +442,8 @@ export default function VolatilityTradingPage() {
                 {
                   executionMode,
                   numberOfBulkTrades,
-                  selectedInstrument: currentVolatilityInstrument
+                  selectedInstrument: currentVolatilityInstrument,
+                  predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null
                 }
             );
 
@@ -1197,6 +1233,8 @@ export default function VolatilityTradingPage() {
                           if (option.value !== 'DigitsOverUnder') {
                             setSelectedOverDigit(null);
                             setSelectedUnderDigit(null);
+                            setPredictionDigit(null);
+                            setPredictionDigitError('');
                           }
                         }}
                       disabled={isAutoTradingActive || isAiLoading}
@@ -1216,6 +1254,29 @@ export default function VolatilityTradingPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">Select a trade type for real trading or use Simulation Mode for practice.</p>
               </div>
+
+              {/* Conditional Prediction Digit Input for Over/Under */}
+              {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
+                <div className="space-y-3">
+                  <Label htmlFor="prediction-digit">Prediction Digit</Label>
+                  <Input
+                    id="prediction-digit"
+                    type="text"
+                    value={predictionDigit !== null ? predictionDigit.toString() : ''}
+                    onChange={(e) => handlePredictionDigitChange(e.target.value)}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className={`text-center ${predictionDigitError ? 'border-red-500' : ''}`}
+                    placeholder="Enter digit (0-9)"
+                    maxLength={1}
+                  />
+                  {predictionDigitError && (
+                    <p className="text-xs text-red-500">{predictionDigitError}</p>
+                  )}
+                  <div className="text-xs text-muted-foreground">
+                    Enter a digit (0-9) for Over/Under prediction
+                  </div>
+                </div>
+              )}
 
               <div>
                 <Label htmlFor="vol-auto-stake">Total Stake for Session ($)</Label>
