@@ -13,10 +13,6 @@ import {
   type UserTradeType,
   VolatilityInstrumentTypeSchema,
   PriceTickSchema,
-  InstrumentIndicatorDataSchema,
-  type InstrumentIndicatorData,
-  PromptFormattedInstrumentIndicatorSchema,
-  type PromptFormattedInstrumentIndicator,
   VolatilitySingleTradeStrategyInputSchema,
   type VolatilitySingleTradeStrategyInput,
   VolatilitySingleTradeProposalSchema,
@@ -36,8 +32,7 @@ import {
 } from '@/types/ai-shared-types';
 
 
-// Prompt for determining Deriv contract type and other details for a single instrument trade
-// This is NOT exported. It's used internally by the flows.
+// Simplified prompt for pattern-based and basic analysis
 const determineDerivContractTypePrompt = ai.definePrompt({
   name: 'determineDerivContractTypePrompt',
   input: { schema: VolatilityStrategyPromptInputSchema },
@@ -53,333 +48,64 @@ Recent Price Ticks for {{{currentInstrument}}} (last is most recent):
 - Time: {{time}}, Price: {{price}}
 {{/each}}
 
-{{#if formattedIndicators}}
-📊 COMPREHENSIVE TECHNICAL ANALYSIS for {{{currentInstrument}}}:
+🚨 SIMPLIFIED TRADING STRATEGIES 🚨
 
-🔴 MOMENTUM INDICATORS:
-  • RSI (14): {{formattedIndicators.rsi}} [Overbought >70, Oversold <30]
-  • Stochastic: %K={{formattedIndicators.stochasticK}}, %D={{formattedIndicators.stochasticD}} [Overbought >80, Oversold <20]
-  • Williams %R: {{formattedIndicators.williamsR}} [Overbought >-20, Oversold <-80]
-  • CCI (20): {{formattedIndicators.cci}} [Overbought >100, Oversold <-100]
+**SUPPORTED TRADE TYPES:**
 
-🔵 TREND INDICATORS:
-  • MACD: Line={{formattedIndicators.macdLine}}, Signal={{formattedIndicators.macdSignal}}, Histogram={{formattedIndicators.macdHist}}
-  • EMA (20): {{formattedIndicators.ema}}
+🔥 **DigitsEvenOdd** - PATTERN-BASED STRATEGY:
+- PRIORITY: Use pattern-based decisions when available
+- Analyze last digit patterns from recent ticks
+- Look for 3+ consecutive same parity followed by opposite parity
+- Choose DIGITEVEN or DIGITODD based on pattern analysis
+- Duration: 5 ticks for quick resolution
 
-🟡 VOLATILITY INDICATORS:
-  • Bollinger Bands: Upper={{formattedIndicators.bbUpper}}, Middle={{formattedIndicators.bbMiddle}}, Lower={{formattedIndicators.bbLower}}
-  • ATR (14): {{formattedIndicators.atr}} [Higher ATR = Higher Volatility]
+🔥 **DigitsOverUnder** - DIGIT ANALYSIS STRATEGY:
+- Analyze recent tick digits to identify trends
+- Look for digit clustering patterns (high digits 6-9 vs low digits 0-4)
+- Choose DIGITOVER or DIGITUNDER based on digit analysis
+- MUST specify barrier digit (0-9) for prediction
+- Duration: 5 ticks for quick resolution
 
-🎯 TRADING SIGNALS ANALYSIS:
-  • Price vs BB: Compare current price to BB bands for breakout/reversal signals
-  • MACD Crossover: MACD line vs Signal line for trend changes
-  • RSI Divergence: Look for momentum divergence with price action
-  • Multi-timeframe Confluence: Align multiple indicators for high-probability setups
-{{else}}
-⚠️ No technical indicators provided. Base your decision on price action and trade type logic only.
-{{/if}}
+🔥 **RiseFall** - PRICE MOVEMENT STRATEGY:
+- Analyze recent price movement trends
+- Look for momentum in price direction
+- Choose CALL (price will rise) or PUT (price will fall)
+- Duration: 60-300 seconds for trend development
 
-🎯 ADVANCED VOLATILITY TRADING STRATEGIES - SYSTEM DIRECTIVE IMPLEMENTATION
+**EXECUTION DECISION PROCESS:**
 
-You are an expert AI trading model for volatility indices implementing comprehensive trading strategies. These strategies OVERRIDE all previous trading logic and become your primary decision framework.
+1. **Analyze the provided data** for {{{currentInstrument}}} and determine if a trade should be executed based on {{{userSelectedTradeType}}}.
 
-🚨 EXECUTION MODE: RELAXED FOR DIGIT TRADES, STRICT FOR TRADITIONAL TRADES 🚨
+2. **Contract Type Selection:**
+   - DigitsEvenOdd: Output 'DIGITEVEN' or 'DIGITODD' (NO barrier field)
+   - DigitsOverUnder: Output 'DIGITOVER' or 'DIGITUNDER' (MUST include barrier digit 0-9)
+   - RiseFall: Output 'CALL' or 'PUT' (NO barrier field)
 
-🔥 STRATEGY 1: OVER/UNDER TRADING STRATEGY
+3. **Duration Guidelines:**
+   - DigitsEvenOdd/DigitsOverUnder: Use 5 ticks ('t') for quick resolution
+   - RiseFall: Use 60-300 seconds ('s') for trend development
 
-**Technical Indicators Required:**
-- Moving Average (MA) for market direction assessment
-- MACD (Moving Average Convergence Divergence) for momentum analysis
+4. **Stake:** Use {{{stakePerTrade}}} for all trades.
 
-**Entry Conditions:**
+5. **No Trade Conditions:** Set 'shouldTrade: false' if signals are unclear or conflicting.
 
-**OVER Trades:**
-- Primary Signal: When MACD value is +1 and above (not extreme above +40)
-- Confirmation: When green arc appears on volatility chart indicating uptrend
-- Additional Filter: Moving Average showing bullish momentum
-
-**UNDER Trades:**
-- Primary Signal: When MACD value is -1 and below (not extreme below -40)
-- Confirmation: Market showing downtrend characteristics
-- Additional Filter: Moving Average confirming bearish direction
-
-**Deriv Analysis Tool Integration - Execute trades based on digit analysis:**
-- Digit Zero(0): If 12%+ probability → Trade Under (3, 4, 5) and Under 6 for safety
-- Digit One(1): If 12%+ probability → Trade Over 4 and Over 3 for safety
-- Digit Two(2): If 12.3%+ probability → Trade Matches, Prediction Zero(0)
-- Digit Four(4): If 12%+ probability → Trade Under 5 and 6
-- Digit Five(5): If 12.2%+ probability → Trade Over 3 and 4
-- Digit Six(6): If 12%+ probability → Trade Under 5, Under 6, Under 7 for safety with risk management
-- Digit Seven(7): If 12%+ probability → Trade Over 4, or if 13%+ → Trade Over 7 and 8
-- Digit Eight(8): If 12%+ probability → Trade Over 3 and 4
-- Digit Nine(9): If 12%+ probability → Trade Over 4 and Over 3 for safety
-
-🔥 STRATEGY 2: EVEN/ODD TRADING STRATEGY
-
-**Market Analysis Requirements:**
-
-**EVEN Market Trading:**
-Pre-Trade Checklist:
-✅ Confirm GREEN BAR is active on Even Market
-✅ Verify digit with green bar is above 12.1% probability
-✅ Ensure at least 3 consecutive EVEN numbers show 10%+ probability
-✅ Confirm RED BAR is active on Even market before entry
-
-Entry Protocols:
-- Manual Trading: Wait for cursor to hit any EVEN digit above 10% → Enter immediately when GREEN BAR appears and digit increases → Click EVEN
-- Bot Trading: Monitor for moving cursor hitting two ODD numbers → Wait for cursor to hit digit with GREEN BAR (EVEN) → Execute trade
-
-**ODD Market Trading:**
-Pre-Trade Checklist:
-✅ Confirm GREEN BAR is active on Odd Market
-✅ Verify digit with GREEN bar is above 12.1% probability
-✅ Ensure at least 3 consecutive ODD numbers show 10%+ probability
-✅ Confirm RED BAR is active on Odd market before entry
-
-Entry Protocols:
-- Manual Trading: Wait for cursor to hit any ODD digit above 10% → Enter immediately when GREEN BAR appears and digit increases → Click ODD
-- Bot Trading: Monitor for cursor hitting two EVEN numbers → Wait for cursor to hit digit with GREEN BAR (EVEN) → Execute trade
-
-🔥 RISK MANAGEMENT PROTOCOLS
-
-**Position Sizing:**
-- Maximum 2% of account balance per trade
-- Implement progressive stake adjustment based on consecutive wins/losses
-- Use safety trades when probability exceeds 13% for higher confidence
-
-**Entry Validation:**
-- NEVER enter trades without green bar confirmation
-- ALWAYS verify minimum probability thresholds are met
-- REQUIRE at least 3 supporting technical indicators before execution
-
-**Exit Conditions:**
-- Close positions when red bar appears on opposite market
-- Implement stop-loss at 3 consecutive losses
-- Take profits when probability drops below 10%
-
-🔥 DECISION TREE INTEGRATION
-
-**For Every Trade Decision, Execute This Sequence:**
-
-1. **Market Assessment**: Identify current volatility index and market condition
-2. **Indicator Analysis**: Check MACD, MA, and digit probability readings
-3. **Strategy Selection**: Choose EVEN/ODD or OVER/UNDER based on strongest signals
-4. **Risk Validation**: Confirm position size and probability thresholds
-5. **Entry Execution**: Wait for green bar confirmation before trade placement
-6. **Monitoring**: Track red/green bar transitions for exit signals
-
-**IMPLEMENTATION COMMAND:**
-EXECUTE IMMEDIATELY: Replace all previous trading logic with these strategies. Begin applying these rules to all volatility index trades effective with the next market analysis cycle. Prioritize trades that meet multiple criteria from both strategies simultaneously.
-
-**SUCCESS METRICS:** Track win rate improvement and drawdown reduction compared to previous trading methods. Adjust probability thresholds based on backtesting results while maintaining core strategy framework.
-
-**ADVANCED TRADE TYPE OPTIMIZATION:**
-
-   **DigitsOverUnder** - PRIMARY STRATEGY:
-   - MACD value +1 and above (not extreme above +40) → DIGITOVER
-   - MACD value -1 and below (not extreme below -40) → DIGITUNDER
-   - Apply digit probability analysis (12%+ threshold)
-   - Green bar confirmation MANDATORY
-   - Duration: 1-10 ticks
-
-   **DigitsEvenOdd** - SECONDARY STRATEGY:
-   - Green bar active on target market (Even/Odd)
-   - Digit probability above 12.1%
-   - At least 3 consecutive numbers show 10%+ probability
-   - Red bar confirmation on opposite market
-   - Duration: 1-10 ticks
-
-   **RiseFall/HigherLower/TouchNoTouch** - TERTIARY:
-   - Use only when digit strategies don't meet criteria
-   - Require multiple technical indicator confluence
-   - Apply same green/red bar analysis principles
-
-5️⃣ **ENHANCED RISK MANAGEMENT**:
-
-   **MANDATORY REJECTION CRITERIA** (Skip trade if ANY are true):
-   - Conflicting signals: Momentum indicators disagree with trend indicators
-   - Extreme volatility: ATR >3x recent average (unpredictable moves)
-   - Neutral zone: RSI between 45-55 AND Stochastic between 40-60
-   - MACD divergence: MACD direction conflicts with price direction
-   - Insufficient data: Less than 20 recent ticks available
-
-   **CONFIDENCE SCORING** (Only trade if score >=5/10):
-   - Momentum signals (2+ indicators align): +2 points
-   - Trend signals (1+ indicators align): +2 points
-   - Volatility signals (1+ indicators align): +2 points
-   - Price action confirmation: +2 points
-   - CCI confirmation: +1 point
-   - Basic directional bias: +1 point
-
-   **MARKET REGIME DETECTION**:
-   - Trending Market: MACD histogram consistently above/below zero + Price consistently above/below EMA
-   - Ranging Market: Price oscillating between BB bands + RSI oscillating 30-70
-   - Breakout Market: Price at BB extremes + High ATR + Strong momentum
-   - Choose trade type based on detected regime
-
-Your Task:
-1. Based on the user's selected trade type ('{{{userSelectedTradeType}}}') and your analysis of the instrument data (price ticks and indicators if available), decide if a trade is viable.
-2. If a trade is viable (set 'shouldTrade: true'):
-   a. Determine the precise Deriv API contract type ('derivContractType').
-      - For 'RiseFall': Output 'CALL' (price up) or 'PUT' (price down). The 'barrier' field MUST NOT be present in your JSON output.
-      - For 'HigherLower': Output 'CALL' (price will be higher than a programmatically set default barrier) or 'PUT' (price will be lower than a programmatically set default barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). You can state your barrier preference in the reasoning.
-      - For 'TouchNoTouch': Output 'ONETOUCH' (price will touch a programmatically set barrier) or 'NOTOUCH' (price will not touch a programmatically set barrier). The 'barrier' field MUST NOT be present in your JSON output for this type (it will be calculated by the system). IMPORTANT: In your reasoning, specify your barrier strategy (e.g., "barrier should be above current price to capture upward breakout" or "barrier should be well above current price to avoid being touched during normal volatility").
-      - For 'DigitsEvenOdd': Output 'DIGITEVEN' (last digit even) or 'DIGITODD' (last digit odd). The 'barrier' field MUST NOT be present in your JSON output.
-      - For 'DigitsOverUnder': Output 'DIGITOVER' (last digit > predicted digit) or 'DIGITUNDER' (last digit < predicted digit).
-        🚨 MANDATORY BARRIER FIELD: YOU MUST INCLUDE "barrier": "X" WHERE X IS A SINGLE DIGIT (0-9)
-        🚨 FOR DIGITUNDER: If you predict under 5, use "barrier": "5"
-        🚨 FOR DIGITOVER: If you predict over 4, use "barrier": "4"
-        🚨 NO BARRIER = TRADE REJECTED. ALWAYS INCLUDE THE BARRIER FIELD!
-   b. Recommend a trade 'duration' (integer value) and its 'durationUnit' ('s' for seconds, 'm' for minutes, 't' for ticks).
-      - For Digits contracts ('DigitsEvenOdd', 'DigitsOverUnder'), 'durationUnit' MUST be 't', and 'duration' is typically 1-10 ticks.
-      - For Touch/No Touch contracts ('TouchNoTouch'):
-        * For Volatility Indices: 'durationUnit' can be 't' (minimum 5 ticks), 'm' (minimum 2 minutes), 'h' (minimum 1 hour), or 'days' (minimum 1 day)
-        * For Forex/Stock Indices: 'durationUnit' MUST be 'days' with minimum 7 days
-        * For Metals: 'durationUnit' MUST be 'days' with minimum 1 day
-      - For Rise/Fall contracts, 'durationUnit' can be 's' (seconds) or 'm' (minutes), with minimum duration of 15 seconds.
-      - For Higher/Lower contracts on Volatility Indices: 'durationUnit' can be 't' (minimum 5 ticks), 's' (minimum 15 seconds), or 'm' (minutes). Recommended: 5-10 ticks or 1-5 minutes.
-      - For Higher/Lower contracts on other instruments: 'durationUnit' MUST be 'days', with minimum 1 day duration.
-   c. The 'stake' for this trade should be {{{stakePerTrade}}}. Include this in your proposal.
-3. If no trade is viable (e.g., unclear signals, high risk for the chosen trade type), set 'shouldTrade: false'. In this case, do not provide 'derivContractType', 'duration', 'durationUnit', 'stake', or 'barrier'.
-4. Provide concise 'reasoning' for your decision. If 'userSelectedTradeType' is 'HigherLower' or 'TouchNoTouch', you can suggest barrier characteristics in your reasoning (e.g., "barrier should be significantly above current spot", "aim for a tight barrier").
+**VALIDATION RULES:**
+- DigitsOverUnder: barrier field MANDATORY (digit 0-9 as string)
+- DigitsEvenOdd/RiseFall: barrier field MUST be omitted
+- All trades: duration, durationUnit, stake MANDATORY when shouldTrade=true
 
 Output Format: Return a single JSON object matching the output schema.
 
-🚨 SPECIAL RULE FOR DIGITSOVERUNDER 🚨
-If userSelectedTradeType is 'DigitsOverUnder' and shouldTrade is true, your JSON MUST include:
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "DIGITUNDER" or "DIGITOVER",
-  "duration": [number],
-  "durationUnit": "t",
-  "barrier": "[single digit 0-9]",  ← THIS IS MANDATORY!
-  "stake": [number],
-  "reasoning": "[your analysis]"
-}
 
-General Rules:
-- If 'shouldTrade' is true: 'derivContractType', 'duration', 'durationUnit', and 'stake' are ALWAYS mandatory.
-- If 'shouldTrade' is true AND 'userSelectedTradeType' is 'DigitsOverUnder': the 'barrier' field (predicted digit) is ALSO ABSOLUTELY MANDATORY.
-- For 'RiseFall', 'HigherLower', 'TouchNoTouch', 'DigitsEvenOdd' when 'shouldTrade' is true: the 'barrier' field MUST be omitted from your JSON output.
-- If 'shouldTrade' is false: only 'instrument', 'shouldTrade', and 'reasoning' are needed.
 
-🚨🚨🚨 FINAL VALIDATION BEFORE JSON OUTPUT 🚨🚨🚨
-- DigitsOverUnder + shouldTrade=true → MUST HAVE "barrier": "X" (single digit)
-- HigherLower/TouchNoTouch + shouldTrade=true → NO barrier field
-- DigitsEvenOdd + shouldTrade=true → NO barrier field
+**FINAL VALIDATION:**
+- DigitsOverUnder: barrier field MANDATORY (digit 0-9 as string)
+- DigitsEvenOdd/RiseFall: barrier field MUST be omitted
+- All trades: duration, durationUnit, stake MANDATORY when shouldTrade=true
 
-🚨 FOR DIGITSOVERUNDER: DOUBLE-CHECK YOUR JSON HAS THE BARRIER FIELD! 🚨
 
-Example for RiseFall (predicting RISE):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "CALL",
-  "duration": 60,
-  "durationUnit": "s",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Strong bullish momentum observed in recent ticks and RSI above 70."
-}
 
-Example for HigherLower on Volatility Index (predicting LOWER):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "PUT",
-  "duration": 5,
-  "durationUnit": "t",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Price showing resistance, MACD declining. Using 5 ticks for quick resolution on volatility index."
-}
 
-Example for HigherLower on Volatility Index (predicting HIGHER, longer duration):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "CALL",
-  "duration": 3,
-  "durationUnit": "m",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Strong bullish momentum with high volatility. Using 3 minutes to allow trend development."
-}
-
-Example for TouchNoTouch on Volatility Index (predicting TOUCH):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "ONETOUCH",
-  "duration": 5,
-  "durationUnit": "t",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "High volatility breakout expected. Using 5 ticks for quick resolution on volatility index."
-}
-
-Example for TouchNoTouch on Volatility Index (predicting NO TOUCH, longer duration):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "NOTOUCH",
-  "duration": 1,
-  "durationUnit": "h",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Market consolidating with low volatility. Barrier unlikely to be touched in 1 hour."
-}
-
-Example for TouchNoTouch (predicting TOUCH):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "ONETOUCH",
-  "duration": 10,
-  "durationUnit": "m",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Strong upward momentum with high volatility and bullish indicators. Barrier should be placed above current price to capture expected breakout within 10 minutes."
-}
-
-Example for TouchNoTouch (predicting NO TOUCH):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "NOTOUCH",
-  "duration": 15,
-  "durationUnit": "m",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Price consolidating in range with low volatility. Barrier should be placed well above current price to avoid being touched during normal fluctuations over 15 minutes."
-}
-
-Example for DigitsOverUnder (predicting OVER 6):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "DIGITOVER",
-  "duration": 5,
-  "durationUnit": "t",
-  "barrier": "6",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Recent ticks show high digits (7,8,9). Predicting next will be over 6."
-}
-
-Example for DigitsOverUnder (predicting UNDER 3):
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": true,
-  "derivContractType": "DIGITUNDER",
-  "duration": 5,
-  "durationUnit": "t",
-  "barrier": "3",
-  "stake": {{{stakePerTrade}}},
-  "reasoning": "Last few ticks ended in low digits (0,1,2). Predicting next will be under 3."
-}
-
-Example for No Trade:
-{
-  "instrument": "{{{currentInstrument}}}",
-  "shouldTrade": false,
-  "reasoning": "Market for {{{currentInstrument}}} is too volatile and indicators are conflicting for {{{userSelectedTradeType}}}."
-}
-
-Begin your response with the JSON object.
 `
 });
 
@@ -394,6 +120,27 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
   async (input: VolatilitySingleTradeStrategyInput): Promise<VolatilitySingleTradeProposal> => {
     console.log(`[AI Single Flow] Input for ${input.currentInstrument}, type ${input.userSelectedTradeType}, stake ${input.stakePerTrade}`);
 
+    // Check for pattern-based trade trigger first
+    if (input.patternTrigger && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
+      console.log(`[AI Single Flow/${input.currentInstrument}] Using pattern-based strategy with user settings:`, {
+        patternTrigger: input.patternTrigger,
+        executionMode: input.executionMode,
+        accountType: input.accountType,
+        selectedStrategy: input.selectedStrategy
+      });
+
+      // Return pattern-based trade proposal with user settings applied
+      return {
+        instrument: input.currentInstrument as ExternalVolatilityInstrumentType,
+        shouldTrade: true,
+        derivContractType: input.patternTrigger.contractType,
+        duration: input.executionMode === 'turbo' ? 1 : 5, // Turbo: 1 tick, Safe: 5 ticks
+        durationUnit: 't',
+        stake: input.stakePerTrade,
+        reasoning: `PATTERN-BASED TRADE: ${input.patternTrigger.reasoning}. Strategy: ${input.selectedStrategy}. Execution: ${input.executionMode} mode. Account: ${input.accountType}. Confidence: ${(input.patternTrigger.confidence || 1) * 100}%. This trade uses deterministic pattern detection with user-configured settings.`
+      };
+    }
+
     if (!input.instrumentTicks || input.instrumentTicks.length === 0) {
       return {
         instrument: input.currentInstrument as ExternalVolatilityInstrumentType,
@@ -402,34 +149,20 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       };
     }
 
-    let formattedIndicatorsForPrompt: PromptFormattedInstrumentIndicator | null = null;
-    if (input.instrumentIndicators) {
-      const ind = input.instrumentIndicators;
-      formattedIndicatorsForPrompt = {
-        rsi: ind.rsi?.toFixed(2) ?? "N/A",
-        macdLine: ind.macd?.macd?.toFixed(4) ?? "N/A",
-        macdSignal: ind.macd?.signal?.toFixed(4) ?? "N/A",
-        macdHist: ind.macd?.histogram?.toFixed(4) ?? "N/A",
-        bbUpper: ind.bollingerBands?.upper?.toFixed(4) ?? "N/A",
-        bbMiddle: ind.bollingerBands?.middle?.toFixed(4) ?? "N/A",
-        bbLower: ind.bollingerBands?.lower?.toFixed(4) ?? "N/A",
-        ema: ind.ema?.toFixed(4) ?? "N/A",
-        atr: ind.atr?.toFixed(4) ?? "N/A",
-        stochasticK: (ind.stochastic?.k !== undefined) ? ind.stochastic.k.toFixed(2) : "N/A",
-        stochasticD: (ind.stochastic?.d !== undefined) ? ind.stochastic.d.toFixed(2) : "N/A",
-        williamsR: (ind.williamsR !== undefined) ? ind.williamsR.toFixed(2) : "N/A",
-        cci: (ind.cci !== undefined) ? ind.cci.toFixed(2) : "N/A",
-      };
-    }
-
     const promptGenerationInput: VolatilityStrategyPromptInput = {
         availableInstruments: [input.currentInstrument],
         userSelectedTradeType: input.userSelectedTradeType,
         totalSessionStake: input.stakePerTrade,
-        formattedInstrumentIndicators: formattedIndicatorsForPrompt ? { [input.currentInstrument]: formattedIndicatorsForPrompt } : {},
         currentInstrument: input.currentInstrument,
         stakePerTrade: input.stakePerTrade,
         instrumentTicks: input.instrumentTicks, // Pass directly for template
+
+        // Pass user settings to prompt
+        executionMode: input.executionMode,
+        accountType: input.accountType,
+        selectedStrategy: input.selectedStrategy,
+        predictionDigit: input.predictionDigit,
+        patternTrigger: input.patternTrigger,
     };
 
     let output: VolatilitySingleTradeProposal | null = null;
@@ -444,115 +177,74 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       const systemPrompt = `You are an expert AI trading strategist for Deriv Volatility Indices. Analyze the provided data and return a JSON response matching the exact schema.`;
 
       const userPrompt = `
-🚨 SYSTEM DIRECTIVE: ADVANCED VOLATILITY TRADING STRATEGIES 🚨
+🚨 SIMPLIFIED VOLATILITY TRADING ANALYSIS 🚨
 
 Analyze the provided data for the instrument: ${input.currentInstrument}.
 User has selected the trade type: ${input.userSelectedTradeType}.
 Recommended stake for this trade: ${input.stakePerTrade}.
 
+📋 USER SETTINGS:
+- Execution Mode: ${input.executionMode || 'safe'} (Turbo = 1 tick duration, Safe = 5+ ticks)
+- Account Type: ${input.accountType || 'demo'}
+- Selected Strategy: ${input.selectedStrategy || 'Auto'}
+${input.predictionDigit !== undefined ? `- Prediction Digit: ${input.predictionDigit} (for DigitsOverUnder)` : ''}
+
+${input.patternTrigger ? `
+🔥 PATTERN TRIGGER DETECTED:
+- Should Trade: ${input.patternTrigger.shouldTrade}
+- Contract Type: ${input.patternTrigger.contractType}
+- Pattern Reasoning: ${input.patternTrigger.reasoning}
+- Confidence: ${(input.patternTrigger.confidence || 1) * 100}%
+- Pattern Type: ${input.patternTrigger.patternType || 'N/A'}
+
+⚠️ IMPORTANT: For DigitsEvenOdd trades with pattern triggers, prioritize the pattern-based decision over traditional analysis.
+` : ''}
+
 Recent Price Ticks for ${input.currentInstrument} (last is most recent):
 ${input.instrumentTicks.map(tick => `- Time: ${tick.time}, Price: ${tick.price}`).join('\n')}
 
-📊 CRITICAL TECHNICAL ANALYSIS for ${input.currentInstrument}:
+📊 PRICE ANALYSIS for ${input.currentInstrument}:
 
-${formattedIndicatorsForPrompt ? `
-🔴 MOMENTUM INDICATORS:
-  • RSI (14): ${formattedIndicatorsForPrompt.rsi} [Overbought >70, Oversold <30]
-  • Stochastic: %K=${formattedIndicatorsForPrompt.stochasticK}, %D=${formattedIndicatorsForPrompt.stochasticD} [Overbought >80, Oversold <20]
-  • Williams %R: ${formattedIndicatorsForPrompt.williamsR} [Overbought >-20, Oversold <-80]
-  • CCI (20): ${formattedIndicatorsForPrompt.cci} [Overbought >100, Oversold <-100]
-
-🔵 TREND INDICATORS (CRITICAL FOR STRATEGY):
-  • MACD: Line=${formattedIndicatorsForPrompt.macdLine}, Signal=${formattedIndicatorsForPrompt.macdSignal}, Histogram=${formattedIndicatorsForPrompt.macdHist}
-  • EMA (20): ${formattedIndicatorsForPrompt.ema}
-
-🟡 VOLATILITY INDICATORS:
-  • Bollinger Bands: Upper=${formattedIndicatorsForPrompt.bbUpper}, Middle=${formattedIndicatorsForPrompt.bbMiddle}, Lower=${formattedIndicatorsForPrompt.bbLower}
-  • ATR (14): ${formattedIndicatorsForPrompt.atr} [Higher ATR = Higher Volatility]
-
-🎯 DIGIT PROBABILITY ANALYSIS:
 Recent last digits: ${input.instrumentTicks.slice(-10).map(tick => tick.price.toString().slice(-1)).join(', ')}
-
-${(() => {
-  const digitAnalysis = analyzeDigitProbabilities(input.instrumentTicks);
-  let analysisText = 'DIGIT FREQUENCY ANALYSIS:\n';
-
-  // Show digit probabilities
-  for (let i = 0; i <= 9; i++) {
-    const prob = digitAnalysis.digitProbabilities[i.toString()] || 0;
-    const isHighProb = prob >= 12;
-    analysisText += `  Digit ${i}: ${prob.toFixed(1)}% ${isHighProb ? '🎯 HIGH PROBABILITY' : ''}\n`;
-  }
-
-  analysisText += `\nEVEN/ODD BIAS: ${digitAnalysis.evenOddBias.toUpperCase()}\n`;
-
-  // Show over/under bias for key thresholds
-  const keyThresholds = [3, 4, 5, 6, 7];
-  analysisText += 'OVER/UNDER BIAS:\n';
-  keyThresholds.forEach(threshold => {
-    const bias = digitAnalysis.overUnderBias[threshold.toString()] || 'neutral';
-    analysisText += `  Over/Under ${threshold}: ${bias.toUpperCase()}\n`;
-  });
-
-  return analysisText;
+Price trend: ${(() => {
+  const prices = input.instrumentTicks.slice(-5).map(t => t.price);
+  if (prices.length < 2) return 'Insufficient data';
+  const latest = prices[prices.length - 1];
+  const previous = prices[0];
+  return latest > previous ? 'Rising' : latest < previous ? 'Falling' : 'Sideways';
 })()}
-` : '⚠️ No technical indicators provided. Use price action and digit analysis only.'}
 
-🚨 MANDATORY STRATEGY IMPLEMENTATION 🚨
+🚨 SIMPLIFIED DECISION LOGIC 🚨
 
-STRATEGY SELECTION PRIORITY:
-1. DigitsOverUnder (PRIMARY) - RELAXED EXECUTION: Use when MACD signals present OR green bar detected
-2. DigitsEvenOdd (SECONDARY) - RELAXED EXECUTION: Use when probability patterns detected OR green bar present
-3. RiseFall/HigherLower/TouchNoTouch (TERTIARY) - STRICT EXECUTION: Require full technical confluence
+SUPPORTED TRADE TYPES: DigitsEvenOdd, DigitsOverUnder, RiseFall
 
 DECISION CRITERIA FOR ${input.userSelectedTradeType}:
 
-IF userSelectedTradeType is "DigitsOverUnder" - RELAXED EXECUTION:
-✅ Check MACD Line value: +1 and above (not >+40) → DIGITOVER | -1 and below (not <-40) → DIGITUNDER
-✅ Analyze digit probability: Apply specific digit rules (guidelines, not strict)
-✅ Green bar pattern OR MACD signal (at least one required)
-✅ Set barrier based on digit analysis rules
-✅ EXECUTE MORE FREELY to test new strategy effectiveness
+IF userSelectedTradeType is "DigitsEvenOdd":
+- PRIORITY: Use pattern trigger if provided (bypasses analysis)
+- FALLBACK: Analyze recent digit patterns for Even/Odd bias
+- Duration: ${input.executionMode === 'turbo' ? '1 tick (Turbo mode)' : '5 ticks (Safe mode)'}
 
-IF userSelectedTradeType is "DigitsEvenOdd" - RELAXED EXECUTION:
-✅ Check for green bar active on target market (Even/Odd) OR strong probability signal
-✅ Digit probability above 10%+ (relaxed from 12.1%)
-✅ Even/odd bias analysis from recent ticks
-✅ Choose DIGITEVEN or DIGITODD based on analysis
-✅ EXECUTE MORE FREELY to test new strategy effectiveness
+IF userSelectedTradeType is "DigitsOverUnder":
+- Analyze recent digits for high/low clustering
+- Choose barrier digit based on analysis${input.predictionDigit !== undefined ? ` (User suggested: ${input.predictionDigit})` : ''}
+- Duration: ${input.executionMode === 'turbo' ? '1 tick (Turbo mode)' : '5 ticks (Safe mode)'}
 
-IF userSelectedTradeType is "RiseFall/HigherLower/TouchNoTouch" - STRICT EXECUTION:
-✅ Apply traditional technical analysis with green/red bar principles
-✅ REQUIRE multiple indicator confluence (3+ indicators)
-✅ MANDATORY green bar confirmation
-✅ Higher confidence threshold (60%+ minimum)
-
-🚨 TRADING REQUIREMENTS BY TYPE 🚨
-
-FOR DIGIT TRADES (DigitsOverUnder, DigitsEvenOdd) - RELAXED REQUIREMENTS:
-- MACD signal OR green bar confirmation (at least one required)
-- Probability thresholds are guidelines, not strict requirements
-- Allow more trading opportunities to test new strategies
-- Duration: 1-10 ticks for digit trades
-- Maximum 2% position sizing
-
-FOR TRADITIONAL TRADES (TouchNoTouch, RiseFall, HigherLower) - STRICT REQUIREMENTS:
-- MANDATORY green bar confirmation
-- REQUIRE 3+ supporting technical indicators
-- Higher confidence threshold (60%+ minimum)
-- Traditional duration rules apply
-- Maximum 2% position sizing
+IF userSelectedTradeType is "RiseFall":
+- Analyze price trend from recent ticks
+- Choose CALL (rising) or PUT (falling)
+- Duration: ${input.executionMode === 'turbo' ? '60 seconds (Turbo mode)' : '180-300 seconds (Safe mode)'}
 
 Return ONLY a JSON object with this exact structure:
 {
   "instrument": "${input.currentInstrument}",
   "shouldTrade": true/false,
-  "derivContractType": "CALL/PUT/ONETOUCH/NOTOUCH/DIGITEVEN/DIGITODD/DIGITOVER/DIGITUNDER" (only if shouldTrade is true),
+  "derivContractType": "CALL/PUT/DIGITEVEN/DIGITODD/DIGITOVER/DIGITUNDER" (only if shouldTrade is true),
   "duration": number (only if shouldTrade is true),
-  "durationUnit": "s/m/t/h/days" (only if shouldTrade is true),
+  "durationUnit": "s/t" (only if shouldTrade is true),
   "stake": ${input.stakePerTrade} (only if shouldTrade is true),
   "barrier": "single digit 0-9" (ONLY for DigitsOverUnder when shouldTrade is true),
-  "reasoning": "your analysis including MACD values, digit probabilities, and green/red bar confirmation"
+  "reasoning": "your simplified analysis"
 }`;
 
       const enhancedResponse = await enhancedAI.generateStructuredWithFallback<VolatilitySingleTradeProposal>(
@@ -606,32 +298,31 @@ Return ONLY a JSON object with this exact structure:
         output.stake = input.stakePerTrade;
       }
 
-      // Enhanced validation with different requirements for digit vs traditional trades
-      if (input.instrumentIndicators && !validationError) {
-        const indicators = input.instrumentIndicators;
-        const confidenceScore = calculateTradeConfidenceScore(indicators, output, input.userSelectedTradeType, input.instrumentTicks);
+      // Validation and user settings enforcement
+      const isPatternBased = !!(input.patternTrigger && input.patternTrigger.shouldTrade);
 
-        // Different thresholds for different trade types
-        const isDigitTrade = output.derivContractType === 'DIGITOVER' || output.derivContractType === 'DIGITUNDER' ||
-                            output.derivContractType === 'DIGITEVEN' || output.derivContractType === 'DIGITODD';
+      // Enforce user execution mode settings
+      if (input.executionMode === 'turbo' && output.durationUnit === 't' && output.duration && output.duration > 1) {
+        console.log(`[AI Single Flow/${input.currentInstrument}] Enforcing Turbo mode: reducing duration from ${output.duration} to 1 tick`);
+        output.duration = 1;
+      } else if (input.executionMode === 'safe' && output.durationUnit === 't' && output.duration && output.duration < 5) {
+        console.log(`[AI Single Flow/${input.currentInstrument}] Enforcing Safe mode: increasing duration from ${output.duration} to 5 ticks`);
+        output.duration = 5;
+      }
 
-        if (isDigitTrade) {
-          // RELAXED REQUIREMENTS FOR DIGIT TRADES - NO WIN RATE CONDITIONS
-          if (confidenceScore < 1) { // Very minimal threshold - just ensure basic validation
-            validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 1/10 for digit trades (relaxed execution).`;
-            console.log(`[AI Single Flow/${input.currentInstrument}] Digit trade rejected due to extremely low confidence score: ${confidenceScore}/10`);
-          } else {
-            console.log(`[AI Single Flow/${input.currentInstrument}] Digit trade approved with confidence score: ${confidenceScore}/10 (relaxed execution)`);
-          }
-        } else {
-          // STRICT REQUIREMENTS FOR TRADITIONAL TRADES - MAINTAIN WIN RATE CONDITIONS
-          if (confidenceScore < 5) {
-            validationError = `Trade confidence score ${confidenceScore}/10 is below minimum threshold of 5/10 for 50-75% win rate target (traditional trades).`;
-            console.log(`[AI Single Flow/${input.currentInstrument}] Traditional trade rejected due to low confidence score: ${confidenceScore}/10`);
-          } else {
-            console.log(`[AI Single Flow/${input.currentInstrument}] Traditional trade approved with confidence score: ${confidenceScore}/10`);
-          }
-        }
+      // Enforce user prediction digit for DigitsOverUnder
+      if (input.userSelectedTradeType === 'DigitsOverUnder' && input.predictionDigit !== undefined && output.barrier !== input.predictionDigit.toString()) {
+        console.log(`[AI Single Flow/${input.currentInstrument}] Enforcing user prediction digit: changing barrier from ${output.barrier} to ${input.predictionDigit}`);
+        output.barrier = input.predictionDigit.toString();
+      }
+
+      // Add user settings to reasoning
+      if (output.reasoning) {
+        output.reasoning += ` [User Settings: ${input.executionMode} mode, ${input.accountType} account, Strategy: ${input.selectedStrategy || 'Auto'}]`;
+      }
+
+      if (isPatternBased) {
+        console.log(`[AI Single Flow/${input.currentInstrument}] Pattern-based trade approved with user settings enforced`);
       }
       if (input.userSelectedTradeType === 'DigitsOverUnder' && (output.barrier === undefined || output.barrier === null || !/^\d$/.test(String(output.barrier).trim()))) {
         // Enhanced barrier extraction from reasoning
@@ -673,61 +364,13 @@ Return ONLY a JSON object with this exact structure:
             validationError = `Barrier (single digit string) is mandatory and must be valid for DigitsOverUnder. Got: '${output.barrier}'. Contract type: ${output.derivContractType}`;
           }
         }
-      } else if ((input.userSelectedTradeType === 'HigherLower' || input.userSelectedTradeType === 'TouchNoTouch') && output.barrier !== undefined) {
-        console.warn(`[AI Single Flow/${input.currentInstrument}] AI provided unexpected barrier for ${input.userSelectedTradeType}. Ignoring.`);
-        delete output.barrier;
       }
       if (output.derivContractType?.startsWith("DIGIT") && output.durationUnit !== 't') {
         validationError = `Duration unit must be 't' for Digit contracts. Got '${output.durationUnit}'.`;
       }
-      // Validate Touch/No Touch duration requirements
-      if ((output.derivContractType === "ONETOUCH" || output.derivContractType === "NOTOUCH")) {
-        // For volatility indices, allow multiple duration types
-        if (input.currentInstrument.startsWith('R_') || input.currentInstrument.includes('HZ')) {
-          if (output.durationUnit === 't' && (!output.duration || output.duration < 5)) {
-            validationError = `Touch/No Touch on volatility indices requires minimum 5 ticks. Got ${output.duration}${output.durationUnit}.`;
-          } else if (output.durationUnit === 'm' && (!output.duration || output.duration < 2)) {
-            validationError = `Touch/No Touch on volatility indices requires minimum 2 minutes. Got ${output.duration}${output.durationUnit}.`;
-          } else if (output.durationUnit === 'h' && (!output.duration || output.duration < 1)) {
-            validationError = `Touch/No Touch on volatility indices requires minimum 1 hour. Got ${output.duration}${output.durationUnit}.`;
-          } else if (output.durationUnit === 'days' && (!output.duration || output.duration < 1)) {
-            validationError = `Touch/No Touch on volatility indices requires minimum 1 day. Got ${output.duration}${output.durationUnit}.`;
-          } else if (!['t', 'm', 'h', 'days'].includes(output.durationUnit || '')) {
-            validationError = `Touch/No Touch on volatility indices supports 't', 'm', 'h', or 'days' duration units. Got ${output.durationUnit}.`;
-          }
-        } else if (input.currentInstrument.startsWith('frxXAU') || input.currentInstrument.startsWith('frxXAG') ||
-                   input.currentInstrument.startsWith('frxXPT') || input.currentInstrument.startsWith('frxXPD')) {
-          // For metals, require days (minimum 1)
-          if (output.durationUnit !== 'days' || !output.duration || output.duration < 1) {
-            validationError = `Touch/No Touch on metals requires minimum 1 day duration. Got ${output.duration}${output.durationUnit}.`;
-          }
-        } else {
-          // For forex and stock indices, require days (minimum 7)
-          if (output.durationUnit !== 'days' || !output.duration || output.duration < 7) {
-            validationError = `Touch/No Touch on forex/indices requires minimum 7 days duration. Got ${output.duration}${output.durationUnit}.`;
-          }
-        }
-      }
 
-      // Validate Higher/Lower duration requirements
-      if ((output.derivContractType === "CALL" || output.derivContractType === "PUT") &&
-          input.userSelectedTradeType === 'HigherLower') {
-        // For volatility indices, allow ticks (min 5), seconds (min 15), or minutes
-        if (input.currentInstrument.startsWith('R_') || input.currentInstrument.includes('HZ')) {
-          if (output.durationUnit === 't' && (!output.duration || output.duration < 5)) {
-            validationError = `Higher/Lower on volatility indices requires minimum 5 ticks. Got ${output.duration}${output.durationUnit}.`;
-          } else if (output.durationUnit === 's' && (!output.duration || output.duration < 15)) {
-            validationError = `Higher/Lower on volatility indices requires minimum 15 seconds. Got ${output.duration}${output.durationUnit}.`;
-          } else if (!['t', 's', 'm'].includes(output.durationUnit || '')) {
-            validationError = `Higher/Lower on volatility indices supports 't', 's', or 'm' duration units. Got ${output.durationUnit}.`;
-          }
-        } else {
-          // For other instruments, require days (minimum 1)
-          if (output.durationUnit !== 'days' || !output.duration || output.duration < 1) {
-            validationError = `Higher/Lower on non-volatility instruments requires minimum 1 day duration. Got ${output.duration}${output.durationUnit}.`;
-          }
-        }
-      }
+
+
       if (validationError) {
         console.error(`[AI Single Flow/${input.currentInstrument}] Invalid trade proposal: ${validationError}`, output);
         return { instrument: input.currentInstrument as ExternalVolatilityInstrumentType, shouldTrade: false, reasoning: `AI proposed invalid trade: ${validationError}` };
@@ -747,66 +390,93 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
     outputSchema: VolatilitySessionStrategyOutputSchema,
   },
   async (input: VolatilitySessionStrategyInput): Promise<VolatilitySessionStrategyOutput> => {
-    console.log(`[AI Session Flow] Input. User Trade Type: ${input.userSelectedTradeType}, Total Stake: ${input.totalSessionStake}, Instruments: ${input.availableInstruments.join(', ')}`);
-    const tradesToExecute: VolatilitySingleTradeProposal[] = [];
-    let totalStakeAllocated = 0;
-    const maxTradesPerSession = Math.max(1, Math.min(input.availableInstruments.length, 5));
-    let tradesProposedCount = 0;
+    // Use selectedInstrument if provided, otherwise fall back to first available instrument
+    const targetInstrument = input.selectedInstrument || input.availableInstruments[0];
 
-    const baseStakePerTrade = input.totalSessionStake > 0 && input.availableInstruments.length > 0
-        ? parseFloat((input.totalSessionStake / Math.min(input.availableInstruments.length, maxTradesPerSession)).toFixed(2))
-        : 0.35;
+    console.log(`[AI Session Flow] SINGLE INSTRUMENT TRADING - Target: ${targetInstrument}`);
+    console.log(`[AI Session Flow] User Settings - Trade Type: ${input.userSelectedTradeType}, Total Stake: ${input.totalSessionStake}, Execution Mode: ${input.executionMode}, Bulk Trades: ${input.numberOfBulkTrades}, Account: ${input.accountType}, Strategy: ${input.selectedStrategy}`);
 
-    if (baseStakePerTrade < 0.35 && input.availableInstruments.length > 0) {
-        console.warn(`[AI Session Flow] Calculated base stake per trade ($${baseStakePerTrade}) is below Deriv minimum of $0.35.`);
+    // Validate that we have the selected instrument data
+    if (!input.instrumentTicks[targetInstrument] || input.instrumentTicks[targetInstrument].length === 0) {
+      console.error(`[AI Session Flow] No tick data available for selected instrument: ${targetInstrument}`);
+      return {
+        tradesToExecute: [],
+        overallReasoning: `No tick data available for selected instrument ${targetInstrument}. Please ensure the instrument is properly selected and streaming.`
+      };
     }
 
-    let overallReasoning = `AI session for ${input.userSelectedTradeType} with total stake $${input.totalSessionStake.toFixed(2)}. `;
+    // Check for pattern-based session strategy first
+    if (input.patternTrigger && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
+      console.log(`[AI Session Flow] Using pattern-based session strategy for ${targetInstrument}:`, input.patternTrigger);
 
-    // For DigitsOverUnder, limit to 2 instruments to prevent timeout (each takes ~25-30 seconds)
-    const instrumentsToProcess = input.userSelectedTradeType === 'DigitsOverUnder'
-      ? input.availableInstruments.slice(0, 2)
-      : input.availableInstruments;
+      // Calculate stake per trade based on bulk trades setting
+      const stakePerTrade = input.totalSessionStake / (input.numberOfBulkTrades || 1);
 
-    console.log(`[AI Session Flow] Processing ${instrumentsToProcess.length} instruments for ${input.userSelectedTradeType}`);
+      // Create multiple trades based on bulk trades setting
+      const patternBasedTrades: VolatilitySingleTradeProposal[] = [];
+      for (let i = 0; i < (input.numberOfBulkTrades || 1); i++) {
+        patternBasedTrades.push({
+          instrument: targetInstrument as ExternalVolatilityInstrumentType,
+          shouldTrade: true,
+          derivContractType: input.patternTrigger.contractType,
+          duration: input.executionMode === 'turbo' ? 1 : 5, // Turbo: 1 tick, Safe: 5 ticks
+          durationUnit: 't',
+          stake: Math.max(0.35, stakePerTrade), // Ensure minimum stake
+          reasoning: `PATTERN-BASED TRADE ${i + 1}/${input.numberOfBulkTrades}: ${input.patternTrigger.reasoning}. Execution Mode: ${input.executionMode}. Strategy: ${input.selectedStrategy}. Account: ${input.accountType}. Confidence: ${(input.patternTrigger.confidence || 1) * 100}%.`
+        });
+      }
 
-    // Calculate proper stake per trade based on number of instruments to process
-    const adjustedBaseStakePerTrade = input.totalSessionStake / Math.min(instrumentsToProcess.length, maxTradesPerSession);
-    console.log(`[AI Session Flow] Adjusted stake per trade: $${adjustedBaseStakePerTrade.toFixed(2)} (Total: $${input.totalSessionStake}, Instruments: ${instrumentsToProcess.length})`);
+      return {
+        tradesToExecute: patternBasedTrades,
+        overallReasoning: `Pattern-based session strategy for ${input.userSelectedTradeType} on ${targetInstrument}. ${input.patternTrigger.reasoning}. Execution: ${input.executionMode} mode with ${input.numberOfBulkTrades} bulk trades. Total stake: $${input.totalSessionStake.toFixed(2)}. Account: ${input.accountType}.`
+      };
+    }
 
-    for (const instrument of instrumentsToProcess) {
-      // Early exit conditions
-      if (tradesProposedCount >= maxTradesPerSession && totalStakeAllocated >= input.totalSessionStake * 0.95) {
-        overallReasoning += `Max trades or stake allocation reached. `;
+    // SINGLE INSTRUMENT TRADING - Only process the user-selected instrument
+    const tradesToExecute: VolatilitySingleTradeProposal[] = [];
+    let totalStakeAllocated = 0;
+
+    // Calculate stake per trade based on bulk trades setting
+    const numberOfTrades = input.numberOfBulkTrades || 1;
+    const stakePerTrade = Math.max(0.35, input.totalSessionStake / numberOfTrades);
+
+    console.log(`[AI Session Flow] SINGLE INSTRUMENT SESSION - Processing ${targetInstrument} with ${numberOfTrades} trades, $${stakePerTrade.toFixed(2)} per trade`);
+
+    let overallReasoning = `AI session for ${input.userSelectedTradeType} on ${targetInstrument} with total stake $${input.totalSessionStake.toFixed(2)}. Execution Mode: ${input.executionMode}, Bulk Trades: ${numberOfTrades}, Account: ${input.accountType}. `;
+
+    // Process only the selected instrument for the specified number of bulk trades
+    for (let tradeIndex = 0; tradeIndex < numberOfTrades; tradeIndex++) {
+      // Early exit if we've allocated all stake
+      if (totalStakeAllocated >= input.totalSessionStake * 0.95) {
+        overallReasoning += `Stake allocation complete. `;
         break;
       }
 
-      // For DigitsOverUnder, exit early if we have enough trades to prevent timeout
-      if (input.userSelectedTradeType === 'DigitsOverUnder' && tradesProposedCount >= 2) {
-        overallReasoning += `DigitsOverUnder: Limiting to 2 trades to prevent timeout. `;
-        break;
-      }
-
-      const singleInstrumentTicks = input.instrumentTicks[instrument] || [];
-      const singleInstrumentIndicators = input.instrumentIndicators?.[instrument];
+      const singleInstrumentTicks = input.instrumentTicks[targetInstrument] || [];
+      const singleInstrumentIndicators = input.instrumentIndicators?.[targetInstrument];
 
       if (singleInstrumentTicks.length < 5) {
-        console.log(`[AI Session Flow] Skipping ${instrument} due to insufficient tick data (${singleInstrumentTicks.length}).`);
-        overallReasoning += `Skipped ${instrument} (insufficient data). `;
-        continue;
+        console.log(`[AI Session Flow] Insufficient tick data for ${targetInstrument} (${singleInstrumentTicks.length}). Ending session.`);
+        overallReasoning += `Insufficient tick data for ${targetInstrument}. `;
+        break;
       }
 
-      const currentStakeForThisTrade = Math.max(0.35, adjustedBaseStakePerTrade);
-
       const singleTradeInput: VolatilitySingleTradeStrategyInput = {
-        currentInstrument: instrument,
+        currentInstrument: targetInstrument,
         userSelectedTradeType: input.userSelectedTradeType,
-        stakePerTrade: currentStakeForThisTrade,
+        stakePerTrade: stakePerTrade,
         instrumentTicks: singleInstrumentTicks,
         instrumentIndicators: singleInstrumentIndicators,
+
+        // Pass all user settings to single trade
+        executionMode: input.executionMode || 'safe',
+        accountType: input.accountType || 'demo',
+        selectedStrategy: input.selectedStrategy,
+        predictionDigit: input.predictionDigit,
+        patternTrigger: input.patternTrigger,
       };
 
-      console.log(`[AI Session Flow] Calling single trade decision for ${instrument} with stake ${currentStakeForThisTrade}`);
+      console.log(`[AI Session Flow] Calling single trade decision ${tradeIndex + 1}/${numberOfTrades} for ${targetInstrument} with stake $${stakePerTrade.toFixed(2)}`);
 
       try {
         const decision = await generateVolatilitySingleTradeDecision(singleTradeInput);
@@ -815,22 +485,28 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
           const actualStakeForThisTrade = Math.min(decision.stake, input.totalSessionStake - totalStakeAllocated);
 
           if (actualStakeForThisTrade >= 0.35) {
-            decision.stake = parseFloat(actualStakeForThisTrade.toFixed(2));
-            tradesToExecute.push(decision);
-            totalStakeAllocated += decision.stake;
-            tradesProposedCount++;
-            overallReasoning += `For ${instrument}: ${decision.reasoning} (Stake: $${decision.stake}). `;
-            console.log(`[AI Session Flow] Trade PROPOSED for ${instrument}. Stake: $${decision.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
+            // Apply execution mode settings to the trade
+            const finalTrade = {
+              ...decision,
+              stake: parseFloat(actualStakeForThisTrade.toFixed(2)),
+              duration: input.executionMode === 'turbo' ? 1 : (decision.duration || 5), // Turbo: 1 tick, Safe: original or 5 ticks
+              reasoning: `${decision.reasoning} [Trade ${tradeIndex + 1}/${numberOfTrades}, ${input.executionMode} mode, ${input.accountType} account]`
+            };
+
+            tradesToExecute.push(finalTrade);
+            totalStakeAllocated += finalTrade.stake;
+            overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrument}: ${decision.reasoning} (Stake: $${finalTrade.stake}, Mode: ${input.executionMode}). `;
+            console.log(`[AI Session Flow] Trade ${tradeIndex + 1} PROPOSED for ${targetInstrument}. Stake: $${finalTrade.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
           } else {
-            overallReasoning += `Skipped proposed trade for ${instrument} (adjusted stake $${actualStakeForThisTrade.toFixed(2)} too low). `;
+            overallReasoning += `Trade ${tradeIndex + 1}: Insufficient remaining stake ($${actualStakeForThisTrade.toFixed(2)} < $0.35). `;
           }
         } else {
-          overallReasoning += `For ${instrument}: No trade recommended (${decision.reasoning}). `;
+          overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrument}: No trade recommended (${decision.reasoning}). `;
         }
       } catch (error) {
-        console.error(`[AI Session Flow] Error processing ${instrument}:`, error);
-        overallReasoning += `Error processing ${instrument}: ${(error as Error).message}. `;
-        // Continue with next instrument instead of failing entire session
+        console.error(`[AI Session Flow] Error processing trade ${tradeIndex + 1} for ${targetInstrument}:`, error);
+        overallReasoning += `Error processing trade ${tradeIndex + 1}: ${(error as Error).message}. `;
+        // Continue with next trade instead of failing entire session
       }
 
       if (totalStakeAllocated >= input.totalSessionStake * 0.98) {
@@ -889,214 +565,22 @@ export const generateVolatilityTradingStrategy = ai.defineFlow(
   }
 );
 
-// NEW STRATEGY CONFIDENCE SCORING - SYSTEM DIRECTIVE IMPLEMENTATION
+// Simplified confidence scoring for pattern-based trades
 function calculateTradeConfidenceScore(
-  indicators: InstrumentIndicatorData,
+  indicators: any,
   tradeProposal: VolatilitySingleTradeProposal,
   tradeType: UserTradeType,
-  ticks?: PriceTick[]
+  ticks?: any[],
+  isPatternBased?: boolean
 ): number {
-  let score = 0;
-  const isDigitOver = tradeProposal.derivContractType === 'DIGITOVER';
-  const isDigitUnder = tradeProposal.derivContractType === 'DIGITUNDER';
-  const isDigitEven = tradeProposal.derivContractType === 'DIGITEVEN';
-  const isDigitOdd = tradeProposal.derivContractType === 'DIGITODD';
-  const isBullish = tradeProposal.derivContractType === 'CALL' || tradeProposal.derivContractType === 'ONETOUCH';
-  const isBearish = tradeProposal.derivContractType === 'PUT' || tradeProposal.derivContractType === 'NOTOUCH';
-
-  // 🚨 NEW STRATEGY SCORING - SYSTEM DIRECTIVE IMPLEMENTATION 🚨
-
-  // 1. MACD SIGNAL ANALYSIS (Weight: 40% - PRIMARY INDICATOR)
-  let macdScore = 0;
-  if (indicators.macd) {
-    const { macd: macdLine } = indicators.macd;
-    // OVER/UNDER Strategy Implementation
-    if (isDigitOver && macdLine >= 1 && macdLine <= 40) {
-      macdScore = 4; // Perfect MACD signal for DIGITOVER (40% of 10 points)
-    } else if (isDigitUnder && macdLine <= -1 && macdLine >= -40) {
-      macdScore = 4; // Perfect MACD signal for DIGITUNDER (40% of 10 points)
-    } else if ((isDigitOver || isBullish) && macdLine > 0) {
-      macdScore = 2; // Partial bullish signal
-    } else if ((isDigitUnder || isBearish) && macdLine < 0) {
-      macdScore = 2; // Partial bearish signal
-    }
-  }
-  score += macdScore;
-
-  // 2. GREEN BAR CONFIRMATION (Weight: 30% - MANDATORY FOR ENTRY)
-  let greenBarScore = 0;
-  // Simulated green bar analysis based on price momentum
-  if (indicators.rsi !== undefined) {
-    // Green bar simulation: RSI showing momentum in trade direction
-    if ((isDigitOver || isDigitEven || isBullish) && indicators.rsi > 45) {
-      greenBarScore = 3; // Green bar confirmed for bullish trades
-    } else if ((isDigitUnder || isDigitOdd || isBearish) && indicators.rsi < 55) {
-      greenBarScore = 3; // Green bar confirmed for bearish trades
-    }
-  }
-  score += greenBarScore;
-
-  // 3. DIGIT PROBABILITY ANALYSIS (Weight: 20% - SECONDARY INDICATOR)
-  let digitScore = 0;
-  if (ticks && ticks.length >= 10) {
-    const digitAnalysis = analyzeDigitProbabilities(ticks);
-
-    if (isDigitEven || isDigitOdd) {
-      // Even/Odd strategy - check if bias supports trade direction
-      if ((isDigitEven && digitAnalysis.evenOddBias === 'even') ||
-          (isDigitOdd && digitAnalysis.evenOddBias === 'odd')) {
-        digitScore = 2; // Strong bias supports trade
-      } else if (digitAnalysis.evenOddBias === 'neutral') {
-        digitScore = 1; // Neutral bias - partial score
-      }
-    } else if (isDigitOver || isDigitUnder) {
-      // Over/Under strategy - check specific digit probabilities
-      const barrier = tradeProposal.barrier ? parseInt(tradeProposal.barrier) : 5;
-      const overUnderBias = digitAnalysis.overUnderBias[barrier.toString()];
-
-      if ((isDigitOver && overUnderBias === 'over') ||
-          (isDigitUnder && overUnderBias === 'under')) {
-        digitScore = 2; // Strong bias supports trade
-      } else if (overUnderBias === 'neutral') {
-        digitScore = 1; // Neutral bias - partial score
-      }
-    }
-  } else {
-    // Fallback scoring when insufficient tick data
-    if (isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) {
-      digitScore = 1; // Base score for digit trades
-    }
-  }
-  score += digitScore;
-
-  // 4. SUPPORTING TECHNICAL INDICATORS (Weight: 10% - CONFIRMATION)
-  let supportScore = 0;
-
-  // Moving Average confirmation
-  if (indicators.ema !== undefined && indicators.bollingerBands) {
-    const currentPrice = indicators.bollingerBands.middle;
-    if ((isDigitOver || isBullish) && currentPrice >= indicators.ema) {
-      supportScore += 0.5; // MA supports bullish direction
-    } else if ((isDigitUnder || isBearish) && currentPrice <= indicators.ema) {
-      supportScore += 0.5; // MA supports bearish direction
-    }
+  // Pattern-based trades have high confidence by default
+  if (isPatternBased && (tradeProposal.derivContractType === 'DIGITEVEN' || tradeProposal.derivContractType === 'DIGITODD')) {
+    console.log(`[Confidence] Pattern-based ${tradeProposal.derivContractType} trade - using high confidence score`);
+    return 8.5; // High confidence for pattern-based trades (out of 10)
   }
 
-  // Additional momentum confirmation
-  if (indicators.williamsR !== undefined) {
-    if ((isDigitOver || isBullish) && indicators.williamsR > -80) {
-      supportScore += 0.5; // Williams %R supports bullish
-    } else if ((isDigitUnder || isBearish) && indicators.williamsR < -20) {
-      supportScore += 0.5; // Williams %R supports bearish
-    }
-  }
-
-  score += supportScore;
-
-  // 🚨 REQUIREMENTS CHECK - DIFFERENT FOR DIGIT VS TRADITIONAL TRADES 🚨
-
-  // RELAXED REQUIREMENTS FOR DIGIT STRATEGIES - NO WIN RATE CONDITIONS
-  if (isDigitEven || isDigitOdd || isDigitOver || isDigitUnder) {
-    // For digit trades, ensure minimum score of 1 (very relaxed)
-    // Allow trades to proceed even with minimal technical confirmation
-    // This enables the new strategies to execute freely and learn
-
-    // Only fail if absolutely no signals present
-    if (score === 0) {
-      score = 1; // Give minimum score to allow execution
-    }
-
-    // Don't enforce strict MACD or green bar requirements
-    // Don't enforce digit probability requirements
-    // Let the AI learn and adapt through actual trading
-
-  } else {
-    // STRICT REQUIREMENTS FOR TRADITIONAL TRADES (Touch/NoTouch, RiseFall, HigherLower)
-    const minimumScore = 6; // Keep 60% confidence minimum for traditional trades
-
-    // Traditional trades require multiple confirmations
-    if (greenBarScore === 0) {
-      score = 0; // Fail traditional trades without green bar confirmation
-    }
-
-    // Apply minimum score threshold for traditional trades only
-    if (score < minimumScore) {
-      score = 0; // Fail traditional trade if minimum confidence not met
-    }
-  }
-
-  return Math.min(score, 10); // Cap at 10
+  // Simplified scoring for other trades
+  return 6.0; // Default moderate confidence
 }
 
-// NEW FUNCTION: Digit Probability Analysis - System Directive Implementation
-function analyzeDigitProbabilities(ticks: PriceTick[]): {
-  digitProbabilities: Record<string, number>;
-  evenOddBias: 'even' | 'odd' | 'neutral';
-  overUnderBias: Record<string, 'over' | 'under' | 'neutral'>;
-} {
-  if (ticks.length < 10) {
-    // Not enough data for reliable analysis
-    return {
-      digitProbabilities: {},
-      evenOddBias: 'neutral',
-      overUnderBias: {}
-    };
-  }
 
-  // Extract last digits from recent ticks
-  const lastDigits = ticks.slice(-50).map(tick => {
-    const priceStr = tick.price.toString();
-    return priceStr.charAt(priceStr.length - 1);
-  });
-
-  // Calculate digit frequency
-  const digitCounts: Record<string, number> = {};
-  for (let i = 0; i <= 9; i++) {
-    digitCounts[i.toString()] = 0;
-  }
-
-  lastDigits.forEach(digit => {
-    if (digitCounts[digit] !== undefined) {
-      digitCounts[digit]++;
-    }
-  });
-
-  // Calculate probabilities
-  const digitProbabilities: Record<string, number> = {};
-  const totalTicks = lastDigits.length;
-
-  for (let i = 0; i <= 9; i++) {
-    const digit = i.toString();
-    digitProbabilities[digit] = (digitCounts[digit] / totalTicks) * 100;
-  }
-
-  // Analyze even/odd bias
-  const evenCount = [0, 2, 4, 6, 8].reduce((sum, digit) => sum + digitCounts[digit.toString()], 0);
-  const oddCount = [1, 3, 5, 7, 9].reduce((sum, digit) => sum + digitCounts[digit.toString()], 0);
-
-  let evenOddBias: 'even' | 'odd' | 'neutral' = 'neutral';
-  if (evenCount > oddCount * 1.2) evenOddBias = 'even';
-  else if (oddCount > evenCount * 1.2) evenOddBias = 'odd';
-
-  // Analyze over/under bias for each threshold
-  const overUnderBias: Record<string, 'over' | 'under' | 'neutral'> = {};
-
-  for (let threshold = 0; threshold <= 9; threshold++) {
-    const overCount = lastDigits.filter(digit => parseInt(digit) > threshold).length;
-    const underCount = lastDigits.filter(digit => parseInt(digit) < threshold).length;
-
-    if (overCount > underCount * 1.2) {
-      overUnderBias[threshold.toString()] = 'over';
-    } else if (underCount > overCount * 1.2) {
-      overUnderBias[threshold.toString()] = 'under';
-    } else {
-      overUnderBias[threshold.toString()] = 'neutral';
-    }
-  }
-
-  return {
-    digitProbabilities,
-    evenOddBias,
-    overUnderBias
-  };
-}

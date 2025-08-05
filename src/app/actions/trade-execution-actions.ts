@@ -143,6 +143,11 @@ export interface VolatilityTradeOptions {
   selectedInstrument: string;
   predictionDigit?: number | null; // For Over/Under trade type
   selectedStrategy?: string; // Strategy selection (Even/Odd, Rise/Fall, Over/Under)
+  patternTrigger?: {
+    shouldTrade: boolean;
+    contractType: string;
+    reasoning: string;
+  }; // Pattern-based trade trigger
 }
 
 // Helper function to wait for next tick using WebSocket
@@ -179,7 +184,8 @@ async function executeTradesWithTickTiming(
   executionMode: 'turbo' | 'safe',
   numberOfBulkTrades: number,
   predictionDigit?: number | null,
-  selectedStrategy?: string
+  selectedStrategy?: string,
+  patternTrigger?: {shouldTrade: boolean, contractType: string, reasoning: string} | null
 ): Promise<VolatilityTradeExecutionResult[]> {
   const results: VolatilityTradeExecutionResult[] = [];
 
@@ -199,7 +205,8 @@ async function executeTradesWithTickTiming(
         instrumentLatestSpot,
         instrumentATR,
         predictionDigit,
-        selectedStrategy
+        selectedStrategy,
+        patternTrigger
       );
       results.push(result);
     }
@@ -235,7 +242,8 @@ async function executeTradesWithTickTiming(
           instrumentLatestSpot,
           instrumentATR,
           predictionDigit,
-          selectedStrategy
+          selectedStrategy,
+          patternTrigger
         );
         results.push(result);
       }
@@ -259,7 +267,8 @@ async function executeTradesWithTickTiming(
           instrumentLatestSpot,
           instrumentATR,
           predictionDigit,
-          selectedStrategy
+          selectedStrategy,
+          patternTrigger
         );
         results.push(result);
       }
@@ -288,7 +297,8 @@ async function executeTradesWithTickTiming(
             instrumentLatestSpot,
             instrumentATR,
             predictionDigit,
-            selectedStrategy
+            selectedStrategy,
+            patternTrigger
           );
           results.push(result);
         }
@@ -311,7 +321,8 @@ async function executeSingleTrade(
   instrumentLatestSpot: Record<string, number | undefined>,
   instrumentATR: Record<string, number | undefined>,
   predictionDigit?: number | null,
-  selectedStrategy?: string
+  selectedStrategy?: string,
+  patternTrigger?: {shouldTrade: boolean, contractType: string, reasoning: string} | null
 ): Promise<VolatilityTradeExecutionResult> {
   let tradeDetailsForApi: TradeDetails | null = null;
   let currentApiSymbol: string | null = null;
@@ -448,6 +459,8 @@ async function executeSingleTrade(
           totalSessionStake: totalStakeFromUser,
           selectedStrategy: selectedStrategy,
           finalContractType: finalContractType,
+          patternTrigger: patternTrigger,
+          isPatternBasedTrade: !!patternTrigger,
         }
       },
     });
@@ -489,6 +502,7 @@ export async function executeVolatilityAiTradeLoop(
   const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
   const predictionDigit = options?.predictionDigit || null;
   const selectedStrategy = options?.selectedStrategy || '';
+  const patternTrigger = options?.patternTrigger || null;
 
   const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
   const results: VolatilityTradeExecutionResult[] = [];
@@ -583,25 +597,61 @@ export async function executeVolatilityAiTradeLoop(
   }
 
   const aiSessionInput: VolatilitySessionStrategyInput = {
-    availableInstruments: availableInstrumentsWithData,
+    // Single instrument selection - use the user-selected instrument
+    selectedInstrument: selectedInstrument,
+    availableInstruments: availableInstrumentsWithData, // Keep for backward compatibility
     userSelectedTradeType: userSelectedTradeType,
     totalSessionStake: totalStakeFromUser,
     instrumentTicks: instrumentTicksForAI,
     instrumentIndicators: cleanedInstrumentIndicators,
+
+    // Pass all user settings from volatility trading controls
+    executionMode: executionMode,
+    numberOfBulkTrades: numberOfBulkTrades,
+    accountType: selectedAccountType,
+    selectedStrategy: selectedStrategy,
+    predictionDigit: predictionDigit,
+    patternTrigger: patternTrigger,
   };
 
   console.log(`[TradeAction/Session] Calling AI for session strategy. TradeType: ${userSelectedTradeType}, TotalStake: ${totalStakeFromUser}`);
 
   try {
-    // Add timeout to prevent Vercel timeout
-    // DigitsOverUnder needs more time due to complex tick analysis and barrier validation
-    const timeoutDuration = userSelectedTradeType === 'DigitsOverUnder' ? 58000 : 45000;
-    const aiSessionStrategy = await Promise.race([
-      generateVolatilitySessionStrategy(aiSessionInput),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`AI session timed out after ${timeoutDuration/1000} seconds`)), timeoutDuration);
-      })
-    ]);
+    let aiSessionStrategy;
+
+    // Use pattern-based strategy for Even/Odd trades with pattern triggers
+    if (patternTrigger && userSelectedTradeType === 'DigitsEvenOdd') {
+      console.log(`[TradeAction/Session] Using pattern-based strategy:`, patternTrigger);
+
+      // Create pattern-based trade proposals
+      const stakePerTrade = totalStakeFromUser / numberOfBulkTrades;
+      const tradesToExecute = Array.from({ length: numberOfBulkTrades }, (_, index) => ({
+        derivContractType: patternTrigger.contractType,
+        stake: stakePerTrade,
+        duration: 5, // 5 ticks for digit trades
+        durationUnit: 't' as const,
+        barrier: undefined,
+        reasoning: `${patternTrigger.reasoning} (Trade ${index + 1}/${numberOfBulkTrades})`
+      }));
+
+      aiSessionStrategy = {
+        tradesToExecute,
+        overallReasoning: `Pattern-based ${patternTrigger.contractType} strategy: ${patternTrigger.reasoning}`,
+        totalStake: totalStakeFromUser,
+        numberOfTrades: numberOfBulkTrades,
+        success: true
+      };
+    } else {
+      // Add timeout to prevent Vercel timeout
+      // DigitsOverUnder needs more time due to complex tick analysis and barrier validation
+      const timeoutDuration = userSelectedTradeType === 'DigitsOverUnder' ? 58000 : 45000;
+      aiSessionStrategy = await Promise.race([
+        generateVolatilitySessionStrategy(aiSessionInput),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`AI session timed out after ${timeoutDuration/1000} seconds`)), timeoutDuration);
+        })
+      ]);
+    }
     console.log(`[TradeAction/Session] AI Session Strategy received. Overall Reasoning: ${aiSessionStrategy.overallReasoning}`);
     console.log(`[TradeAction/Session] AI proposes ${aiSessionStrategy.tradesToExecute.length} trades.`);
 
@@ -630,7 +680,8 @@ export async function executeVolatilityAiTradeLoop(
       executionMode,
       numberOfBulkTrades,
       predictionDigit,
-      selectedStrategy
+      selectedStrategy,
+      patternTrigger
     );
 
     results.push(...executionResults);

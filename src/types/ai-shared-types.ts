@@ -34,6 +34,16 @@ export const UserTradeTypeSchema = z.enum([
 ]);
 export type UserTradeType = z.infer<typeof UserTradeTypeSchema>;
 
+// Pattern trigger schema for AI integration
+export const PatternTriggerSchema = z.object({
+  shouldTrade: z.boolean(),
+  contractType: z.string(), // DIGITEVEN or DIGITODD
+  reasoning: z.string(),
+  confidence: z.number().min(0).max(1).optional(), // Pattern detection confidence (0-1)
+  patternType: z.enum(['even_reversal', 'odd_reversal']).optional(), // Type of pattern detected
+}).describe("Pattern-based trade trigger information for Even/Odd strategies");
+export type PatternTrigger = z.infer<typeof PatternTriggerSchema>;
+
 // Schemas for Volatility Single Trade Strategy Flow
 export const VolatilitySingleTradeStrategyInputSchema = z.object({
   currentInstrument: VolatilityInstrumentTypeSchema,
@@ -41,6 +51,15 @@ export const VolatilitySingleTradeStrategyInputSchema = z.object({
   stakePerTrade: z.number().min(0.01),
   instrumentTicks: z.array(PriceTickSchema),
   instrumentIndicators: InstrumentIndicatorDataSchema.optional(),
+
+  // User settings from AI Auto-Trading Controls
+  executionMode: z.enum(['turbo', 'safe']).default('safe'), // Turbo vs Safe execution
+  accountType: z.enum(['demo', 'real']).default('demo'), // Account type selection
+  selectedStrategy: z.string().optional(), // User-selected strategy (Even/Odd, etc.)
+  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+
+  // Pattern-based trading
+  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger
 });
 export type VolatilitySingleTradeStrategyInput = z.infer<typeof VolatilitySingleTradeStrategyInputSchema>;
 
@@ -58,11 +77,23 @@ export type VolatilitySingleTradeProposal = z.infer<typeof VolatilitySingleTrade
 
 // Schemas for Volatility Session Strategy Flow
 export const VolatilitySessionStrategyInputSchema = z.object({
-  availableInstruments: z.array(VolatilityInstrumentTypeSchema),
+  // Single instrument selection (user-selected volatility index)
+  selectedInstrument: VolatilityInstrumentTypeSchema, // Primary user-selected instrument
+  availableInstruments: z.array(VolatilityInstrumentTypeSchema), // Keep for backward compatibility
   userSelectedTradeType: UserTradeTypeSchema,
   totalSessionStake: z.number().min(0.35),
   instrumentTicks: z.record(VolatilityInstrumentTypeSchema, z.array(PriceTickSchema)),
   instrumentIndicators: z.record(VolatilityInstrumentTypeSchema, InstrumentIndicatorDataSchema.optional()).optional(),
+
+  // User settings from AI Auto-Trading Controls
+  executionMode: z.enum(['turbo', 'safe']).default('safe'), // Turbo vs Safe execution
+  numberOfBulkTrades: z.number().min(1).max(20).default(1), // Bulk trades setting (1-20)
+  accountType: z.enum(['demo', 'real']).default('demo'), // Account type selection
+  selectedStrategy: z.string().optional(), // User-selected strategy (Even/Odd, etc.)
+  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+
+  // Pattern-based trading
+  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger for session
 });
 export type VolatilitySessionStrategyInput = z.infer<typeof VolatilitySessionStrategyInputSchema>;
 
@@ -125,8 +156,16 @@ export const VolatilityStrategyPromptInputSchema = z.object({
   stakePerTrade: z.number(),
   instrumentTicks: z.array(PriceTickSchema), // Ticks for the *current* instrument for the prompt
   formattedIndicators: PromptFormattedInstrumentIndicatorSchema.nullable().optional(), // Formatted indicators for the *current* instrument
-  // Fields from VolatilitySessionStrategyInputSchema that might be relevant context for the prompt
+
+  // User settings context for AI decision-making
+  executionMode: z.enum(['turbo', 'safe']).optional(), // Turbo vs Safe execution mode
+  accountType: z.enum(['demo', 'real']).optional(), // Account type selection
+  selectedStrategy: z.string().optional(), // User-selected strategy for prompt context
+  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+
+  // Session context
   availableInstruments: z.array(VolatilityInstrumentTypeSchema).optional(),
   totalSessionStake: z.number().optional(),
+  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger for prompt context
 });
 export type VolatilityStrategyPromptInput = z.infer<typeof VolatilityStrategyPromptInputSchema>;

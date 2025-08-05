@@ -120,6 +120,15 @@ export default function VolatilityTradingPage() {
   // State for strategy selection
   const [selectedStrategy, setSelectedStrategy] = useState<string>('');
 
+  // State for pattern analysis
+  const [patternAnalysis, setPatternAnalysis] = useState({
+    evenContinuous: 0,
+    oddContinuous: 0,
+    evenReversals: 0,
+    oddReversals: 0,
+    lastAnalyzedLength: 0
+  });
+
 
 
   // State for real-time price streaming for trade type cards
@@ -237,6 +246,178 @@ export default function VolatilityTradingPage() {
   const availableStrategies = useMemo(() => {
     return getStrategyOptions(selectedUserTradeTypeForLoop);
   }, [selectedUserTradeTypeForLoop, getStrategyOptions]);
+
+  // Pattern analysis functions
+  const analyzePatterns = useCallback((ticks: Array<{price: number, digit: number, timestamp: number}>) => {
+    if (ticks.length < 4) return { evenContinuous: 0, oddContinuous: 0, evenReversals: 0, oddReversals: 0 };
+
+    // Analyze last 200 ticks (or all available if less than 200)
+    const ticksToAnalyze = ticks.slice(-200);
+    let evenContinuous = 0;
+    let oddContinuous = 0;
+    let evenReversals = 0;
+    let oddReversals = 0;
+
+    // Track continuous patterns (2+ consecutive same parity)
+    let currentStreak = 1;
+    let currentParity = ticksToAnalyze[0].digit % 2; // 0 for even, 1 for odd
+
+    for (let i = 1; i < ticksToAnalyze.length; i++) {
+      const tickParity = ticksToAnalyze[i].digit % 2;
+
+      if (tickParity === currentParity) {
+        currentStreak++;
+      } else {
+        // Streak ended, count if it was 2 or more
+        if (currentStreak >= 2) {
+          if (currentParity === 0) {
+            evenContinuous++;
+          } else {
+            oddContinuous++;
+          }
+        }
+
+        // Check for reversal pattern (3+ consecutive followed by opposite)
+        if (currentStreak >= 3) {
+          if (currentParity === 1 && tickParity === 0) {
+            evenReversals++; // 3+ odd followed by even
+          } else if (currentParity === 0 && tickParity === 1) {
+            oddReversals++; // 3+ even followed by odd
+          }
+        }
+
+        currentStreak = 1;
+        currentParity = tickParity;
+      }
+    }
+
+    // Check final streak
+    if (currentStreak >= 2) {
+      if (currentParity === 0) {
+        evenContinuous++;
+      } else {
+        oddContinuous++;
+      }
+    }
+
+    return { evenContinuous, oddContinuous, evenReversals, oddReversals };
+  }, []);
+
+  // Check for pattern-based trade triggers
+  const checkPatternTriggers = useCallback((ticks: Array<{price: number, digit: number, timestamp: number}>) => {
+    if (ticks.length < 4 || selectedUserTradeTypeForLoop !== 'DigitsEvenOdd' || !selectedStrategy) {
+      return null;
+    }
+
+    const recentTicks = ticks.slice(-4); // Last 4 ticks for pattern detection
+    const currentTick = recentTicks[recentTicks.length - 1];
+    const previousTicks = recentTicks.slice(0, -1); // Last 3 ticks before current
+
+    const currentDigitIsEven = currentTick.digit % 2 === 0;
+
+    // Check if last 3 ticks have same parity
+    const previousParities = previousTicks.map(tick => tick.digit % 2);
+    const allPreviousEven = previousParities.every(parity => parity === 0);
+    const allPreviousOdd = previousParities.every(parity => parity === 1);
+
+    // Even strategy trigger: 3+ consecutive Odd digits followed by Even digit
+    if (selectedStrategy === 'Even' && allPreviousOdd && currentDigitIsEven) {
+      return {
+        shouldTrade: true,
+        contractType: 'DIGITEVEN',
+        reasoning: `Pattern trigger: 3 consecutive Odd digits (${previousTicks.map(t => t.digit).join(',')}) followed by Even digit (${currentTick.digit})`
+      };
+    }
+
+    // Odd strategy trigger: 3+ consecutive Even digits followed by Odd digit
+    if (selectedStrategy === 'Odd' && allPreviousEven && !currentDigitIsEven) {
+      return {
+        shouldTrade: true,
+        contractType: 'DIGITODD',
+        reasoning: `Pattern trigger: 3 consecutive Even digits (${previousTicks.map(t => t.digit).join(',')}) followed by Odd digit (${currentTick.digit})`
+      };
+    }
+
+    return null;
+  }, [selectedUserTradeTypeForLoop, selectedStrategy]);
+
+  // Handle pattern-triggered trades
+  const handlePatternTriggeredTrade = useCallback(async (trigger: {shouldTrade: boolean, contractType: string, reasoning: string}) => {
+    if (!userInfo?.id || !selectedDerivAccountType) {
+      console.log('[VolatilityPage] Pattern trigger ignored: missing user info');
+      return;
+    }
+
+    // Get the appropriate API token and account ID
+    const userDerivApiToken = selectedDerivAccountType === 'demo' ? userInfo.derivDemoApiToken : userInfo.derivRealApiToken;
+    const targetAccountId = selectedDerivAccountType === 'demo' ? userInfo.derivDemoAccountId : userInfo.derivRealAccountId;
+
+    if (!userDerivApiToken || !targetAccountId) {
+      console.log('[VolatilityPage] Pattern trigger ignored: missing token or account ID');
+      return;
+    }
+
+    try {
+      console.log('[VolatilityPage] Executing pattern-triggered trade:', trigger);
+
+      // Calculate stake per trade based on bulk trades setting
+      const stakePerTrade = autoTradeTotalStake / numberOfBulkTrades;
+
+      // Execute the pattern-triggered trade
+      const results = await executeVolatilityAiTradeLoop(
+        userDerivApiToken,
+        targetAccountId,
+        selectedDerivAccountType,
+        userInfo.id,
+        'DigitsEvenOdd',
+        stakePerTrade,
+        {
+          executionMode,
+          numberOfBulkTrades: 1, // Single trade for pattern trigger
+          selectedInstrument: currentVolatilityInstrument,
+          selectedStrategy: selectedStrategy,
+          patternTrigger: trigger // Pass the trigger info
+        }
+      );
+
+      if (results && results.length > 0) {
+        toast({
+          title: "Pattern Trade Executed",
+          description: `${trigger.reasoning}`,
+          duration: 5000
+        });
+
+        // Add to active trades for monitoring
+        const newTrades = results.map(result => ({
+          id: uuidv4(),
+          instrument: currentVolatilityInstrument,
+          tradeType: trigger.contractType === 'DIGITEVEN' ? 'Even' : 'Odd',
+          entryPrice: result.tradeResponse?.entry_spot || currentStreamingPrice,
+          buyPrice: stakePerTrade,
+          profitLoss: undefined,
+          derivContractType: trigger.contractType,
+          userSelectedTradeType: 'DigitsEvenOdd' as UserTradeTypeValue,
+          stake: stakePerTrade,
+          durationSeconds: 5, // 5 ticks
+          reasoning: trigger.reasoning,
+          startTime: Date.now(),
+          status: result.success ? 'active' : 'failed_placement',
+          currentPrice: currentStreamingPrice,
+          pnl: 0,
+          error: result.error
+        }));
+
+        setActiveAutomatedTrades(prev => [...prev, ...newTrades]);
+      }
+    } catch (error) {
+      console.error('[VolatilityPage] Pattern-triggered trade failed:', error);
+      toast({
+        title: "Pattern Trade Failed",
+        description: `Failed to execute pattern trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+    }
+  }, [userInfo, selectedDerivAccountType, autoTradeTotalStake, numberOfBulkTrades, executionMode, currentVolatilityInstrument, selectedStrategy, currentStreamingPrice, toast]);
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
@@ -1091,8 +1272,27 @@ export default function VolatilityTradingPage() {
               digit: lastDigit,
               timestamp: tick.epoch * 1000 // Convert to milliseconds
             }];
-            // Keep only last 150 items for performance (to support 100 tick display)
-            return newSequence.slice(-150);
+            // Keep only last 200 items for pattern analysis
+            const finalSequence = newSequence.slice(-200);
+
+            // Update pattern analysis
+            const analysis = analyzePatterns(finalSequence);
+            setPatternAnalysis({
+              ...analysis,
+              lastAnalyzedLength: finalSequence.length
+            });
+
+            // Check for pattern-based trade triggers (only if AI trading is active)
+            if (isAutoTradingActive && !isAiLoading && selectedUserTradeTypeForLoop === 'DigitsEvenOdd') {
+              const trigger = checkPatternTriggers(finalSequence);
+              if (trigger?.shouldTrade) {
+                console.log('[VolatilityPage] Pattern trigger detected:', trigger);
+                // Trigger automatic trade execution
+                handlePatternTriggeredTrade(trigger);
+              }
+            }
+
+            return finalSequence;
           });
         };
 
@@ -1378,6 +1578,68 @@ export default function VolatilityTradingPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Pattern Analysis Card */}
+          {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Pattern Analysis - Last 200 Ticks</CardTitle>
+                <CardDescription>Real-time pattern detection for automated trading triggers</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Continuous Analysis */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Continuous Patterns</div>
+                    <div className="text-xs text-muted-foreground mb-2">
+                      Sequences where 2+ consecutive ticks have the same parity before changing
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-blue-50 p-3 rounded-md">
+                        <div className="text-sm font-medium text-blue-700">Even Continuous</div>
+                        <div className="text-2xl font-bold text-blue-800">{patternAnalysis.evenContinuous}</div>
+                        <div className="text-xs text-blue-600">occurrences</div>
+                      </div>
+                      <div className="bg-red-50 p-3 rounded-md">
+                        <div className="text-sm font-medium text-red-700">Odd Continuous</div>
+                        <div className="text-2xl font-bold text-red-800">{patternAnalysis.oddContinuous}</div>
+                        <div className="text-xs text-red-600">occurrences</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reversal Analysis */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Reversal Patterns</div>
+                    <div className="text-xs text-muted-foreground mb-2">
+                      When 3+ consecutive ticks of one parity are followed by opposite parity
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-green-50 p-3 rounded-md">
+                        <div className="text-sm font-medium text-green-700">Even Reversals</div>
+                        <div className="text-2xl font-bold text-green-800">{patternAnalysis.evenReversals}</div>
+                        <div className="text-xs text-green-600">3+ Odd → Even</div>
+                      </div>
+                      <div className="bg-orange-50 p-3 rounded-md">
+                        <div className="text-sm font-medium text-orange-700">Odd Reversals</div>
+                        <div className="text-2xl font-bold text-orange-800">{patternAnalysis.oddReversals}</div>
+                        <div className="text-xs text-orange-600">3+ Even → Odd</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Analysis Status */}
+                  <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+                    Analyzing {patternAnalysis.lastAnalyzedLength} ticks •
+                    {isAutoTradingActive && selectedStrategy ?
+                      ` Auto-trading ${selectedStrategy} strategy active` :
+                      ' Auto-trading inactive'
+                    }
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Even/Odd Trade Type Card */}
           {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
