@@ -1400,7 +1400,7 @@ export default function VolatilityTradingPage() {
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-center">Digit Sequence (Last 100 ticks)</div>
                     <div className="flex flex-wrap gap-1 justify-center max-h-64 overflow-y-auto">
-                      {priceSequence.slice(-100).map((item, index) => {
+                      {priceSequence.slice(-100).reverse().map((item, index) => {
                         const isEven = item.digit % 2 === 0;
                         return (
                           <div
@@ -1509,7 +1509,7 @@ export default function VolatilityTradingPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-1 justify-center max-h-64 overflow-y-auto">
-                      {priceSequence.slice(-100).map((item, index) => {
+                      {priceSequence.slice(-100).reverse().map((item, index) => {
                         let bgColor = 'bg-gray-300';
 
                         // New logic: If both Over and Under are selected
