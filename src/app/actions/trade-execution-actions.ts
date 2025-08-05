@@ -596,7 +596,7 @@ export async function executeVolatilityAiTradeLoop(
     }];
   }
 
-  // Build AI session input with conditional predictionDigit
+  // Build AI session input with conditional fields
   const aiSessionInput: VolatilitySessionStrategyInput = {
     // Single instrument selection - use the user-selected instrument
     selectedInstrument: selectedInstrument,
@@ -611,11 +611,15 @@ export async function executeVolatilityAiTradeLoop(
     numberOfBulkTrades: numberOfBulkTrades,
     accountType: selectedAccountType,
     selectedStrategy: selectedStrategy,
-    patternTrigger: patternTrigger,
 
     // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
     ...(predictionDigit !== null && predictionDigit !== undefined && userSelectedTradeType === 'DigitsOverUnder'
       ? { predictionDigit: predictionDigit }
+      : {}),
+
+    // Only include patternTrigger if it's not null and has valid data
+    ...(patternTrigger !== null && patternTrigger !== undefined && patternTrigger.shouldTrade !== undefined
+      ? { patternTrigger: patternTrigger }
       : {}),
   };
 

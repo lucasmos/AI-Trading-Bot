@@ -59,7 +59,7 @@ export const VolatilitySingleTradeStrategyInputSchema = z.object({
   predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
 
   // Pattern-based trading
-  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger
+  patternTrigger: PatternTriggerSchema.nullable().optional(), // Pattern-based trade trigger (nullable to handle null values)
 });
 export type VolatilitySingleTradeStrategyInput = z.infer<typeof VolatilitySingleTradeStrategyInputSchema>;
 
@@ -93,7 +93,7 @@ export const VolatilitySessionStrategyInputSchema = z.object({
   predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
 
   // Pattern-based trading
-  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger for session
+  patternTrigger: PatternTriggerSchema.nullable().optional(), // Pattern-based trade trigger for session (nullable to handle null values)
 });
 export type VolatilitySessionStrategyInput = z.infer<typeof VolatilitySessionStrategyInputSchema>;
 
@@ -166,6 +166,6 @@ export const VolatilityStrategyPromptInputSchema = z.object({
   // Session context
   availableInstruments: z.array(VolatilityInstrumentTypeSchema).optional(),
   totalSessionStake: z.number().optional(),
-  patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger for prompt context
+  patternTrigger: PatternTriggerSchema.nullable().optional(), // Pattern-based trade trigger for prompt context (nullable to handle null values)
 });
 export type VolatilityStrategyPromptInput = z.infer<typeof VolatilityStrategyPromptInputSchema>;

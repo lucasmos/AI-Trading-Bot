@@ -121,7 +121,7 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
     console.log(`[AI Single Flow] Input for ${input.currentInstrument}, type ${input.userSelectedTradeType}, stake ${input.stakePerTrade}`);
 
     // Check for pattern-based trade trigger first
-    if (input.patternTrigger && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
+    if (input.patternTrigger && input.patternTrigger !== null && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
       console.log(`[AI Single Flow/${input.currentInstrument}] Using pattern-based strategy with user settings:`, {
         patternTrigger: input.patternTrigger,
         executionMode: input.executionMode,
@@ -161,11 +161,15 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         executionMode: input.executionMode,
         accountType: input.accountType,
         selectedStrategy: input.selectedStrategy,
-        patternTrigger: input.patternTrigger,
 
         // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
         ...(input.predictionDigit !== null && input.predictionDigit !== undefined && input.userSelectedTradeType === 'DigitsOverUnder'
           ? { predictionDigit: input.predictionDigit }
+          : {}),
+
+        // Only include patternTrigger if it's not null and has valid data
+        ...(input.patternTrigger !== null && input.patternTrigger !== undefined && input.patternTrigger.shouldTrade !== undefined
+          ? { patternTrigger: input.patternTrigger }
           : {}),
     };
 
@@ -193,7 +197,7 @@ Recommended stake for this trade: ${input.stakePerTrade}.
 - Selected Strategy: ${input.selectedStrategy || 'Auto'}
 ${input.predictionDigit !== undefined && input.predictionDigit !== null ? `- Prediction Digit: ${input.predictionDigit} (for DigitsOverUnder)` : ''}
 
-${input.patternTrigger ? `
+${input.patternTrigger && input.patternTrigger !== null ? `
 🔥 PATTERN TRIGGER DETECTED:
 - Should Trade: ${input.patternTrigger.shouldTrade}
 - Contract Type: ${input.patternTrigger.contractType}
@@ -303,7 +307,7 @@ Return ONLY a JSON object with this exact structure:
       }
 
       // Validation and user settings enforcement
-      const isPatternBased = !!(input.patternTrigger && input.patternTrigger.shouldTrade);
+      const isPatternBased = !!(input.patternTrigger && input.patternTrigger !== null && input.patternTrigger.shouldTrade);
 
       // Enforce user execution mode settings
       if (input.executionMode === 'turbo' && output.durationUnit === 't' && output.duration && output.duration > 1) {
@@ -410,7 +414,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
     }
 
     // Check for pattern-based session strategy first
-    if (input.patternTrigger && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
+    if (input.patternTrigger && input.patternTrigger !== null && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
       console.log(`[AI Session Flow] Using pattern-based session strategy for ${targetInstrument}:`, input.patternTrigger);
 
       // Calculate stake per trade based on bulk trades setting
@@ -476,11 +480,15 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
         executionMode: input.executionMode || 'safe',
         accountType: input.accountType || 'demo',
         selectedStrategy: input.selectedStrategy,
-        patternTrigger: input.patternTrigger,
 
         // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
         ...(input.predictionDigit !== null && input.predictionDigit !== undefined && input.userSelectedTradeType === 'DigitsOverUnder'
           ? { predictionDigit: input.predictionDigit }
+          : {}),
+
+        // Only include patternTrigger if it's not null and has valid data
+        ...(input.patternTrigger !== null && input.patternTrigger !== undefined && input.patternTrigger.shouldTrade !== undefined
+          ? { patternTrigger: input.patternTrigger }
           : {}),
       };
 
