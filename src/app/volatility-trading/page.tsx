@@ -117,6 +117,9 @@ export default function VolatilityTradingPage() {
   const [predictionDigit, setPredictionDigit] = useState<number | null>(null);
   const [predictionDigitError, setPredictionDigitError] = useState<string>('');
 
+  // State for strategy selection
+  const [selectedStrategy, setSelectedStrategy] = useState<string>('');
+
 
 
   // State for real-time price streaming for trade type cards
@@ -206,6 +209,34 @@ export default function VolatilityTradingPage() {
     { value: 'DigitsOverUnder', label: 'Over/Under' },
     { value: 'DigitsEvenOdd', label: 'Even/Odd' },
   ];
+
+  // Strategy options based on trade type
+  const getStrategyOptions = useCallback((tradeType: UserTradeTypeValue | undefined) => {
+    switch (tradeType) {
+      case 'DigitsEvenOdd':
+        return [
+          { value: 'Even', label: 'Even' },
+          { value: 'Odd', label: 'Odd' }
+        ];
+      case 'RiseFall':
+        return [
+          { value: 'Rise', label: 'Rise' },
+          { value: 'Fall', label: 'Fall' }
+        ];
+      case 'DigitsOverUnder':
+        return [
+          { value: 'Over', label: 'Over' },
+          { value: 'Under', label: 'Under' }
+        ];
+      default:
+        return []; // No strategies for Simulation Mode or undefined
+    }
+  }, []);
+
+  // Get available strategy options for current trade type
+  const availableStrategies = useMemo(() => {
+    return getStrategyOptions(selectedUserTradeTypeForLoop);
+  }, [selectedUserTradeTypeForLoop, getStrategyOptions]);
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
@@ -420,6 +451,14 @@ export default function VolatilityTradingPage() {
             return;
         }
 
+        // Validate strategy selection for real trading
+        if (selectedUserTradeTypeForLoop && !selectedStrategy) {
+            toast({ title: "Strategy Required", description: "Please select a trading strategy before starting.", variant: "destructive"});
+            setIsAiLoading(false);
+            setIsAutoTradingActive(false);
+            return;
+        }
+
         // Validate prediction digit for Over/Under trade type
         if (selectedUserTradeTypeForLoop === 'DigitsOverUnder' && predictionDigit === null) {
             toast({ title: "Prediction Digit Required", description: "Please enter a prediction digit (0-9) for Over/Under trading.", variant: "destructive"});
@@ -443,7 +482,8 @@ export default function VolatilityTradingPage() {
                   executionMode,
                   numberOfBulkTrades,
                   selectedInstrument: currentVolatilityInstrument,
-                  predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null
+                  predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null,
+                  selectedStrategy: selectedStrategy
                 }
             );
 
@@ -1229,6 +1269,8 @@ export default function VolatilityTradingPage() {
                       variant={selectedUserTradeTypeForLoop === option.value ? 'default' : 'outline'}
                         onClick={() => {
                           setSelectedUserTradeTypeForLoop(option.value);
+                          // Reset strategy selection when changing trade types
+                          setSelectedStrategy('');
                           // Reset digit selections when changing trade types
                           if (option.value !== 'DigitsOverUnder') {
                             setSelectedOverDigit(null);
@@ -1245,7 +1287,10 @@ export default function VolatilityTradingPage() {
                   ))}
                   <Button
                     variant={selectedUserTradeTypeForLoop === undefined ? 'default' : 'outline'}
-                    onClick={() => setSelectedUserTradeTypeForLoop(undefined)}
+                    onClick={() => {
+                      setSelectedUserTradeTypeForLoop(undefined);
+                      setSelectedStrategy(''); // Reset strategy for simulation mode
+                    }}
                     disabled={isAutoTradingActive || isAiLoading}
                     className="h-12 text-sm font-medium border-2 col-span-2"
                   >
@@ -1254,6 +1299,33 @@ export default function VolatilityTradingPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">Select a trade type for real trading or use Simulation Mode for practice.</p>
               </div>
+
+              {/* Strategy Selection */}
+              {selectedUserTradeTypeForLoop && availableStrategies.length > 0 && (
+                <div className="space-y-3">
+                  <Label htmlFor="strategy-select">Strategy</Label>
+                  <Select
+                    value={selectedStrategy}
+                    onValueChange={setSelectedStrategy}
+                    disabled={isAutoTradingActive || isAiLoading}
+                  >
+                    <SelectTrigger id="strategy-select">
+                      <SelectValue placeholder="Select strategy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableStrategies.map((strategy) => (
+                        <SelectItem key={strategy.value} value={strategy.value}>
+                          {strategy.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs text-muted-foreground">
+                    Choose your trading strategy for {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' ? 'Even/Odd' :
+                      selectedUserTradeTypeForLoop === 'RiseFall' ? 'Rise/Fall' : 'Over/Under'} trades
+                  </div>
+                </div>
+              )}
 
               {/* Conditional Prediction Digit Input for Over/Under */}
               {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (

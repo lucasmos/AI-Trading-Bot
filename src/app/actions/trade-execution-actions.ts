@@ -142,6 +142,7 @@ export interface VolatilityTradeOptions {
   numberOfBulkTrades: number;
   selectedInstrument: string;
   predictionDigit?: number | null; // For Over/Under trade type
+  selectedStrategy?: string; // Strategy selection (Even/Odd, Rise/Fall, Over/Under)
 }
 
 // Helper function to wait for next tick using WebSocket
@@ -177,7 +178,8 @@ async function executeTradesWithTickTiming(
   instrumentATR: Record<string, number | undefined>,
   executionMode: 'turbo' | 'safe',
   numberOfBulkTrades: number,
-  predictionDigit?: number | null
+  predictionDigit?: number | null,
+  selectedStrategy?: string
 ): Promise<VolatilityTradeExecutionResult[]> {
   const results: VolatilityTradeExecutionResult[] = [];
 
@@ -196,7 +198,8 @@ async function executeTradesWithTickTiming(
         totalStakeFromUser,
         instrumentLatestSpot,
         instrumentATR,
-        predictionDigit
+        predictionDigit,
+        selectedStrategy
       );
       results.push(result);
     }
@@ -231,7 +234,8 @@ async function executeTradesWithTickTiming(
           totalStakeFromUser,
           instrumentLatestSpot,
           instrumentATR,
-          predictionDigit
+          predictionDigit,
+          selectedStrategy
         );
         results.push(result);
       }
@@ -254,7 +258,8 @@ async function executeTradesWithTickTiming(
           totalStakeFromUser,
           instrumentLatestSpot,
           instrumentATR,
-          predictionDigit
+          predictionDigit,
+          selectedStrategy
         );
         results.push(result);
       }
@@ -282,7 +287,8 @@ async function executeTradesWithTickTiming(
             totalStakeFromUser,
             instrumentLatestSpot,
             instrumentATR,
-            predictionDigit
+            predictionDigit,
+            selectedStrategy
           );
           results.push(result);
         }
@@ -304,7 +310,8 @@ async function executeSingleTrade(
   totalStakeFromUser: number,
   instrumentLatestSpot: Record<string, number | undefined>,
   instrumentATR: Record<string, number | undefined>,
-  predictionDigit?: number | null
+  predictionDigit?: number | null,
+  selectedStrategy?: string
 ): Promise<VolatilityTradeExecutionResult> {
   let tradeDetailsForApi: TradeDetails | null = null;
   let currentApiSymbol: string | null = null;
@@ -322,6 +329,35 @@ async function executeSingleTrade(
     }
 
     let calculatedBarrier: string | number | undefined = aiProposal.barrier;
+
+    // Override contract type based on selected strategy
+    let finalContractType = aiProposal.derivContractType;
+    if (selectedStrategy) {
+      switch (selectedStrategy) {
+        case 'Even':
+          finalContractType = 'DIGITEVEN';
+          break;
+        case 'Odd':
+          finalContractType = 'DIGITODD';
+          break;
+        case 'Rise':
+          finalContractType = 'CALL';
+          break;
+        case 'Fall':
+          finalContractType = 'PUT';
+          break;
+        case 'Over':
+          finalContractType = 'DIGITOVER';
+          break;
+        case 'Under':
+          finalContractType = 'DIGITUNDER';
+          break;
+        default:
+          // Keep AI proposal if strategy doesn't match known types
+          finalContractType = aiProposal.derivContractType;
+      }
+      console.log(`[TradeAction/SingleTrade] Using strategy-based contract type: ${finalContractType} (strategy: ${selectedStrategy})`);
+    }
 
     if (userSelectedTradeType === 'DigitsOverUnder') {
       // Use prediction digit from user input if provided, otherwise fall back to AI proposal
@@ -373,7 +409,7 @@ async function executeSingleTrade(
 
     tradeDetailsForApi = {
       symbol: currentApiSymbol,
-      contract_type: aiProposal.derivContractType,
+      contract_type: finalContractType,
       duration: aiProposal.duration,
       duration_unit: aiProposal.durationUnit,
       amount: aiProposal.stake,
@@ -391,7 +427,7 @@ async function executeSingleTrade(
       data: {
         userId: userId,
         symbol: instrumentFromAI,
-        type: `${userSelectedTradeType} (${aiProposal.derivContractType})`,
+        type: `${userSelectedTradeType} (${finalContractType})`,
         amount: tradeDetailsForApi.amount,
         price: derivTradeResponse.entry_spot,
         totalValue: tradeDetailsForApi.amount,
@@ -410,6 +446,8 @@ async function executeSingleTrade(
           userSelectedTradeType: userSelectedTradeType,
           derivSymbol: currentApiSymbol,
           totalSessionStake: totalStakeFromUser,
+          selectedStrategy: selectedStrategy,
+          finalContractType: finalContractType,
         }
       },
     });
@@ -450,6 +488,7 @@ export async function executeVolatilityAiTradeLoop(
   const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
   const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
   const predictionDigit = options?.predictionDigit || null;
+  const selectedStrategy = options?.selectedStrategy || '';
 
   const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
   const results: VolatilityTradeExecutionResult[] = [];
@@ -590,7 +629,8 @@ export async function executeVolatilityAiTradeLoop(
       instrumentATR,
       executionMode,
       numberOfBulkTrades,
-      predictionDigit
+      predictionDigit,
+      selectedStrategy
     );
 
     results.push(...executionResults);
