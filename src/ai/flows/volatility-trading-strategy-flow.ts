@@ -31,6 +31,28 @@ import {
   type VolatilityStrategyPromptInput
 } from '@/types/ai-shared-types';
 
+// Helper function to map display names to instrument codes
+function mapInstrumentDisplayNameToCode(displayName: string): string {
+  switch (displayName) {
+    case 'Volatility 10 Index': return 'R_10';
+    case 'Volatility 25 Index': return 'R_25';
+    case 'Volatility 50 Index': return 'R_50';
+    case 'Volatility 75 Index': return 'R_75';
+    case 'Volatility 100 Index': return 'R_100';
+    case 'Volatility 10 (1s) Index': return '1HZ10V';
+    case 'Volatility 25 (1s) Index': return '1HZ25V';
+    case 'Volatility 50 (1s) Index': return '1HZ50V';
+    case 'Volatility 75 (1s) Index': return '1HZ75V';
+    case 'Volatility 100 (1s) Index': return '1HZ100V';
+    default:
+      // If it's already an instrument code, return as-is
+      if (displayName.startsWith('R_') || displayName.includes('HZ')) {
+        return displayName;
+      }
+      console.warn(`[AI Flow] Unknown instrument display name: ${displayName}. Defaulting to R_10.`);
+      return 'R_10'; // Fallback
+  }
+}
 
 // Simplified prompt for pattern-based and basic analysis
 const determineDerivContractTypePrompt = ai.definePrompt({
@@ -399,23 +421,27 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
   },
   async (input: VolatilitySessionStrategyInput): Promise<VolatilitySessionStrategyOutput> => {
     // Use selectedInstrument if provided, otherwise fall back to first available instrument
-    const targetInstrument = input.selectedInstrument || input.availableInstruments[0];
+    const targetInstrumentDisplayName = input.selectedInstrument || input.availableInstruments[0];
 
-    console.log(`[AI Session Flow] SINGLE INSTRUMENT TRADING - Target: ${targetInstrument}`);
+    // Map display name to instrument code for tick data access
+    const targetInstrumentCode = mapInstrumentDisplayNameToCode(targetInstrumentDisplayName);
+
+    console.log(`[AI Session Flow] SINGLE INSTRUMENT TRADING - Target: ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode})`);
     console.log(`[AI Session Flow] User Settings - Trade Type: ${input.userSelectedTradeType}, Total Stake: ${input.totalSessionStake}, Execution Mode: ${input.executionMode}, Bulk Trades: ${input.numberOfBulkTrades}, Account: ${input.accountType}, Strategy: ${input.selectedStrategy}`);
 
-    // Validate that we have the selected instrument data
-    if (!input.instrumentTicks[targetInstrument] || input.instrumentTicks[targetInstrument].length === 0) {
-      console.error(`[AI Session Flow] No tick data available for selected instrument: ${targetInstrument}`);
+    // Validate that we have the selected instrument data using the instrument code
+    if (!input.instrumentTicks[targetInstrumentCode] || input.instrumentTicks[targetInstrumentCode].length === 0) {
+      console.error(`[AI Session Flow] No tick data available for selected instrument: ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode})`);
+      console.log(`[AI Session Flow] Available tick data keys:`, Object.keys(input.instrumentTicks));
       return {
         tradesToExecute: [],
-        overallReasoning: `No tick data available for selected instrument ${targetInstrument}. Please ensure the instrument is properly selected and streaming.`
+        overallReasoning: `No tick data available for selected instrument ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}). Please ensure the instrument is properly selected and streaming. Available instruments: ${Object.keys(input.instrumentTicks).join(', ')}.`
       };
     }
 
     // Check for pattern-based session strategy first
     if (input.patternTrigger && input.patternTrigger !== null && input.userSelectedTradeType === 'DigitsEvenOdd' && input.patternTrigger.shouldTrade) {
-      console.log(`[AI Session Flow] Using pattern-based session strategy for ${targetInstrument}:`, input.patternTrigger);
+      console.log(`[AI Session Flow] Using pattern-based session strategy for ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}):`, input.patternTrigger);
 
       // Calculate stake per trade based on bulk trades setting
       const stakePerTrade = input.totalSessionStake / (input.numberOfBulkTrades || 1);
@@ -424,7 +450,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
       const patternBasedTrades: VolatilitySingleTradeProposal[] = [];
       for (let i = 0; i < (input.numberOfBulkTrades || 1); i++) {
         patternBasedTrades.push({
-          instrument: targetInstrument as ExternalVolatilityInstrumentType,
+          instrument: targetInstrumentCode as ExternalVolatilityInstrumentType,
           shouldTrade: true,
           derivContractType: input.patternTrigger.contractType,
           duration: input.executionMode === 'turbo' ? 1 : 5, // Turbo: 1 tick, Safe: 5 ticks
@@ -436,7 +462,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
 
       return {
         tradesToExecute: patternBasedTrades,
-        overallReasoning: `Pattern-based session strategy for ${input.userSelectedTradeType} on ${targetInstrument}. ${input.patternTrigger.reasoning}. Execution: ${input.executionMode} mode with ${input.numberOfBulkTrades} bulk trades. Total stake: $${input.totalSessionStake.toFixed(2)}. Account: ${input.accountType}.`
+        overallReasoning: `Pattern-based session strategy for ${input.userSelectedTradeType} on ${targetInstrumentDisplayName}. ${input.patternTrigger.reasoning}. Execution: ${input.executionMode} mode with ${input.numberOfBulkTrades} bulk trades. Total stake: $${input.totalSessionStake.toFixed(2)}. Account: ${input.accountType}.`
       };
     }
 
@@ -448,9 +474,9 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
     const numberOfTrades = input.numberOfBulkTrades || 1;
     const stakePerTrade = Math.max(0.35, input.totalSessionStake / numberOfTrades);
 
-    console.log(`[AI Session Flow] SINGLE INSTRUMENT SESSION - Processing ${targetInstrument} with ${numberOfTrades} trades, $${stakePerTrade.toFixed(2)} per trade`);
+    console.log(`[AI Session Flow] SINGLE INSTRUMENT SESSION - Processing ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}) with ${numberOfTrades} trades, $${stakePerTrade.toFixed(2)} per trade`);
 
-    let overallReasoning = `AI session for ${input.userSelectedTradeType} on ${targetInstrument} with total stake $${input.totalSessionStake.toFixed(2)}. Execution Mode: ${input.executionMode}, Bulk Trades: ${numberOfTrades}, Account: ${input.accountType}. `;
+    let overallReasoning = `AI session for ${input.userSelectedTradeType} on ${targetInstrumentDisplayName} with total stake $${input.totalSessionStake.toFixed(2)}. Execution Mode: ${input.executionMode}, Bulk Trades: ${numberOfTrades}, Account: ${input.accountType}. `;
 
     // Process only the selected instrument for the specified number of bulk trades
     for (let tradeIndex = 0; tradeIndex < numberOfTrades; tradeIndex++) {
@@ -460,17 +486,17 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
         break;
       }
 
-      const singleInstrumentTicks = input.instrumentTicks[targetInstrument] || [];
-      const singleInstrumentIndicators = input.instrumentIndicators?.[targetInstrument];
+      const singleInstrumentTicks = input.instrumentTicks[targetInstrumentCode] || [];
+      const singleInstrumentIndicators = input.instrumentIndicators?.[targetInstrumentCode];
 
       if (singleInstrumentTicks.length < 5) {
-        console.log(`[AI Session Flow] Insufficient tick data for ${targetInstrument} (${singleInstrumentTicks.length}). Ending session.`);
-        overallReasoning += `Insufficient tick data for ${targetInstrument}. `;
+        console.log(`[AI Session Flow] Insufficient tick data for ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}) (${singleInstrumentTicks.length}). Ending session.`);
+        overallReasoning += `Insufficient tick data for ${targetInstrumentDisplayName}. `;
         break;
       }
 
       const singleTradeInput: VolatilitySingleTradeStrategyInput = {
-        currentInstrument: targetInstrument,
+        currentInstrument: targetInstrumentCode,
         userSelectedTradeType: input.userSelectedTradeType,
         stakePerTrade: stakePerTrade,
         instrumentTicks: singleInstrumentTicks,
@@ -492,7 +518,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
           : {}),
       };
 
-      console.log(`[AI Session Flow] Calling single trade decision ${tradeIndex + 1}/${numberOfTrades} for ${targetInstrument} with stake $${stakePerTrade.toFixed(2)}`);
+      console.log(`[AI Session Flow] Calling single trade decision ${tradeIndex + 1}/${numberOfTrades} for ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}) with stake $${stakePerTrade.toFixed(2)}`);
 
       try {
         const decision = await generateVolatilitySingleTradeDecision(singleTradeInput);
@@ -511,16 +537,16 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
 
             tradesToExecute.push(finalTrade);
             totalStakeAllocated += finalTrade.stake;
-            overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrument}: ${decision.reasoning} (Stake: $${finalTrade.stake}, Mode: ${input.executionMode}). `;
-            console.log(`[AI Session Flow] Trade ${tradeIndex + 1} PROPOSED for ${targetInstrument}. Stake: $${finalTrade.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
+            overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrumentDisplayName}: ${decision.reasoning} (Stake: $${finalTrade.stake}, Mode: ${input.executionMode}). `;
+            console.log(`[AI Session Flow] Trade ${tradeIndex + 1} PROPOSED for ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}). Stake: $${finalTrade.stake}. Total allocated: $${totalStakeAllocated.toFixed(2)}`);
           } else {
             overallReasoning += `Trade ${tradeIndex + 1}: Insufficient remaining stake ($${actualStakeForThisTrade.toFixed(2)} < $0.35). `;
           }
         } else {
-          overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrument}: No trade recommended (${decision.reasoning}). `;
+          overallReasoning += `Trade ${tradeIndex + 1} on ${targetInstrumentDisplayName}: No trade recommended (${decision.reasoning}). `;
         }
       } catch (error) {
-        console.error(`[AI Session Flow] Error processing trade ${tradeIndex + 1} for ${targetInstrument}:`, error);
+        console.error(`[AI Session Flow] Error processing trade ${tradeIndex + 1} for ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}):`, error);
         overallReasoning += `Error processing trade ${tradeIndex + 1}: ${(error as Error).message}. `;
         // Continue with next trade instead of failing entire session
       }
