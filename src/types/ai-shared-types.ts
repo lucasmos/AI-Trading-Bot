@@ -56,7 +56,7 @@ export const VolatilitySingleTradeStrategyInputSchema = z.object({
   executionMode: z.enum(['turbo', 'safe']).default('safe'), // Turbo vs Safe execution
   accountType: z.enum(['demo', 'real']).default('demo'), // Account type selection
   selectedStrategy: z.string().optional(), // User-selected strategy (Even/Odd, etc.)
-  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+  predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
 
   // Pattern-based trading
   patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger
@@ -90,7 +90,7 @@ export const VolatilitySessionStrategyInputSchema = z.object({
   numberOfBulkTrades: z.number().min(1).max(20).default(1), // Bulk trades setting (1-20)
   accountType: z.enum(['demo', 'real']).default('demo'), // Account type selection
   selectedStrategy: z.string().optional(), // User-selected strategy (Even/Odd, etc.)
-  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+  predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
 
   // Pattern-based trading
   patternTrigger: PatternTriggerSchema.optional(), // Pattern-based trade trigger for session
@@ -161,7 +161,7 @@ export const VolatilityStrategyPromptInputSchema = z.object({
   executionMode: z.enum(['turbo', 'safe']).optional(), // Turbo vs Safe execution mode
   accountType: z.enum(['demo', 'real']).optional(), // Account type selection
   selectedStrategy: z.string().optional(), // User-selected strategy for prompt context
-  predictionDigit: z.number().min(0).max(9).optional(), // For DigitsOverUnder trades
+  predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
 
   // Session context
   availableInstruments: z.array(VolatilityInstrumentTypeSchema).optional(),

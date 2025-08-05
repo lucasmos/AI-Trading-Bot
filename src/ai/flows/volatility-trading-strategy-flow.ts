@@ -161,8 +161,12 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
         executionMode: input.executionMode,
         accountType: input.accountType,
         selectedStrategy: input.selectedStrategy,
-        predictionDigit: input.predictionDigit,
         patternTrigger: input.patternTrigger,
+
+        // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
+        ...(input.predictionDigit !== null && input.predictionDigit !== undefined && input.userSelectedTradeType === 'DigitsOverUnder'
+          ? { predictionDigit: input.predictionDigit }
+          : {}),
     };
 
     let output: VolatilitySingleTradeProposal | null = null;
@@ -187,7 +191,7 @@ Recommended stake for this trade: ${input.stakePerTrade}.
 - Execution Mode: ${input.executionMode || 'safe'} (Turbo = 1 tick duration, Safe = 5+ ticks)
 - Account Type: ${input.accountType || 'demo'}
 - Selected Strategy: ${input.selectedStrategy || 'Auto'}
-${input.predictionDigit !== undefined ? `- Prediction Digit: ${input.predictionDigit} (for DigitsOverUnder)` : ''}
+${input.predictionDigit !== undefined && input.predictionDigit !== null ? `- Prediction Digit: ${input.predictionDigit} (for DigitsOverUnder)` : ''}
 
 ${input.patternTrigger ? `
 🔥 PATTERN TRIGGER DETECTED:
@@ -227,7 +231,7 @@ IF userSelectedTradeType is "DigitsEvenOdd":
 
 IF userSelectedTradeType is "DigitsOverUnder":
 - Analyze recent digits for high/low clustering
-- Choose barrier digit based on analysis${input.predictionDigit !== undefined ? ` (User suggested: ${input.predictionDigit})` : ''}
+- Choose barrier digit based on analysis${input.predictionDigit !== undefined && input.predictionDigit !== null ? ` (User suggested: ${input.predictionDigit})` : ''}
 - Duration: ${input.executionMode === 'turbo' ? '1 tick (Turbo mode)' : '5 ticks (Safe mode)'}
 
 IF userSelectedTradeType is "RiseFall":
@@ -311,7 +315,7 @@ Return ONLY a JSON object with this exact structure:
       }
 
       // Enforce user prediction digit for DigitsOverUnder
-      if (input.userSelectedTradeType === 'DigitsOverUnder' && input.predictionDigit !== undefined && output.barrier !== input.predictionDigit.toString()) {
+      if (input.userSelectedTradeType === 'DigitsOverUnder' && input.predictionDigit !== undefined && input.predictionDigit !== null && output.barrier !== input.predictionDigit.toString()) {
         console.log(`[AI Single Flow/${input.currentInstrument}] Enforcing user prediction digit: changing barrier from ${output.barrier} to ${input.predictionDigit}`);
         output.barrier = input.predictionDigit.toString();
       }
@@ -472,8 +476,12 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
         executionMode: input.executionMode || 'safe',
         accountType: input.accountType || 'demo',
         selectedStrategy: input.selectedStrategy,
-        predictionDigit: input.predictionDigit,
         patternTrigger: input.patternTrigger,
+
+        // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
+        ...(input.predictionDigit !== null && input.predictionDigit !== undefined && input.userSelectedTradeType === 'DigitsOverUnder'
+          ? { predictionDigit: input.predictionDigit }
+          : {}),
       };
 
       console.log(`[AI Session Flow] Calling single trade decision ${tradeIndex + 1}/${numberOfTrades} for ${targetInstrument} with stake $${stakePerTrade.toFixed(2)}`);
