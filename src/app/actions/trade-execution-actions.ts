@@ -8,20 +8,15 @@ import {
   getCandles,
   getTicks
 } from '@/services/deriv';
-// Note: WebSocket imports are conditionally loaded to avoid SSR issues
 import { prisma } from '@/lib/db';
 import {
     generateVolatilitySessionStrategy,
-    type VolatilitySessionStrategyInput
+    VolatilitySessionStrategyInput
 } from '@/ai/flows/volatility-trading-strategy-flow';
-import type { UserTradeType } from '@/types/ai-shared-types';
+import { UserTradeType } from '@/types/ai-shared-types';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
-import type { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
-// Note: Inline function to avoid potential circular dependencies
-function getInstrumentDecimalPlaces(instrument: VolatilityInstrumentType): number {
-  // 1s indices have 2 decimal places, others have 2 decimal places as well
-  return instrument.includes('(1s)') ? 2 : 2;
-}
+import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
+import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
 // Kept for other parts of the application that might use it.
 export interface TradeExecutionResult {
@@ -392,170 +387,6 @@ async function executeSafeModeTradesBatch(
 
   console.log(`[TradeAction/SafeMode/Batch${batchNumber}] Batch completed: ${results.filter(r => r.success).length}/${batchSize} successful`);
   return results;
-}
-
-// CRITICAL FIX: Continuous pattern monitoring interface
-interface PatternMonitoringResult {
-  success: boolean;
-  patternAnalysis?: PatternAnalysisResult;
-  latestPrice?: number;
-  error?: string;
-  monitoringDuration?: number;
-  ticksAnalyzed?: number;
-  cancelled?: boolean;
-}
-
-// CRITICAL FIX: Simplified pattern monitoring without global state (to avoid SSR issues)
-
-// CRITICAL FIX: Simplified pattern monitoring using existing UI WebSocket data
-// Note: This approach uses polling to avoid WebSocket SSR issues while the UI handles real-time streaming
-
-// CRITICAL FIX: Fallback polling pattern monitoring for server environments
-async function fallbackPollingPatternMonitoring(
-  instrument: VolatilityInstrumentType,
-  selectedStrategy: string,
-  userDerivApiToken: string,
-  timeoutMs: number,
-  initialPatternAnalysis: PatternAnalysisResult
-): Promise<PatternMonitoringResult> {
-
-  const startTime = Date.now();
-  const monitoringInterval = 2000; // Check every 2 seconds
-  let ticksAnalyzed = 0;
-  let consecutiveFailures = 0;
-  const maxConsecutiveFailures = 3;
-
-  console.log(`[TradeAction/PatternMonitoring] 🔄 SIMPLIFIED POLLING MODE: Starting pattern monitoring for ${selectedStrategy} strategy`);
-  console.log(`[TradeAction/PatternMonitoring] Timeout: ${timeoutMs/1000}s, Check interval: ${monitoringInterval/1000}s`);
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      // Fetch fresh tick data for pattern analysis
-      const freshTicks = await getTicks(instrument, 20, userDerivApiToken);
-      if (freshTicks.length === 0) {
-        consecutiveFailures++;
-        if (consecutiveFailures >= maxConsecutiveFailures) {
-          return {
-            success: false,
-            error: `Failed to fetch tick data after ${maxConsecutiveFailures} attempts`,
-            monitoringDuration: Date.now() - startTime,
-            ticksAnalyzed
-          };
-        }
-        console.warn(`[TradeAction/PatternMonitoring] ⚠️ No tick data received, retrying... (${consecutiveFailures}/${maxConsecutiveFailures})`);
-        await new Promise(resolve => setTimeout(resolve, monitoringInterval));
-        continue;
-      }
-
-      // Reset failure counter on successful data fetch
-      consecutiveFailures = 0;
-      ticksAnalyzed++;
-
-      // Extract digits and analyze patterns
-      const tickDigits = freshTicks.map(tick => {
-        const decimalPlaces = getInstrumentDecimalPlaces(instrument);
-        const multiplier = Math.pow(10, decimalPlaces);
-        return Math.floor((tick.price * multiplier) % 10);
-      });
-
-      const currentPatternAnalysis = analyzeEvenOddPatterns(tickDigits, selectedStrategy);
-      const latestPrice = freshTicks[freshTicks.length - 1].price;
-
-      console.log(`[TradeAction/PatternMonitoring] 🔄 POLLING Tick ${ticksAnalyzed}: Recent digits [${tickDigits.slice(-5).join(',')}], Current: ${currentPatternAnalysis.currentDigit}, Consecutive: ${currentPatternAnalysis.consecutiveCount}`);
-
-      // Notify user of current status
-      await notifyUserPatternStatus('monitoring_update', selectedStrategy, currentPatternAnalysis);
-
-      // Check if pattern conditions are now met
-      if (currentPatternAnalysis.shouldExecute) {
-        const monitoringDuration = Date.now() - startTime;
-        console.log(`[TradeAction/PatternMonitoring] ✅ POLLING Pattern detected after ${monitoringDuration}ms! ${currentPatternAnalysis.reasoning}`);
-
-        // Notify user of successful pattern detection
-        await notifyUserPatternStatus('pattern_found', selectedStrategy, currentPatternAnalysis);
-
-        return {
-          success: true,
-          patternAnalysis: currentPatternAnalysis,
-          latestPrice: latestPrice,
-          monitoringDuration,
-          ticksAnalyzed
-        };
-      }
-
-      // Wait before next check
-      await new Promise(resolve => setTimeout(resolve, monitoringInterval));
-
-    } catch (error: any) {
-      consecutiveFailures++;
-      console.error(`[TradeAction/PatternMonitoring] ❌ Error during polling monitoring (${consecutiveFailures}/${maxConsecutiveFailures}):`, error.message);
-
-      if (consecutiveFailures >= maxConsecutiveFailures) {
-        return {
-          success: false,
-          error: `Pattern monitoring failed: ${error.message}`,
-          monitoringDuration: Date.now() - startTime,
-          ticksAnalyzed
-        };
-      }
-
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, monitoringInterval));
-    }
-  }
-
-  // Timeout reached
-  return {
-    success: false,
-    error: `Pattern monitoring timed out after ${timeoutMs/1000} seconds. Required pattern not detected.`,
-    monitoringDuration: Date.now() - startTime,
-    ticksAnalyzed
-  };
-}
-
-// CRITICAL FIX: User notification function for pattern monitoring (leverages existing UI WebSocket)
-async function notifyUserPatternStatus(
-  status: 'monitoring_started' | 'monitoring_update' | 'pattern_found' | 'timeout',
-  selectedStrategy: string,
-  patternAnalysis: PatternAnalysisResult
-): Promise<void> {
-
-  // Note: This function provides console logging for now
-  // The UI already has real-time WebSocket streaming, so this provides server-side monitoring feedback
-
-  switch (status) {
-    case 'monitoring_started':
-      console.log(`[TradeAction/UserNotification] 🔍 PATTERN MONITORING STARTED: Leveraging existing UI WebSocket for ${selectedStrategy} strategy...`);
-      console.log(`[TradeAction/UserNotification] Current status: ${patternAnalysis.reasoning}`);
-      console.log(`[TradeAction/UserNotification] 📡 UI WebSocket provides real-time data, server monitors via polling`);
-      break;
-
-    case 'monitoring_update':
-      if (patternAnalysis.consecutiveCount >= 2) {
-        const needed = 3 - patternAnalysis.consecutiveCount;
-        const digitType = selectedStrategy === 'Even' ? 'odd' : 'even';
-        const targetType = selectedStrategy === 'Even' ? 'even' : 'odd';
-
-        if (needed > 0) {
-          console.log(`[TradeAction/UserNotification] 📊 MONITORING PROGRESS: ${patternAnalysis.consecutiveCount} consecutive ${digitType} digits detected, need ${needed} more for ${targetType} trigger...`);
-        } else {
-          console.log(`[TradeAction/UserNotification] 🎯 MONITORING READY: ${patternAnalysis.consecutiveCount} consecutive ${digitType} digits detected! Waiting for ${targetType} digit...`);
-        }
-      } else {
-        console.log(`[TradeAction/UserNotification] 📊 MONITORING CHECK: Current digit ${patternAnalysis.currentDigit}, consecutive count: ${patternAnalysis.consecutiveCount}`);
-      }
-      break;
-
-    case 'pattern_found':
-      console.log(`[TradeAction/UserNotification] ✅ PATTERN FOUND! ${patternAnalysis.reasoning}`);
-      console.log(`[TradeAction/UserNotification] 🚀 Executing trades immediately with detected pattern...`);
-      break;
-
-    case 'timeout':
-      console.log(`[TradeAction/UserNotification] ⏰ MONITORING TIMEOUT: Required pattern not detected within time limit`);
-      console.log(`[TradeAction/UserNotification] Final status: ${patternAnalysis.reasoning}`);
-      break;
-  }
 }
 
 export async function executeAiTradingStrategy(
@@ -1155,35 +986,17 @@ export async function executeVolatilityManualTradeLoop(
 
     console.log(`[TradeAction/ManualSession] Pattern Analysis Result:`, patternAnalysis);
 
-    // CRITICAL FIX: Use simplified polling approach instead of complex WebSocket monitoring
+    // CRITICAL FIX: Validate pattern conditions before execution
     if (!patternAnalysis.shouldExecute) {
-      console.log(`[TradeAction/ManualSession] 🔍 Pattern not ready, using simplified monitoring: ${patternAnalysis.reasoning}`);
-
-      // Use the existing fallback polling approach which is more reliable for server actions
-      const monitoringResult = await fallbackPollingPatternMonitoring(
-        targetInstrument,
-        selectedStrategy,
-        userDerivApiToken,
-        60000, // 60 second timeout
-        patternAnalysis
-      );
-
-      if (!monitoringResult.success) {
-        return [{
-          success: false,
-          instrument: targetInstrument,
-          error: monitoringResult.error || 'Pattern monitoring failed or timed out'
-        }];
-      }
-
-      // Update pattern analysis with successful monitoring result
-      patternAnalysis = monitoringResult.patternAnalysis!;
-      instrumentLatestSpot[apiSymbol] = monitoringResult.latestPrice!;
-
-      console.log(`[TradeAction/ManualSession] ✅ Pattern monitoring successful: ${patternAnalysis.reasoning}`);
-    } else {
-      console.log(`[TradeAction/ManualSession] ✅ Pattern validation passed immediately: ${patternAnalysis.reasoning}`);
+      console.log(`[TradeAction/ManualSession] ❌ Pattern validation failed: ${patternAnalysis.reasoning}`);
+      return [{
+        success: false,
+        instrument: targetInstrument,
+        error: `Pattern validation failed: ${patternAnalysis.reasoning}`
+      }];
     }
+
+    console.log(`[TradeAction/ManualSession] ✅ Pattern validation passed: ${patternAnalysis.reasoning}`);
 
     // CRITICAL FIX: Use pattern-validated contract type
     const contractType = patternAnalysis.contractType;
