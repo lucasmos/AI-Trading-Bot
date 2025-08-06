@@ -462,7 +462,30 @@ export default function VolatilityTradingPage() {
 
   const handleInstrumentChange = (instrument: string) => {
     if (VOLATILITY_INSTRUMENTS.includes(instrument as VolatilityInstrumentType)) {
+      console.log(`[VolatilityPage] Switching from ${currentVolatilityInstrument} to ${instrument} - Resetting all analysis data`);
+
+      // CRITICAL FIX: Reset all analysis state when switching instruments to prevent data contamination
+      setPriceSequence([]); // Clear all tick data from previous instrument
+      setPatternAnalysis({
+        evenContinuous: 0,
+        oddContinuous: 0,
+        evenReversals: 0,
+        oddReversals: 0,
+        lastAnalyzedLength: 0
+      }); // Reset pattern analysis counters
+      setCurrentStreamingPrice(0); // Reset current price display
+
+      // Reset strategy-related state to prevent cross-contamination
+      setSelectedStrategy(''); // Clear strategy selection for new instrument
+      setSelectedOverDigit(null); // Clear Over/Under digit selections
+      setSelectedUnderDigit(null);
+      setPredictionDigit(null); // Clear prediction digit
+      setPredictionDigitError(''); // Clear any validation errors
+
+      // Finally set the new instrument (this will trigger WebSocket reconnection)
       setCurrentVolatilityInstrument(instrument as VolatilityInstrumentType);
+
+      console.log(`[VolatilityPage] State reset complete for instrument switch to ${instrument}`);
     }
   };
 
@@ -1333,6 +1356,27 @@ export default function VolatilityTradingPage() {
       }
     };
   }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument]);
+
+  // CRITICAL FIX: Additional safety effect to ensure state cleanup on instrument change
+  useEffect(() => {
+    console.log(`[VolatilityPage] Instrument changed to ${currentVolatilityInstrument} - Verifying state cleanup`);
+
+    // This effect runs after the instrument changes to ensure all state is properly reset
+    // The actual reset happens in handleInstrumentChange, but this provides additional safety
+
+    // Log current state for debugging
+    console.log(`[VolatilityPage] Current state after instrument change:`, {
+      priceSequenceLength: priceSequence.length,
+      patternAnalysis,
+      currentStreamingPrice,
+      selectedStrategy
+    });
+
+    // If we detect contaminated state (shouldn't happen with the fix above, but safety check)
+    if (priceSequence.length > 0) {
+      console.warn(`[VolatilityPage] WARNING: Price sequence not empty after instrument change. This indicates a state management issue.`);
+    }
+  }, [currentVolatilityInstrument]); // Only trigger when instrument changes
 
   // Cleanup effect for component unmount
   useEffect(() => {
