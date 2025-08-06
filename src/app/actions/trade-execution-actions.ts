@@ -405,8 +405,8 @@ interface PatternMonitoringResult {
 // CRITICAL FIX: Global cancellation flag for pattern monitoring
 let patternMonitoringCancelled = false;
 
-// CRITICAL FIX: Function to cancel pattern monitoring
-export function cancelPatternMonitoring(): void {
+// CRITICAL FIX: Async function to cancel pattern monitoring (required for Server Actions)
+export async function cancelPatternMonitoring(): Promise<void> {
   patternMonitoringCancelled = true;
   console.log(`[TradeAction/PatternMonitoring] 🛑 Pattern monitoring cancellation requested`);
 }

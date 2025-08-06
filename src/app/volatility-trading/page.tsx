@@ -170,20 +170,29 @@ export default function VolatilityTradingPage() {
     }
   }, [selectedOverDigit, selectedUnderDigit]);
 
-  // CRITICAL FIX: Cancel pattern monitoring function
-  const handleCancelPatternMonitoring = useCallback(() => {
+  // CRITICAL FIX: Cancel pattern monitoring function (async)
+  const handleCancelPatternMonitoring = useCallback(async () => {
     console.log('[VolatilityPage] User requested pattern monitoring cancellation');
-    cancelPatternMonitoring();
-    setIsPatternMonitoring(false);
-    setPatternMonitoringStatus('');
-    setPatternMonitoringProgress(null);
-    setIsAiLoading(false);
-    setIsAutoTradingActive(false);
-    toast({
-      title: "Pattern Monitoring Cancelled",
-      description: "Pattern monitoring has been stopped by user request.",
-      variant: "default"
-    });
+    try {
+      await cancelPatternMonitoring();
+      setIsPatternMonitoring(false);
+      setPatternMonitoringStatus('');
+      setPatternMonitoringProgress(null);
+      setIsAiLoading(false);
+      setIsAutoTradingActive(false);
+      toast({
+        title: "Pattern Monitoring Cancelled",
+        description: "Pattern monitoring has been stopped by user request.",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('[VolatilityPage] Error cancelling pattern monitoring:', error);
+      toast({
+        title: "Cancellation Error",
+        description: "Failed to cancel pattern monitoring. Please try again.",
+        variant: "destructive"
+      });
+    }
   }, [toast]);
 
   // Handler for prediction digit input validation
