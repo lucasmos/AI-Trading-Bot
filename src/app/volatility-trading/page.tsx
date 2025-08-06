@@ -33,6 +33,7 @@ import {
 import {
   executeVolatilityAiTradeLoop,
   executeVolatilityManualTradeLoop, // CRITICAL FIX: Import manual execution function
+  cancelPatternMonitoring, // CRITICAL FIX: Import pattern monitoring cancellation
   type VolatilityTradeExecutionResult,
   type VolatilityTradeOptions
 } from '@/app/actions/trade-execution-actions';
@@ -113,6 +114,15 @@ export default function VolatilityTradingPage() {
   // CRITICAL FIX: Manual execution mode toggle
   const [isManualMode, setIsManualMode] = useState<boolean>(false);
 
+  // CRITICAL FIX: Pattern monitoring state
+  const [isPatternMonitoring, setIsPatternMonitoring] = useState<boolean>(false);
+  const [patternMonitoringStatus, setPatternMonitoringStatus] = useState<string>('');
+  const [patternMonitoringProgress, setPatternMonitoringProgress] = useState<{
+    consecutiveCount: number;
+    currentDigit: number;
+    needed: number;
+  } | null>(null);
+
   // State for Over/Under digit selection
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
   const [selectedUnderDigit, setSelectedUnderDigit] = useState<number | null>(null);
@@ -159,6 +169,22 @@ export default function VolatilityTradingPage() {
       }
     }
   }, [selectedOverDigit, selectedUnderDigit]);
+
+  // CRITICAL FIX: Cancel pattern monitoring function
+  const handleCancelPatternMonitoring = useCallback(() => {
+    console.log('[VolatilityPage] User requested pattern monitoring cancellation');
+    cancelPatternMonitoring();
+    setIsPatternMonitoring(false);
+    setPatternMonitoringStatus('');
+    setPatternMonitoringProgress(null);
+    setIsAiLoading(false);
+    setIsAutoTradingActive(false);
+    toast({
+      title: "Pattern Monitoring Cancelled",
+      description: "Pattern monitoring has been stopped by user request.",
+      variant: "default"
+    });
+  }, [toast]);
 
   // Handler for prediction digit input validation
   const handlePredictionDigitChange = useCallback((value: string) => {
@@ -694,10 +720,22 @@ export default function VolatilityTradingPage() {
         // CRITICAL FIX: Choose execution mode based on manual toggle
         const executionModeText = isManualMode ? "MANUAL" : "AI";
         console.log(`[VolatilityPage] Initiating REAL trade loop (${executionModeText} MODE). User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
-        toast({
-          title: `Volatility ${executionModeText} Loop Starting...`,
-          description: `Attempting to place real trades for type: ${selectedUserTradeTypeForLoop} using ${executionModeText} execution`
-        });
+
+        if (isManualMode) {
+          // CRITICAL FIX: Set real-time WebSocket pattern monitoring state
+          setIsPatternMonitoring(true);
+          setPatternMonitoringStatus(`Real-time WebSocket monitoring for ${selectedStrategy} strategy...`);
+          toast({
+            title: `Real-Time Pattern Monitoring Started`,
+            description: `WebSocket streaming active for ${selectedStrategy} strategy. Analyzing every tick in real-time. Max 60 seconds.`,
+            duration: 8000
+          });
+        } else {
+          toast({
+            title: `Volatility ${executionModeText} Loop Starting...`,
+            description: `Attempting to place real trades for type: ${selectedUserTradeTypeForLoop} using ${executionModeText} execution`
+          });
+        }
 
         try {
             // CRITICAL FIX: Use manual or AI execution based on toggle
@@ -766,11 +804,21 @@ export default function VolatilityTradingPage() {
             setActiveAutomatedTrades(newUiTrades);
 
             const successfulPlacements = loopResults.filter(r => r.success).length;
-            toast({
+
+            // CRITICAL FIX: Different success messages for manual vs AI mode
+            if (isManualMode) {
+              toast({
+                title: 'Manual Pattern Execution Completed',
+                description: `Pattern detected and trades executed: ${successfulPlacements} successful, ${loopResults.length - successfulPlacements} failed.`,
+                duration: 7000
+              });
+            } else {
+              toast({
                 title: 'Volatility AI Loop Concluded',
                 description: `Trade placements: ${successfulPlacements} successful, ${loopResults.length - successfulPlacements} failed.`,
                 duration: 7000
-            });
+              });
+            }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             toast({ title: "Volatility AI Loop Error", description: `Failed to execute trading loop: ${errorMessage}`, variant: "destructive" });
@@ -778,6 +826,14 @@ export default function VolatilityTradingPage() {
         } finally {
             console.log("[VolatilityPage] Real trade loop finally: Resetting isAiLoading to false. Keeping isAutoTradingActive true until trades complete.");
             setIsAiLoading(false);
+
+            // CRITICAL FIX: Clean up pattern monitoring state
+            if (isManualMode) {
+              setIsPatternMonitoring(false);
+              setPatternMonitoringStatus('');
+              setPatternMonitoringProgress(null);
+            }
+
             // Don't set isAutoTradingActive to false immediately - let it stay active until trades are monitored
         }
     } else {
@@ -1717,12 +1773,57 @@ export default function VolatilityTradingPage() {
                     disabled={isAiLoading || (selectedUserTradeTypeForLoop ? autoTradeTotalStake < 0.35 : autoTradeTotalStake <= 0) || autoTradeTotalStake > (currentBalance ?? Infinity) || !selectedDerivAccountType}
                 >
                     <Bot className="mr-2 h-5 w-5" />
-                    {isAiLoading ? 'AI Initializing...' : (selectedUserTradeTypeForLoop ? 'Start Real AI Loop' : 'Start Simulation')}
+                    {isAiLoading
+                      ? (isManualMode && isPatternMonitoring
+                          ? 'Pattern Monitoring...'
+                          : 'AI Initializing...'
+                        )
+                      : (selectedUserTradeTypeForLoop
+                          ? (isManualMode ? 'Start Manual Pattern Trading' : 'Start Real AI Loop')
+                          : 'Start Simulation'
+                        )
+                    }
                 </Button>
               )}
               <p className="text-xs text-muted-foreground text-center">
                 {selectedUserTradeTypeForLoop ? "Real trades will be attempted." : "Trading is simulated on this page."} Volatility Index trading involves high risk.
               </p>
+
+              {/* CRITICAL FIX: Real-Time WebSocket Pattern Monitoring Status Card */}
+              {isManualMode && isPatternMonitoring && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center">
+                      <div className="animate-pulse rounded-full h-4 w-4 bg-green-500 mr-2"></div>
+                      <span className="text-sm font-medium text-green-800">Real-Time WebSocket Monitoring</span>
+                      <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">LIVE</span>
+                    </div>
+                    <Button
+                      onClick={handleCancelPatternMonitoring}
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-300 hover:bg-red-50"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <p className="text-xs text-green-700 mb-1">
+                    {patternMonitoringStatus || `Real-time WebSocket streaming for ${selectedStrategy} strategy patterns...`}
+                  </p>
+                  <p className="text-xs text-green-600 mb-2">
+                    🚀 Analyzing patterns on EVERY incoming tick (no delays)
+                  </p>
+                  {patternMonitoringProgress && (
+                    <p className="text-xs text-green-600">
+                      Progress: {patternMonitoringProgress.consecutiveCount} consecutive digits detected,
+                      need {patternMonitoringProgress.needed} more for trigger
+                    </p>
+                  )}
+                  <div className="mt-2 bg-green-200 rounded-full h-1">
+                    <div className="bg-green-600 h-1 rounded-full animate-pulse" style={{width: '80%'}}></div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -8,6 +8,8 @@ import {
   getCandles,
   getTicks
 } from '@/services/deriv';
+import { getTickStream } from '@/services/deriv-tick-stream';
+import type { PriceTick } from '@/types';
 import { prisma } from '@/lib/db';
 import {
     generateVolatilitySessionStrategy,
@@ -387,6 +389,243 @@ async function executeSafeModeTradesBatch(
 
   console.log(`[TradeAction/SafeMode/Batch${batchNumber}] Batch completed: ${results.filter(r => r.success).length}/${batchSize} successful`);
   return results;
+}
+
+// CRITICAL FIX: Continuous pattern monitoring interface
+interface PatternMonitoringResult {
+  success: boolean;
+  patternAnalysis?: PatternAnalysisResult;
+  latestPrice?: number;
+  error?: string;
+  monitoringDuration?: number;
+  ticksAnalyzed?: number;
+  cancelled?: boolean;
+}
+
+// CRITICAL FIX: Global cancellation flag for pattern monitoring
+let patternMonitoringCancelled = false;
+
+// CRITICAL FIX: Function to cancel pattern monitoring
+export function cancelPatternMonitoring(): void {
+  patternMonitoringCancelled = true;
+  console.log(`[TradeAction/PatternMonitoring] 🛑 Pattern monitoring cancellation requested`);
+}
+
+// CRITICAL FIX: Real-time WebSocket-based pattern monitoring function
+async function continuousPatternMonitoring(
+  instrument: VolatilityInstrumentType,
+  selectedStrategy: string,
+  userDerivApiToken: string,
+  timeoutMs: number = 60000,
+  initialPatternAnalysis: PatternAnalysisResult
+): Promise<PatternMonitoringResult> {
+
+  const startTime = Date.now();
+  let ticksAnalyzed = 0;
+  let tickBuffer: number[] = []; // Buffer to store recent digits
+  let patternFound = false;
+  let finalPatternAnalysis: PatternAnalysisResult | null = null;
+  let latestPrice = 0;
+
+  // Reset cancellation flag at start of monitoring
+  patternMonitoringCancelled = false;
+
+  console.log(`[TradeAction/PatternMonitoring] 🔍 Starting REAL-TIME WebSocket pattern monitoring for ${selectedStrategy} strategy`);
+  console.log(`[TradeAction/PatternMonitoring] Timeout: ${timeoutMs/1000}s, WebSocket streaming: ENABLED`);
+  console.log(`[TradeAction/PatternMonitoring] Initial status: ${initialPatternAnalysis.reasoning}`);
+
+  // Show initial status to user
+  await notifyUserPatternStatus('monitoring_started', selectedStrategy, initialPatternAnalysis);
+
+  // Get initial tick data to populate buffer
+  try {
+    const initialTicks = await getTicks(instrument, 20, userDerivApiToken);
+    if (initialTicks.length > 0) {
+      tickBuffer = initialTicks.map(tick => {
+        const decimalPlaces = getInstrumentDecimalPlaces(instrument);
+        const multiplier = Math.pow(10, decimalPlaces);
+        return Math.floor((tick.price * multiplier) % 10);
+      });
+      latestPrice = initialTicks[initialTicks.length - 1].price;
+      console.log(`[TradeAction/PatternMonitoring] Initialized buffer with ${tickBuffer.length} digits: [${tickBuffer.slice(-10).join(',')}]`);
+    }
+  } catch (error) {
+    console.error(`[TradeAction/PatternMonitoring] Failed to initialize tick buffer:`, error);
+    return {
+      success: false,
+      error: `Failed to initialize pattern monitoring: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      monitoringDuration: Date.now() - startTime,
+      ticksAnalyzed: 0
+    };
+  }
+
+  return new Promise<PatternMonitoringResult>((resolve) => {
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      if (!patternFound && !patternMonitoringCancelled) {
+        console.log(`[TradeAction/PatternMonitoring] ⏰ WebSocket monitoring timed out after ${timeoutMs}ms`);
+        notifyUserPatternStatus('timeout', selectedStrategy, initialPatternAnalysis);
+        unsubscribe();
+        resolve({
+          success: false,
+          error: `Pattern monitoring timed out after ${timeoutMs/1000} seconds. Required pattern not detected.`,
+          monitoringDuration: Date.now() - startTime,
+          ticksAnalyzed
+        });
+      }
+    }, timeoutMs);
+    // CRITICAL FIX: Set up real-time WebSocket tick subscription
+    const tickStream = getTickStream();
+
+    const unsubscribe = tickStream.subscribe(instrument, {
+      onTick: (tick: PriceTick) => {
+        if (patternFound || patternMonitoringCancelled) return;
+
+        ticksAnalyzed++;
+        latestPrice = tick.price;
+
+        // Extract digit from new tick and add to buffer
+        const decimalPlaces = getInstrumentDecimalPlaces(instrument);
+        const multiplier = Math.pow(10, decimalPlaces);
+        const newDigit = Math.floor((tick.price * multiplier) % 10);
+
+        // Add new digit to buffer and maintain reasonable size (keep last 50 digits)
+        tickBuffer.push(newDigit);
+        if (tickBuffer.length > 50) {
+          tickBuffer = tickBuffer.slice(-50);
+        }
+
+        // Analyze patterns with current buffer
+        const currentPatternAnalysis = analyzeEvenOddPatterns(tickBuffer, selectedStrategy);
+
+        console.log(`[TradeAction/PatternMonitoring] 📊 REAL-TIME Tick ${ticksAnalyzed}: Price ${tick.price}, Digit ${newDigit}, Consecutive: ${currentPatternAnalysis.consecutiveCount}, Pattern: ${currentPatternAnalysis.patternType}`);
+
+        // Notify user of current status (throttled to avoid spam)
+        if (ticksAnalyzed % 3 === 0 || currentPatternAnalysis.consecutiveCount >= 2) {
+          notifyUserPatternStatus('monitoring_update', selectedStrategy, currentPatternAnalysis);
+        }
+
+        // Check if pattern conditions are now met
+        if (currentPatternAnalysis.shouldExecute) {
+          patternFound = true;
+          finalPatternAnalysis = currentPatternAnalysis;
+
+          const monitoringDuration = Date.now() - startTime;
+          console.log(`[TradeAction/PatternMonitoring] ✅ REAL-TIME Pattern detected after ${monitoringDuration}ms and ${ticksAnalyzed} ticks! ${currentPatternAnalysis.reasoning}`);
+
+          // Notify user of successful pattern detection
+          notifyUserPatternStatus('pattern_found', selectedStrategy, currentPatternAnalysis);
+
+          // Clean up and resolve
+          clearTimeout(timeoutId);
+          unsubscribe();
+
+          resolve({
+            success: true,
+            patternAnalysis: currentPatternAnalysis,
+            latestPrice: tick.price,
+            monitoringDuration,
+            ticksAnalyzed
+          });
+        }
+
+        // Check for cancellation
+        if (patternMonitoringCancelled) {
+          console.log(`[TradeAction/PatternMonitoring] 🛑 WebSocket monitoring cancelled by user after ${ticksAnalyzed} ticks`);
+          clearTimeout(timeoutId);
+          unsubscribe();
+
+          resolve({
+            success: false,
+            error: 'Pattern monitoring cancelled by user',
+            monitoringDuration: Date.now() - startTime,
+            ticksAnalyzed,
+            cancelled: true
+          });
+        }
+      },
+
+      onError: (error: Error) => {
+        console.error(`[TradeAction/PatternMonitoring] ❌ WebSocket error:`, error.message);
+        if (!patternFound && !patternMonitoringCancelled) {
+          clearTimeout(timeoutId);
+          unsubscribe();
+
+          resolve({
+            success: false,
+            error: `WebSocket error during pattern monitoring: ${error.message}`,
+            monitoringDuration: Date.now() - startTime,
+            ticksAnalyzed
+          });
+        }
+      },
+
+      onConnect: () => {
+        console.log(`[TradeAction/PatternMonitoring] 🔗 WebSocket connected for ${instrument} pattern monitoring`);
+      },
+
+      onDisconnect: () => {
+        console.log(`[TradeAction/PatternMonitoring] 🔌 WebSocket disconnected for ${instrument} pattern monitoring`);
+        if (!patternFound && !patternMonitoringCancelled) {
+          clearTimeout(timeoutId);
+
+          resolve({
+            success: false,
+            error: 'WebSocket disconnected during pattern monitoring',
+            monitoringDuration: Date.now() - startTime,
+            ticksAnalyzed
+          });
+        }
+      }
+    });
+
+    console.log(`[TradeAction/PatternMonitoring] 🚀 WebSocket subscription established for ${instrument}, waiting for real-time ticks...`);
+  });
+}
+
+// CRITICAL FIX: Real-time user notification function for WebSocket-based pattern monitoring
+async function notifyUserPatternStatus(
+  status: 'monitoring_started' | 'monitoring_update' | 'pattern_found' | 'timeout',
+  selectedStrategy: string,
+  patternAnalysis: PatternAnalysisResult
+): Promise<void> {
+
+  // Note: This function provides console logging for now
+  // In a real implementation, this would integrate with the UI notification system
+
+  switch (status) {
+    case 'monitoring_started':
+      console.log(`[TradeAction/UserNotification] 🔍 REAL-TIME MONITORING STARTED: WebSocket streaming for ${selectedStrategy} strategy pattern...`);
+      console.log(`[TradeAction/UserNotification] Current status: ${patternAnalysis.reasoning}`);
+      console.log(`[TradeAction/UserNotification] 🚀 Analyzing patterns on EVERY incoming tick (no delays)`);
+      break;
+
+    case 'monitoring_update':
+      if (patternAnalysis.consecutiveCount >= 2) {
+        const needed = 3 - patternAnalysis.consecutiveCount;
+        const digitType = selectedStrategy === 'Even' ? 'odd' : 'even';
+        const targetType = selectedStrategy === 'Even' ? 'even' : 'odd';
+
+        if (needed > 0) {
+          console.log(`[TradeAction/UserNotification] 📊 REAL-TIME PROGRESS: ${patternAnalysis.consecutiveCount} consecutive ${digitType} digits detected, need ${needed} more for ${targetType} trigger...`);
+        } else {
+          console.log(`[TradeAction/UserNotification] 🎯 REAL-TIME READY: ${patternAnalysis.consecutiveCount} consecutive ${digitType} digits detected! Waiting for ${targetType} digit...`);
+        }
+      } else {
+        console.log(`[TradeAction/UserNotification] 📊 REAL-TIME TICK: Current digit ${patternAnalysis.currentDigit}, consecutive count: ${patternAnalysis.consecutiveCount}`);
+      }
+      break;
+
+    case 'pattern_found':
+      console.log(`[TradeAction/UserNotification] ✅ REAL-TIME PATTERN FOUND! ${patternAnalysis.reasoning}`);
+      console.log(`[TradeAction/UserNotification] 🚀 Executing trades immediately with WebSocket-detected pattern...`);
+      break;
+
+    case 'timeout':
+      console.log(`[TradeAction/UserNotification] ⏰ REAL-TIME MONITORING TIMEOUT: Required pattern not detected within time limit`);
+      console.log(`[TradeAction/UserNotification] Final status: ${patternAnalysis.reasoning}`);
+      break;
+  }
 }
 
 export async function executeAiTradingStrategy(
@@ -986,17 +1225,35 @@ export async function executeVolatilityManualTradeLoop(
 
     console.log(`[TradeAction/ManualSession] Pattern Analysis Result:`, patternAnalysis);
 
-    // CRITICAL FIX: Validate pattern conditions before execution
+    // CRITICAL FIX: Implement continuous pattern monitoring instead of immediate failure
     if (!patternAnalysis.shouldExecute) {
-      console.log(`[TradeAction/ManualSession] ❌ Pattern validation failed: ${patternAnalysis.reasoning}`);
-      return [{
-        success: false,
-        instrument: targetInstrument,
-        error: `Pattern validation failed: ${patternAnalysis.reasoning}`
-      }];
-    }
+      console.log(`[TradeAction/ManualSession] 🔍 Pattern not ready, entering continuous monitoring mode: ${patternAnalysis.reasoning}`);
 
-    console.log(`[TradeAction/ManualSession] ✅ Pattern validation passed: ${patternAnalysis.reasoning}`);
+      // Enter continuous pattern monitoring mode
+      const monitoringResult = await continuousPatternMonitoring(
+        targetInstrument,
+        selectedStrategy,
+        userDerivApiToken,
+        60000, // 60 second timeout
+        patternAnalysis
+      );
+
+      if (!monitoringResult.success) {
+        return [{
+          success: false,
+          instrument: targetInstrument,
+          error: monitoringResult.error || 'Pattern monitoring failed or timed out'
+        }];
+      }
+
+      // Update pattern analysis with successful monitoring result
+      patternAnalysis = monitoringResult.patternAnalysis!;
+      instrumentLatestSpot[apiSymbol] = monitoringResult.latestPrice!;
+
+      console.log(`[TradeAction/ManualSession] ✅ Pattern monitoring successful: ${patternAnalysis.reasoning}`);
+    } else {
+      console.log(`[TradeAction/ManualSession] ✅ Pattern validation passed immediately: ${patternAnalysis.reasoning}`);
+    }
 
     // CRITICAL FIX: Use pattern-validated contract type
     const contractType = patternAnalysis.contractType;
