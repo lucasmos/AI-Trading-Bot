@@ -550,8 +550,13 @@ export async function executeVolatilityAiTradeLoop(
     return [{ success: false, instrument: "N/A" as VolatilityInstrumentType, error: errorMsg }];
   }
 
+  // CRITICAL FIX: Vercel environment detection and optimization
+  const isVercelEnvironment = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+  const is1sIndex = selectedInstrument.includes('(1s)');
+
   console.log(`[TradeAction/Session] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
   console.log(`[TradeAction/Session] Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Selected Instrument: ${selectedInstrument}`);
+  console.log(`[TradeAction/Session] Environment: ${isVercelEnvironment ? 'Vercel Serverless' : 'Local/Other'}, 1s Index: ${is1sIndex}`);
   console.log(`[TradeAction/Session] CRITICAL FIX: Available volatility indices for data fetching:`, AVAILABLE_VOLATILITY_INDICES);
 
   const instrumentTicksForAI: Record<string, PriceTick[]> = {};
@@ -565,10 +570,23 @@ export async function executeVolatilityAiTradeLoop(
       let indicators: InstrumentIndicatorData | undefined = {};
       let rawCandlesData: CandleData[] | undefined = undefined;
 
+      // CRITICAL FIX: Get API symbol for consistent data storage keys
+      const apiSymbol = instrumentToDerivSymbol(instrument as VolatilityInstrumentType);
+      console.log(`[TradeAction/Session] Processing ${instrument} -> API Symbol: ${apiSymbol}`);
+
       if (userSelectedTradeType.startsWith("Digits")) {
-        // Fetch raw tick data and map into PriceTick[]
-        // Reduced tick count for DigitsOverUnder to speed up AI processing
-        const tickCount = userSelectedTradeType === 'DigitsOverUnder' ? 15 : 25;
+        // CRITICAL FIX: Optimized tick count for 1-second indices to prevent Vercel memory issues
+        // 1s indices generate more data, so we use smaller samples for efficiency
+        const is1sIndex = instrument.includes('(1s)');
+        let tickCount: number;
+
+        if (userSelectedTradeType === 'DigitsOverUnder') {
+          tickCount = is1sIndex ? 12 : 15; // Reduced for 1s indices
+        } else {
+          tickCount = is1sIndex ? 20 : 25; // Optimized for 1s indices
+        }
+
+        console.log(`[TradeAction/Session] Fetching ${tickCount} ticks for ${instrument} (1s index: ${is1sIndex})`);
         const tickData = await getTicks(instrument as VolatilityInstrumentType, tickCount, userDerivApiToken);
         priceData = tickData.map(tick => ({
           epoch: tick.epoch,
@@ -595,17 +613,29 @@ export async function executeVolatilityAiTradeLoop(
       }
 
       if (!priceData || priceData.length < 5) {
-        console.warn(`[TradeAction/Session] Insufficient data for ${instrument}. Excluding from AI input to avoid schema issues.`);
+        console.warn(`[TradeAction/Session] Insufficient data for ${instrument} (${apiSymbol}). Excluding from AI input to avoid schema issues.`);
         // Don't add to instrumentTicksForAI or instrumentIndicatorsForAI - exclude entirely
       } else {
-        instrumentTicksForAI[instrument] = priceData.slice(-50);
-        instrumentIndicatorsForAI[instrument] = indicators;
+        // CRITICAL FIX: Store data using API symbol as key for consistent access in AI session flow
+        // This ensures AI can find data using targetInstrumentCode (API symbol)
+        instrumentTicksForAI[apiSymbol] = priceData.slice(-50);
+        instrumentIndicatorsForAI[apiSymbol] = indicators;
+        instrumentATR[apiSymbol] = indicators?.atr;
+
+        console.log(`[TradeAction/Session] Successfully stored data for ${instrument} -> ${apiSymbol}: ${priceData.length} ticks`);
       }
     } catch (dataFetchError: any) {
-      console.error(`[TradeAction/Session] Failed to fetch data for ${instrument}: ${dataFetchError.message}`);
+      const is1sIndex = instrument.includes('(1s)');
+      console.error(`[TradeAction/Session] Failed to fetch data for ${instrument} (${apiSymbol}) [1s: ${is1sIndex}]: ${dataFetchError.message}`);
+
+      // CRITICAL FIX: Enhanced error handling for 1-second indices
+      if (is1sIndex && dataFetchError.message?.includes('timeout')) {
+        console.warn(`[TradeAction/Session] 1s index ${instrument} timed out - this may be due to Vercel serverless constraints`);
+      }
+
       // For instruments that fail to fetch data, we'll exclude them from the AI input entirely
       // rather than including them with empty data, which can cause schema validation issues
-      console.warn(`[TradeAction/Session] Excluding ${instrument} from AI input due to data fetch failure.`);
+      console.warn(`[TradeAction/Session] Excluding ${instrument} (${apiSymbol}) from AI input due to data fetch failure.`);
       // Don't add to instrumentTicksForAI or instrumentIndicatorsForAI
     }
   }
@@ -618,12 +648,14 @@ export async function executeVolatilityAiTradeLoop(
     }
   }
 
-  // Only include instruments that have data available
-  const availableInstrumentsWithData = AVAILABLE_VOLATILITY_INDICES.filter(instrument =>
-    instrumentTicksForAI[instrument] && instrumentTicksForAI[instrument].length > 0
-  );
+  // CRITICAL FIX: Check for data availability using API symbols (since that's how data is stored)
+  const availableInstrumentsWithData = AVAILABLE_VOLATILITY_INDICES.filter(instrument => {
+    const apiSymbol = instrumentToDerivSymbol(instrument as VolatilityInstrumentType);
+    return instrumentTicksForAI[apiSymbol] && instrumentTicksForAI[apiSymbol].length > 0;
+  });
 
   console.log(`[TradeAction/Session] Available instruments with data: ${availableInstrumentsWithData.join(', ')}`);
+  console.log(`[TradeAction/Session] Available API symbols with data: ${Object.keys(instrumentTicksForAI).join(', ')}`);
 
   if (availableInstrumentsWithData.length === 0) {
     console.error('[TradeAction/Session] No instruments have sufficient data for AI analysis.');
@@ -692,9 +724,19 @@ export async function executeVolatilityAiTradeLoop(
         success: true
       };
     } else {
-      // Add timeout to prevent Vercel timeout
-      // DigitsOverUnder needs more time due to complex tick analysis and barrier validation
-      const timeoutDuration = userSelectedTradeType === 'DigitsOverUnder' ? 58000 : 45000;
+      // CRITICAL FIX: Enhanced Vercel timeout handling for 1-second indices
+      // 1s indices require additional processing time due to higher tick frequency
+      const is1sIndex = selectedInstrument.includes('(1s)');
+      let timeoutDuration: number;
+
+      if (userSelectedTradeType === 'DigitsOverUnder') {
+        timeoutDuration = is1sIndex ? 55000 : 58000; // Slightly reduced for 1s indices to prevent Vercel timeout
+      } else {
+        timeoutDuration = is1sIndex ? 40000 : 45000; // Optimized for 1s indices
+      }
+
+      console.log(`[TradeAction/Session] Using ${timeoutDuration/1000}s timeout for ${selectedInstrument} (1s index: ${is1sIndex})`);
+
       aiSessionStrategy = await Promise.race([
         generateVolatilitySessionStrategy(aiSessionInput),
         new Promise<never>((_, reject) => {
