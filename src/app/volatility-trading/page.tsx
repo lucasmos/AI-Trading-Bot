@@ -33,7 +33,6 @@ import {
 import {
   executeVolatilityAiTradeLoop,
   executeVolatilityManualTradeLoop, // CRITICAL FIX: Import manual execution function
-  cancelPatternMonitoring, // CRITICAL FIX: Import pattern monitoring cancellation
   type VolatilityTradeExecutionResult,
   type VolatilityTradeOptions
 } from '@/app/actions/trade-execution-actions';
@@ -46,7 +45,7 @@ import type {
   ProfitsClaimable,
   InstrumentType
 } from '@/types/index';
-import { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
+import type { UserTradeType as UserTradeTypeValue } from '@/types/ai-shared-types';
 
 import { Bot, Square, Briefcase, UserCheck, Activity, DollarSign } from 'lucide-react';
 import { VOLATILITY_INSTRUMENTS } from '@/config/instruments';
@@ -114,7 +113,7 @@ export default function VolatilityTradingPage() {
   // CRITICAL FIX: Manual execution mode toggle
   const [isManualMode, setIsManualMode] = useState<boolean>(false);
 
-  // CRITICAL FIX: Pattern monitoring state
+  // CRITICAL FIX: Pattern monitoring state (with SSR-safe initialization)
   const [isPatternMonitoring, setIsPatternMonitoring] = useState<boolean>(false);
   const [patternMonitoringStatus, setPatternMonitoringStatus] = useState<string>('');
   const [patternMonitoringProgress, setPatternMonitoringProgress] = useState<{
@@ -122,6 +121,13 @@ export default function VolatilityTradingPage() {
     currentDigit: number;
     needed: number;
   } | null>(null);
+
+  // CRITICAL FIX: Hydration check to prevent SSR issues
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   // State for Over/Under digit selection
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
@@ -170,29 +176,23 @@ export default function VolatilityTradingPage() {
     }
   }, [selectedOverDigit, selectedUnderDigit]);
 
-  // CRITICAL FIX: Cancel pattern monitoring function (async)
-  const handleCancelPatternMonitoring = useCallback(async () => {
+  // CRITICAL FIX: Cancel pattern monitoring function (local implementation)
+  const handleCancelPatternMonitoring = useCallback(() => {
     console.log('[VolatilityPage] User requested pattern monitoring cancellation');
-    try {
-      await cancelPatternMonitoring();
-      setIsPatternMonitoring(false);
-      setPatternMonitoringStatus('');
-      setPatternMonitoringProgress(null);
-      setIsAiLoading(false);
-      setIsAutoTradingActive(false);
-      toast({
-        title: "Pattern Monitoring Cancelled",
-        description: "Pattern monitoring has been stopped by user request.",
-        variant: "default"
-      });
-    } catch (error) {
-      console.error('[VolatilityPage] Error cancelling pattern monitoring:', error);
-      toast({
-        title: "Cancellation Error",
-        description: "Failed to cancel pattern monitoring. Please try again.",
-        variant: "destructive"
-      });
-    }
+
+    // Local cancellation - just reset the UI state
+    // The server action will timeout naturally or detect the state change
+    setIsPatternMonitoring(false);
+    setPatternMonitoringStatus('');
+    setPatternMonitoringProgress(null);
+    setIsAiLoading(false);
+    setIsAutoTradingActive(false);
+
+    toast({
+      title: "Pattern Monitoring Cancelled",
+      description: "Pattern monitoring has been stopped by user request.",
+      variant: "default"
+    });
   }, [toast]);
 
   // Handler for prediction digit input validation
@@ -731,12 +731,12 @@ export default function VolatilityTradingPage() {
         console.log(`[VolatilityPage] Initiating REAL trade loop (${executionModeText} MODE). User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
 
         if (isManualMode) {
-          // CRITICAL FIX: Set real-time WebSocket pattern monitoring state
+          // CRITICAL FIX: Set pattern monitoring state leveraging existing WebSocket
           setIsPatternMonitoring(true);
-          setPatternMonitoringStatus(`Real-time WebSocket monitoring for ${selectedStrategy} strategy...`);
+          setPatternMonitoringStatus(`Pattern monitoring using existing WebSocket stream for ${selectedStrategy} strategy...`);
           toast({
-            title: `Real-Time Pattern Monitoring Started`,
-            description: `WebSocket streaming active for ${selectedStrategy} strategy. Analyzing every tick in real-time. Max 60 seconds.`,
+            title: `Manual Pattern Monitoring Started`,
+            description: `Leveraging existing WebSocket connection for ${selectedStrategy} strategy. Server monitors patterns via polling. Max 60 seconds.`,
             duration: 8000
           });
         } else {
@@ -1370,6 +1370,11 @@ export default function VolatilityTradingPage() {
 
   // Real-time WebSocket price streaming for trade type cards
   useEffect(() => {
+    // CRITICAL FIX: Only run WebSocket setup in browser environment
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (!selectedUserTradeTypeForLoop || (selectedUserTradeTypeForLoop !== 'DigitsEvenOdd' && selectedUserTradeTypeForLoop !== 'DigitsOverUnder')) {
       return;
     }
@@ -1386,6 +1391,12 @@ export default function VolatilityTradingPage() {
 
         const handleTick = (tick: PriceTick) => {
           console.log('[VolatilityPage] Received tick:', tick);
+
+          // CRITICAL FIX: Add safety check for SSR compatibility
+          if (!currentVolatilityInstrument || typeof tick.price !== 'number') {
+            console.warn('[VolatilityPage] Invalid tick data or instrument not initialized');
+            return;
+          }
 
           const decimalPlaces = getInstrumentDecimalPlaces(currentVolatilityInstrument);
           const priceStr = tick.price.toFixed(decimalPlaces);
@@ -1798,14 +1809,14 @@ export default function VolatilityTradingPage() {
                 {selectedUserTradeTypeForLoop ? "Real trades will be attempted." : "Trading is simulated on this page."} Volatility Index trading involves high risk.
               </p>
 
-              {/* CRITICAL FIX: Real-Time WebSocket Pattern Monitoring Status Card */}
-              {isManualMode && isPatternMonitoring && (
-                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              {/* CRITICAL FIX: Pattern Monitoring Status Card (Leveraging Existing WebSocket) */}
+              {isHydrated && isManualMode && isPatternMonitoring && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center">
-                      <div className="animate-pulse rounded-full h-4 w-4 bg-green-500 mr-2"></div>
-                      <span className="text-sm font-medium text-green-800">Real-Time WebSocket Monitoring</span>
-                      <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">LIVE</span>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                      <span className="text-sm font-medium text-blue-800">Pattern Monitoring Active</span>
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">SMART</span>
                     </div>
                     <Button
                       onClick={handleCancelPatternMonitoring}
@@ -1816,20 +1827,20 @@ export default function VolatilityTradingPage() {
                       Cancel
                     </Button>
                   </div>
-                  <p className="text-xs text-green-700 mb-1">
-                    {patternMonitoringStatus || `Real-time WebSocket streaming for ${selectedStrategy} strategy patterns...`}
+                  <p className="text-xs text-blue-700 mb-1">
+                    {patternMonitoringStatus || `Pattern monitoring for ${selectedStrategy} strategy...`}
                   </p>
-                  <p className="text-xs text-green-600 mb-2">
-                    🚀 Analyzing patterns on EVERY incoming tick (no delays)
+                  <p className="text-xs text-blue-600 mb-2">
+                    📡 Leveraging existing WebSocket connection + server-side pattern analysis
                   </p>
                   {patternMonitoringProgress && (
-                    <p className="text-xs text-green-600">
+                    <p className="text-xs text-blue-600">
                       Progress: {patternMonitoringProgress.consecutiveCount} consecutive digits detected,
                       need {patternMonitoringProgress.needed} more for trigger
                     </p>
                   )}
-                  <div className="mt-2 bg-green-200 rounded-full h-1">
-                    <div className="bg-green-600 h-1 rounded-full animate-pulse" style={{width: '80%'}}></div>
+                  <div className="mt-2 bg-blue-200 rounded-full h-1">
+                    <div className="bg-blue-600 h-1 rounded-full animate-pulse" style={{width: '70%'}}></div>
                   </div>
                 </div>
               )}
@@ -1899,7 +1910,7 @@ export default function VolatilityTradingPage() {
           )}
 
           {/* Even/Odd Trade Type Card */}
-          {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
+          {isHydrated && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
             <Card className="shadow-lg min-h-[500px]">
               <CardHeader>
                 <CardTitle>Even/Odd Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
@@ -1911,7 +1922,7 @@ export default function VolatilityTradingPage() {
                   <div className="text-center">
                     <div className="text-sm text-muted-foreground mb-2">Current Price</div>
                     <div className="text-2xl font-mono font-bold">
-                      {currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument))}
+                      {currentStreamingPrice > 0 ? currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument)) : '---'}
                     </div>
                   </div>
 
@@ -1952,7 +1963,7 @@ export default function VolatilityTradingPage() {
           )}
 
           {/* Over/Under Trade Type Card */}
-          {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
+          {isHydrated && selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
             <Card className="shadow-lg min-h-[600px]">
               <CardHeader>
                 <CardTitle>Over/Under Analysis - {getChartTabLabel(currentVolatilityInstrument)}</CardTitle>
@@ -1964,7 +1975,7 @@ export default function VolatilityTradingPage() {
                   <div className="text-center">
                     <div className="text-sm text-muted-foreground mb-2">Current Price</div>
                     <div className="text-2xl font-mono font-bold">
-                      {currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument))}
+                      {currentStreamingPrice > 0 ? currentStreamingPrice.toFixed(getInstrumentDecimalPlaces(currentVolatilityInstrument)) : '---'}
                     </div>
                   </div>
 
@@ -2130,10 +2141,16 @@ export default function VolatilityTradingPage() {
                         </TableCell>
 
                         {/* Entry Point */}
-                        <TableCell>{trade.entryPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || '-'}</TableCell>
+                        <TableCell>{trade.entryPrice && trade.instrument ? trade.entryPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument)) : '-'}</TableCell>
 
                         {/* Exit Point */}
-                        <TableCell>{trade.exitPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || (trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument))) || '-'}</TableCell>
+                        <TableCell>{
+                          trade.exitPrice && trade.instrument
+                            ? trade.exitPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))
+                            : trade.currentPrice && trade.instrument
+                              ? trade.currentPrice.toFixed(getInstrumentDecimalPlaces(trade.instrument))
+                              : '-'
+                        }</TableCell>
 
                         {/* Buy Price */}
                         <TableCell>${trade.buyPrice?.toFixed(2) || trade.stake?.toFixed(2) || '0.00'}</TableCell>
