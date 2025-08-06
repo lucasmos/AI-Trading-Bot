@@ -475,8 +475,12 @@ export default function VolatilityTradingPage() {
       }); // Reset pattern analysis counters
       setCurrentStreamingPrice(0); // Reset current price display
 
-      // Reset strategy-related state to prevent cross-contamination
-      setSelectedStrategy(''); // Clear strategy selection for new instrument
+      // CRITICAL FIX: Only reset strategy if switching between different trade types
+      // Don't reset strategy when switching between volatility indices of the same type
+      // (e.g., V10 to V10-1s should keep Even/Odd strategy selection)
+      console.log(`[VolatilityPage] Preserving strategy selection "${selectedStrategy}" when switching instruments`);
+
+      // Only reset Over/Under specific selections (these are instrument-specific)
       setSelectedOverDigit(null); // Clear Over/Under digit selections
       setSelectedUnderDigit(null);
       setPredictionDigit(null); // Clear prediction digit
@@ -657,12 +661,23 @@ export default function VolatilityTradingPage() {
 
         // Validate strategy selection for real trading
         if (selectedUserTradeTypeForLoop && !selectedStrategy) {
-            console.log('[VolatilityPage] Strategy validation failed:', { selectedUserTradeTypeForLoop, selectedStrategy });
+            console.error('[VolatilityPage] STRATEGY VALIDATION FAILED:', {
+              selectedUserTradeTypeForLoop,
+              selectedStrategy,
+              currentVolatilityInstrument,
+              availableStrategies: getStrategyOptions(selectedUserTradeTypeForLoop)
+            });
             toast({ title: "Strategy Required", description: "Please select a trading strategy before starting.", variant: "destructive"});
             setIsAiLoading(false);
             setIsAutoTradingActive(false);
             return;
         }
+
+        console.log('[VolatilityPage] Strategy validation passed:', {
+          selectedUserTradeTypeForLoop,
+          selectedStrategy,
+          currentVolatilityInstrument
+        });
 
         // Validate prediction digit for Over/Under trade type
         if (selectedUserTradeTypeForLoop === 'DigitsOverUnder' && predictionDigit === null) {
@@ -1415,7 +1430,7 @@ export default function VolatilityTradingPage() {
                 <Label htmlFor="volatility-index-select">Select Volatility Index</Label>
                 <Select
                   value={currentVolatilityInstrument}
-                  onValueChange={(value) => setCurrentVolatilityInstrument(value as VolatilityInstrumentType)}
+                  onValueChange={(value) => handleInstrumentChange(value)}
                   disabled={isAutoTradingActive || isAiLoading}
                 >
                   <SelectTrigger id="volatility-index-select">
@@ -1560,7 +1575,12 @@ export default function VolatilityTradingPage() {
                   <Select
                     value={selectedStrategy}
                     onValueChange={(value) => {
-                      console.log('[VolatilityPage] Strategy selection changed:', { from: selectedStrategy, to: value });
+                      console.log('[VolatilityPage] Strategy selection changed:', {
+                        from: selectedStrategy,
+                        to: value,
+                        tradeType: selectedUserTradeTypeForLoop,
+                        instrument: currentVolatilityInstrument
+                      });
                       setSelectedStrategy(value);
                     }}
                     disabled={isAutoTradingActive || isAiLoading}
