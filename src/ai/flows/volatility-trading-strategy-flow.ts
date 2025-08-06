@@ -163,6 +163,31 @@ const volatilitySingleTradeStrategyFlowInternal = ai.defineFlow(
       };
     }
 
+    // CRITICAL FIX: Validate current digit alignment with user strategy for DigitsEvenOdd
+    if (input.userSelectedTradeType === 'DigitsEvenOdd' && input.selectedStrategy && input.instrumentLatestSpot) {
+      const currentPrice = input.instrumentLatestSpot[input.currentInstrument];
+      if (currentPrice !== undefined) {
+        const currentLastDigit = Math.floor((currentPrice * 1000) % 10); // Get last digit
+        const isCurrentDigitEven = currentLastDigit % 2 === 0;
+
+        // Check if current digit aligns with user's selected strategy
+        const strategyRequiresEven = input.selectedStrategy.toLowerCase() === 'even';
+        const strategyRequiresOdd = input.selectedStrategy.toLowerCase() === 'odd';
+
+        if (strategyRequiresEven && !isCurrentDigitEven) {
+          console.log(`[AI Single Flow/${input.currentInstrument}] STRATEGY VALIDATION: Even strategy requires even digit, but current digit is ${currentLastDigit} (odd). Skipping trade.`);
+          return { instrument: input.currentInstrument as ExternalVolatilityInstrumentType, shouldTrade: false, reasoning: `Even strategy validation failed: current digit ${currentLastDigit} is odd, need even digit for entry` };
+        }
+
+        if (strategyRequiresOdd && isCurrentDigitEven) {
+          console.log(`[AI Single Flow/${input.currentInstrument}] STRATEGY VALIDATION: Odd strategy requires odd digit, but current digit is ${currentLastDigit} (even). Skipping trade.`);
+          return { instrument: input.currentInstrument as ExternalVolatilityInstrumentType, shouldTrade: false, reasoning: `Odd strategy validation failed: current digit ${currentLastDigit} is even, need odd digit for entry` };
+        }
+
+        console.log(`[AI Single Flow/${input.currentInstrument}] STRATEGY VALIDATION: ${input.selectedStrategy} strategy validated - current digit ${currentLastDigit} is ${isCurrentDigitEven ? 'even' : 'odd'}`);
+      }
+    }
+
     if (!input.instrumentTicks || input.instrumentTicks.length === 0) {
       return {
         instrument: input.currentInstrument as ExternalVolatilityInstrumentType,
@@ -437,6 +462,37 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
         tradesToExecute: [],
         overallReasoning: `No tick data available for selected instrument ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}). Please ensure the instrument is properly selected and streaming. Available instruments: ${Object.keys(input.instrumentTicks).join(', ')}.`
       };
+    }
+
+    // CRITICAL FIX: Validate current digit alignment with user strategy for DigitsEvenOdd
+    if (input.userSelectedTradeType === 'DigitsEvenOdd' && input.selectedStrategy && input.instrumentLatestSpot) {
+      const currentPrice = input.instrumentLatestSpot[targetInstrumentCode];
+      if (currentPrice !== undefined) {
+        const currentLastDigit = Math.floor((currentPrice * 1000) % 10); // Get last digit
+        const isCurrentDigitEven = currentLastDigit % 2 === 0;
+
+        // Check if current digit aligns with user's selected strategy
+        const strategyRequiresEven = input.selectedStrategy.toLowerCase() === 'even';
+        const strategyRequiresOdd = input.selectedStrategy.toLowerCase() === 'odd';
+
+        if (strategyRequiresEven && !isCurrentDigitEven) {
+          console.log(`[AI Session Flow] STRATEGY VALIDATION: Even strategy requires even digit, but current digit is ${currentLastDigit} (odd). Skipping session.`);
+          return {
+            tradesToExecute: [],
+            overallReasoning: `Even strategy validation failed: current digit ${currentLastDigit} is odd, need even digit for entry. Waiting for appropriate entry conditions.`
+          };
+        }
+
+        if (strategyRequiresOdd && isCurrentDigitEven) {
+          console.log(`[AI Session Flow] STRATEGY VALIDATION: Odd strategy requires odd digit, but current digit is ${currentLastDigit} (even). Skipping session.`);
+          return {
+            tradesToExecute: [],
+            overallReasoning: `Odd strategy validation failed: current digit ${currentLastDigit} is even, need odd digit for entry. Waiting for appropriate entry conditions.`
+          };
+        }
+
+        console.log(`[AI Session Flow] STRATEGY VALIDATION: ${input.selectedStrategy} strategy validated - current digit ${currentLastDigit} is ${isCurrentDigitEven ? 'even' : 'odd'}`);
+      }
     }
 
     // Check for pattern-based session strategy first
