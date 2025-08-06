@@ -32,6 +32,7 @@ import {
 
 import {
   executeVolatilityAiTradeLoop,
+  executeVolatilityManualTradeLoop, // CRITICAL FIX: Import manual execution function
   type VolatilityTradeExecutionResult,
   type VolatilityTradeOptions
 } from '@/app/actions/trade-execution-actions';
@@ -108,6 +109,9 @@ export default function VolatilityTradingPage() {
   // New state variables for the updated controls
   const [executionMode, setExecutionMode] = useState<'turbo' | 'safe'>('safe');
   const [numberOfBulkTrades, setNumberOfBulkTrades] = useState<number>(1);
+
+  // CRITICAL FIX: Manual execution mode toggle
+  const [isManualMode, setIsManualMode] = useState<boolean>(false);
 
   // State for Over/Under digit selection
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
@@ -687,25 +691,46 @@ export default function VolatilityTradingPage() {
             return;
         }
 
-        console.log(`[VolatilityPage] Initiating REAL trade loop. User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
-        toast({ title: "Volatility AI Loop Starting...", description: `Attempting to place real trades for type: ${selectedUserTradeTypeForLoop}` });
+        // CRITICAL FIX: Choose execution mode based on manual toggle
+        const executionModeText = isManualMode ? "MANUAL" : "AI";
+        console.log(`[VolatilityPage] Initiating REAL trade loop (${executionModeText} MODE). User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
+        toast({
+          title: `Volatility ${executionModeText} Loop Starting...`,
+          description: `Attempting to place real trades for type: ${selectedUserTradeTypeForLoop} using ${executionModeText} execution`
+        });
 
         try {
-            const loopResults: VolatilityTradeExecutionResult[] = await executeVolatilityAiTradeLoop(
-                userDerivApiToken,
-                targetAccountId,
-                selectedDerivAccountType as 'demo' | 'real',
-                userInfo.id,
-                selectedUserTradeTypeForLoop,
-                autoTradeTotalStake,
-                {
-                  executionMode,
-                  numberOfBulkTrades,
-                  selectedInstrument: currentVolatilityInstrument,
-                  predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null,
-                  selectedStrategy: selectedStrategy
-                }
-            );
+            // CRITICAL FIX: Use manual or AI execution based on toggle
+            const loopResults: VolatilityTradeExecutionResult[] = isManualMode
+              ? await executeVolatilityManualTradeLoop(
+                  userDerivApiToken,
+                  targetAccountId,
+                  selectedDerivAccountType as 'demo' | 'real',
+                  userInfo.id,
+                  selectedUserTradeTypeForLoop,
+                  autoTradeTotalStake,
+                  {
+                    executionMode,
+                    numberOfBulkTrades,
+                    selectedInstrument: currentVolatilityInstrument,
+                    selectedStrategy: selectedStrategy
+                  }
+                )
+              : await executeVolatilityAiTradeLoop(
+                  userDerivApiToken,
+                  targetAccountId,
+                  selectedDerivAccountType as 'demo' | 'real',
+                  userInfo.id,
+                  selectedUserTradeTypeForLoop,
+                  autoTradeTotalStake,
+                  {
+                    executionMode,
+                    numberOfBulkTrades,
+                    selectedInstrument: currentVolatilityInstrument,
+                    predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null,
+                    selectedStrategy: selectedStrategy
+                  }
+                );
 
             setConsecutiveAiCallCount(prev => prev + 1);
             setLastAiCallTimestamp(Date.now());
@@ -1485,6 +1510,47 @@ export default function VolatilityTradingPage() {
                 </div>
               </div>
 
+              {/* CRITICAL FIX: Manual Execution Mode Toggle */}
+              <div className="space-y-3">
+                <Label htmlFor="manual-mode">Execution Type</Label>
+                <div className="flex space-x-2">
+                  <Button
+                    variant={!isManualMode ? 'default' : 'outline'}
+                    onClick={() => setIsManualMode(false)}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className="flex-1"
+                  >
+                    🤖 AI Mode
+                  </Button>
+                  <Button
+                    variant={isManualMode ? 'default' : 'outline'}
+                    onClick={() => {
+                      setIsManualMode(true);
+                      // CRITICAL FIX: Force Even/Odd trade type in manual mode
+                      if (selectedUserTradeTypeForLoop !== 'DigitsEvenOdd') {
+                        setSelectedUserTradeTypeForLoop('DigitsEvenOdd');
+                        setSelectedStrategy(''); // Reset strategy when changing trade type
+                      }
+                    }}
+                    disabled={isAutoTradingActive || isAiLoading}
+                    className="flex-1"
+                  >
+                    ⚡ Manual Mode
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground p-3 bg-muted rounded-md">
+                  <div className="font-medium mb-2">Execution Type Explanation:</div>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="font-medium">🤖 AI Mode:</span> Uses AI analysis to make trading decisions. Takes 6+ seconds for analysis but provides reasoning.
+                    </div>
+                    <div>
+                      <span className="font-medium">⚡ Manual Mode:</span> Direct pattern-based execution without AI delays. Near-instantaneous execution based on your selected strategy (Even/Odd only).
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* 4. Number of Bulk Trades */}
               <div className="space-y-2">
                 <Label htmlFor="bulk-trades">Number of Bulk Trades</Label>
@@ -1547,7 +1613,7 @@ export default function VolatilityTradingPage() {
                             setSelectedUserTradeTypeForLoop(option.value);
                           }
                         }}
-                      disabled={isAutoTradingActive || isAiLoading}
+                      disabled={isAutoTradingActive || isAiLoading || (isManualMode && option.value !== 'DigitsEvenOdd')}
                       className="h-12 text-sm font-medium border-2"
                     >
                       {option.label}
@@ -1565,7 +1631,12 @@ export default function VolatilityTradingPage() {
                     Simulation Mode
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">Select a trade type for real trading or use Simulation Mode for practice.</p>
+                <p className="text-xs text-muted-foreground">
+                  {isManualMode
+                    ? "Manual Mode only supports Even/Odd trades for optimal performance."
+                    : "Select a trade type for real trading or use Simulation Mode for practice."
+                  }
+                </p>
               </div>
 
               {/* Strategy Selection */}

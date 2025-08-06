@@ -546,6 +546,116 @@ async function executeSingleTrade(
   }
 }
 
+// CRITICAL FIX: Manual execution mode for Even/Odd trades (bypasses AI entirely)
+export async function executeVolatilityManualTradeLoop(
+  userDerivApiToken: string,
+  targetAccountId: string,
+  selectedAccountType: 'demo' | 'real',
+  userId: string,
+  userSelectedTradeType: UserTradeType,
+  totalStakeFromUser: number,
+  options?: VolatilityTradeOptions
+): Promise<VolatilityTradeExecutionResult[]> {
+  const executionMode = options?.executionMode || 'safe';
+  const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
+  const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
+  const selectedStrategy = options?.selectedStrategy || '';
+
+  console.log(`[TradeAction/ManualSession] MANUAL EXECUTION MODE - Starting session for ${selectedInstrument}`);
+  console.log(`[TradeAction/ManualSession] User Settings - Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}, Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Account: ${selectedAccountType}, Strategy: ${selectedStrategy}`);
+
+  const results: VolatilityTradeExecutionResult[] = [];
+
+  if (!userDerivApiToken || !targetAccountId || !userId) {
+    const errorMsg = "User token, target account ID, or user ID is missing for Manual trade loop.";
+    console.error(`[TradeAction/ManualSession] Pre-condition failed: ${errorMsg}`);
+    return [{ success: false, instrument: "N/A" as VolatilityInstrumentType, error: errorMsg }];
+  }
+
+  // CRITICAL FIX: Only support Even/Odd trades in manual mode
+  if (userSelectedTradeType !== 'DigitsEvenOdd') {
+    const errorMsg = `Manual execution mode only supports Even/Odd trades. Selected: ${userSelectedTradeType}`;
+    console.error(`[TradeAction/ManualSession] Unsupported trade type: ${errorMsg}`);
+    return [{ success: false, instrument: selectedInstrument as VolatilityInstrumentType, error: errorMsg }];
+  }
+
+  try {
+    // CRITICAL FIX: Only fetch data for the selected instrument (massive performance improvement)
+    const instrumentLatestSpot: Record<string, number | undefined> = {};
+    const instrumentATR: Record<string, number | undefined> = {};
+
+    const targetInstrument = selectedInstrument as VolatilityInstrumentType;
+    const apiSymbol = instrumentToDerivSymbol(targetInstrument);
+
+    console.log(`[TradeAction/ManualSession] Fetching data ONLY for selected instrument: ${targetInstrument} -> ${apiSymbol}`);
+
+    // Fetch minimal tick data (only 5 ticks for pattern analysis)
+    const ticksForInstrument = await getTicks(targetInstrument, 5, userDerivApiToken);
+    if (ticksForInstrument.length === 0) {
+      throw new Error(`No tick data available for ${targetInstrument}`);
+    }
+
+    // Store the latest price
+    const latestTick = ticksForInstrument[ticksForInstrument.length - 1];
+    instrumentLatestSpot[apiSymbol] = latestTick.price;
+    instrumentATR[apiSymbol] = 0; // Not needed for manual mode
+
+    console.log(`[TradeAction/ManualSession] Latest price for ${targetInstrument}: ${latestTick.price}`);
+
+    // CRITICAL FIX: Direct pattern-based logic (no AI involved)
+    const contractType = selectedStrategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD';
+    const stakePerTrade = totalStakeFromUser / numberOfBulkTrades;
+
+    console.log(`[TradeAction/ManualSession] MANUAL LOGIC - Strategy: ${selectedStrategy} -> Contract Type: ${contractType}`);
+
+    // Create manual trade proposals (no AI reasoning)
+    const manualTradeProposals = [];
+    for (let i = 0; i < numberOfBulkTrades; i++) {
+      manualTradeProposals.push({
+        instrument: targetInstrument,
+        derivContractType: contractType,
+        duration: executionMode === 'turbo' ? 1 : 5,
+        durationUnit: 't',
+        stake: stakePerTrade,
+        reasoning: `MANUAL EXECUTION: ${selectedStrategy} strategy on ${targetInstrument}. Mode: ${executionMode}. No AI analysis - direct pattern-based execution.`
+      });
+    }
+
+    console.log(`[TradeAction/ManualSession] Created ${manualTradeProposals.length} manual trade proposals`);
+
+    // Execute trades using the same tick-timing logic but with manual proposals
+    const executionResults = await executeTradesWithTickTiming(
+      manualTradeProposals,
+      userDerivApiToken,
+      targetAccountId,
+      selectedAccountType,
+      userId,
+      userSelectedTradeType,
+      totalStakeFromUser,
+      instrumentLatestSpot,
+      instrumentATR,
+      executionMode,
+      numberOfBulkTrades,
+      null, // No prediction digit for Even/Odd
+      selectedStrategy,
+      null // No pattern trigger needed
+    );
+
+    results.push(...executionResults);
+
+  } catch (error: any) {
+    console.error(`[TradeAction/ManualSession] CRITICAL ERROR during manual execution:`, error.message, error.stack);
+    results.push({
+      success: false,
+      instrument: selectedInstrument as VolatilityInstrumentType,
+      error: `Manual Execution Failed: ${error.message}`
+    });
+  }
+
+  console.log(`[TradeAction/ManualSession] Manual session completed. Results: ${results.length}`);
+  return results;
+}
+
 export async function executeVolatilityAiTradeLoop(
   userDerivApiToken: string,
   targetAccountId: string,
