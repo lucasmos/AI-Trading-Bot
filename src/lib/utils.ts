@@ -45,14 +45,19 @@ export function getInstrumentDecimalPlaces(instrument: InstrumentType): number {
       return 4; // 4 decimal places
     // 1-Second Volatility Indices (ALL 2 decimal places per Deriv)
     case 'Volatility 10 (1s) Index':
+    case '1HZ10V': // CRITICAL FIX: Add API symbol support
       return 2; // 2 decimal places (CORRECTED from 3 to 2)
     case 'Volatility 25 (1s) Index':
+    case '1HZ25V': // CRITICAL FIX: Add API symbol support
       return 2; // 2 decimal places (CORRECTED from 3 to 2)
     case 'Volatility 50 (1s) Index':
+    case '1HZ50V': // CRITICAL FIX: Add API symbol support
       return 2; // 2 decimal places
     case 'Volatility 75 (1s) Index':
+    case '1HZ75V': // CRITICAL FIX: Add API symbol support
       return 2; // 2 decimal places (CORRECTED from 4 to 2)
     case 'Volatility 100 (1s) Index':
+    case '1HZ100V': // CRITICAL FIX: Add API symbol support
       return 2; // 2 decimal places
     case 'Boom 500 Index':
     case 'Boom 600 Index':

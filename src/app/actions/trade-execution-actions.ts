@@ -196,7 +196,7 @@ async function executeTradesWithTickTiming(
     // Capture the current price point for all Turbo trades to use the same entry/exit price
     let sharedPricePoint: Record<string, number> = {};
 
-    // Get fresh price data for the first trade to establish the shared price point
+    // CRITICAL FIX: Get fresh price data for the first trade to establish the shared price point
     if (tradesToExecute.length > 0) {
       const firstInstrument = tradesToExecute[0].instrument as VolatilityInstrumentType;
       try {
@@ -204,11 +204,24 @@ async function executeTradesWithTickTiming(
         if (freshTicks.length > 0) {
           sharedPricePoint[firstInstrument] = freshTicks[0].price;
           console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${firstInstrument}: ${sharedPricePoint[firstInstrument]}`);
+        } else {
+          throw new Error('No fresh ticks received');
         }
       } catch (error) {
         console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${firstInstrument}:`, error);
         // Fallback to existing instrumentLatestSpot
-        sharedPricePoint[firstInstrument] = instrumentLatestSpot[firstInstrument] || 0;
+        const fallbackPrice = instrumentLatestSpot[firstInstrument];
+        if (fallbackPrice && fallbackPrice > 0) {
+          sharedPricePoint[firstInstrument] = fallbackPrice;
+          console.log(`[TradeAction/TickTiming] Turbo mode: Using fallback price for ${firstInstrument}: ${sharedPricePoint[firstInstrument]}`);
+        } else {
+          throw new Error(`No valid price available for Turbo mode execution on ${firstInstrument}`);
+        }
+      }
+
+      // CRITICAL FIX: Validate shared price point before proceeding
+      if (!sharedPricePoint[firstInstrument] || sharedPricePoint[firstInstrument] <= 0) {
+        throw new Error(`Invalid shared price point for Turbo mode: ${sharedPricePoint[firstInstrument]} on ${firstInstrument}`);
       }
     }
 
@@ -450,6 +463,17 @@ async function executeSingleTrade(
       }
     }
 
+    // CRITICAL FIX: Add Turbo mode shared price point enforcement
+    const sharedPriceForThisTrade = isTurboMode ? instrumentLatestSpot[instrumentFromAI] : undefined;
+
+    // CRITICAL FIX: Validate shared price point for Turbo mode
+    if (isTurboMode) {
+      if (!sharedPriceForThisTrade || sharedPriceForThisTrade <= 0) {
+        throw new Error(`Invalid shared price point for Turbo mode trade: ${sharedPriceForThisTrade} on ${instrumentFromAI}`);
+      }
+      console.log(`[TradeAction/SingleTrade] TURBO MODE VALIDATION: Using shared price point ${sharedPriceForThisTrade} for ${instrumentFromAI}`);
+    }
+
     tradeDetailsForApi = {
       symbol: currentApiSymbol,
       contract_type: finalContractType,
@@ -460,6 +484,9 @@ async function executeSingleTrade(
       basis: 'stake',
       token: userDerivApiToken,
       barrier: calculatedBarrier,
+      // CRITICAL FIX: Pass shared price point and Turbo mode flag
+      sharedPricePoint: sharedPriceForThisTrade,
+      isTurboMode: isTurboMode || false,
     };
 
     console.log(`[TradeAction/SingleTrade] Constructing TradeDetails for ${instrumentFromAI}:`, JSON.stringify({ ...tradeDetailsForApi, token: '***REDACTED***' }, null, 2));

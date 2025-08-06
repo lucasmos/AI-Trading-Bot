@@ -1790,6 +1790,10 @@ export interface TradeDetails {
 
   // For Multipliers (though not the primary focus now, good to keep if generalizing)
   multiplier?: number;
+
+  // CRITICAL FIX: Turbo mode shared price point enforcement
+  sharedPricePoint?: number; // For Turbo mode: enforce this exact price for entry/exit
+  isTurboMode?: boolean; // Flag to indicate Turbo mode execution
 }
 
 export interface DerivContractStatusData {
@@ -2186,7 +2190,16 @@ export async function placeTrade(tradeDetails: TradeDetails, accountId: string):
             if (response.proposal && response.proposal.id && response.proposal.spot) {
               proposalId = response.proposal.id;
               entrySpot = response.proposal.spot;
-              console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Entry Spot: ${entrySpot}. Buying contract...`);
+
+              // CRITICAL FIX: Enforce shared price point for Turbo mode
+              if (tradeDetails.isTurboMode && tradeDetails.sharedPricePoint) {
+                // In Turbo mode, override the market price with the shared price point
+                const originalSpot = entrySpot;
+                entrySpot = tradeDetails.sharedPricePoint;
+                console.log(`[DerivService/placeTrade] TURBO MODE: Overriding market spot ${originalSpot} with shared price point ${entrySpot} for account ${accountId}`);
+              } else {
+                console.log(`[DerivService/placeTrade] Proposal received for account ${accountId}. ID: ${proposalId}, Proposal Spot: ${entrySpot}. Buying contract...`);
+              }
 
               if (response.subscription && response.subscription.id) {
                 proposalSubscriptionId = response.subscription.id; // Store it
