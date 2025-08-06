@@ -34,6 +34,12 @@ const DERIV_INSTRUMENT_MAP: Partial<Record<InstrumentType, string>> = {
   'Volatility 50 Index': 'R_50',
   'Volatility 75 Index': 'R_75',
   'Volatility 100 Index': 'R_100',
+  // CRITICAL FIX: Add 1-second volatility indices mapping
+  'Volatility 10 (1s) Index': '1HZ10V',
+  'Volatility 25 (1s) Index': '1HZ25V',
+  'Volatility 50 (1s) Index': '1HZ50V',
+  'Volatility 75 (1s) Index': '1HZ75V',
+  'Volatility 100 (1s) Index': '1HZ100V',
   // Forex, Crypto, Commodities usually use their direct symbols, but map if needed
   'EUR/USD': 'frxEURUSD',
   'GBP/USD': 'frxGBPUSD',

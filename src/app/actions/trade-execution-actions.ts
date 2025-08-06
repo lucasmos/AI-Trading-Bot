@@ -536,7 +536,12 @@ export async function executeVolatilityAiTradeLoop(
   const selectedStrategy = options?.selectedStrategy || '';
   const patternTrigger = options?.patternTrigger || null;
 
-  const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = ["R_10", "R_25", "R_50", "R_75", "R_100"];
+  // CRITICAL FIX: Include ALL volatility indices including 1-second indices
+  // Use proper display names (not API symbols) to match VolatilityInstrumentType
+  const AVAILABLE_VOLATILITY_INDICES: VolatilityInstrumentType[] = [
+    "Volatility 10 Index", "Volatility 25 Index", "Volatility 50 Index", "Volatility 75 Index", "Volatility 100 Index",
+    "Volatility 10 (1s) Index", "Volatility 25 (1s) Index", "Volatility 50 (1s) Index", "Volatility 75 (1s) Index", "Volatility 100 (1s) Index"
+  ];
   const results: VolatilityTradeExecutionResult[] = [];
 
   if (!userDerivApiToken || !targetAccountId || !userId) {
@@ -547,6 +552,7 @@ export async function executeVolatilityAiTradeLoop(
 
   console.log(`[TradeAction/Session] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
   console.log(`[TradeAction/Session] Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Selected Instrument: ${selectedInstrument}`);
+  console.log(`[TradeAction/Session] CRITICAL FIX: Available volatility indices for data fetching:`, AVAILABLE_VOLATILITY_INDICES);
 
   const instrumentTicksForAI: Record<string, PriceTick[]> = {};
   const instrumentIndicatorsForAI: Record<string, InstrumentIndicatorData | undefined> = {};
