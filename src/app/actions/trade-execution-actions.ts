@@ -190,8 +190,27 @@ async function executeTradesWithTickTiming(
   const results: VolatilityTradeExecutionResult[] = [];
 
   if (executionMode === 'turbo') {
-    // Turbo mode: Execute all trades immediately on same tick
-    console.log(`[TradeAction/TickTiming] Turbo mode: Executing all ${tradesToExecute.length} trades immediately`);
+    // Turbo mode: Execute all trades immediately on same tick with same price
+    console.log(`[TradeAction/TickTiming] Turbo mode: Executing all ${tradesToExecute.length} trades immediately with same entry/exit price`);
+
+    // Capture the current price point for all Turbo trades to use the same entry/exit price
+    let sharedPricePoint: Record<string, number> = {};
+
+    // Get fresh price data for the first trade to establish the shared price point
+    if (tradesToExecute.length > 0) {
+      const firstInstrument = tradesToExecute[0].instrument as VolatilityInstrumentType;
+      try {
+        const freshTicks = await getTicks(firstInstrument, 1, userDerivApiToken);
+        if (freshTicks.length > 0) {
+          sharedPricePoint[firstInstrument] = freshTicks[0].price;
+          console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${firstInstrument}: ${sharedPricePoint[firstInstrument]}`);
+        }
+      } catch (error) {
+        console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${firstInstrument}:`, error);
+        // Fallback to existing instrumentLatestSpot
+        sharedPricePoint[firstInstrument] = instrumentLatestSpot[firstInstrument] || 0;
+      }
+    }
 
     for (const aiProposal of tradesToExecute) {
       const result = await executeSingleTrade(
@@ -202,11 +221,12 @@ async function executeTradesWithTickTiming(
         userId,
         userSelectedTradeType,
         totalStakeFromUser,
-        instrumentLatestSpot,
+        sharedPricePoint, // Use shared price point instead of instrumentLatestSpot
         instrumentATR,
         predictionDigit,
         selectedStrategy,
-        patternTrigger
+        patternTrigger,
+        true // Flag to indicate this is a Turbo mode trade
       );
       results.push(result);
     }
@@ -243,7 +263,8 @@ async function executeTradesWithTickTiming(
           instrumentATR,
           predictionDigit,
           selectedStrategy,
-          patternTrigger
+          patternTrigger,
+          false // Safe mode
         );
         results.push(result);
       }
@@ -268,7 +289,8 @@ async function executeTradesWithTickTiming(
           instrumentATR,
           predictionDigit,
           selectedStrategy,
-          patternTrigger
+          patternTrigger,
+          false // Safe mode
         );
         results.push(result);
       }
@@ -298,7 +320,8 @@ async function executeTradesWithTickTiming(
             instrumentATR,
             predictionDigit,
             selectedStrategy,
-            patternTrigger
+            patternTrigger,
+            false // Safe mode
           );
           results.push(result);
         }
@@ -322,7 +345,8 @@ async function executeSingleTrade(
   instrumentATR: Record<string, number | undefined>,
   predictionDigit?: number | null,
   selectedStrategy?: string,
-  patternTrigger?: {shouldTrade: boolean, contractType: string, reasoning: string} | null
+  patternTrigger?: {shouldTrade: boolean, contractType: string, reasoning: string} | null,
+  isTurboMode?: boolean // Flag to indicate Turbo mode execution
 ): Promise<VolatilityTradeExecutionResult> {
   let tradeDetailsForApi: TradeDetails | null = null;
   let currentApiSymbol: string | null = null;
@@ -331,12 +355,20 @@ async function executeSingleTrade(
 
   try {
     currentApiSymbol = instrumentToDerivSymbol(instrumentFromAI);
-    console.log(`[TradeAction/SingleTrade] Processing AI proposed trade for: ${instrumentFromAI} (Deriv: ${currentApiSymbol})`);
+    console.log(`[TradeAction/SingleTrade] Processing AI proposed trade for: ${instrumentFromAI} (Deriv: ${currentApiSymbol}), Turbo Mode: ${isTurboMode || false}`);
 
     if (!aiProposal.instrument || !aiProposal.derivContractType || !aiProposal.duration || !aiProposal.durationUnit || !aiProposal.stake) {
       const missingFieldsError = `AI proposal for ${instrumentFromAI} is incomplete. Skipping.`;
       console.error(`[TradeAction/SingleTrade] ${missingFieldsError}`, aiProposal);
       return { success: false, instrument: instrumentFromAI, error: missingFieldsError, aiReasoning: aiProposal.reasoning };
+    }
+
+    // Log the price being used for this trade
+    const priceForThisTrade = instrumentLatestSpot[instrumentFromAI];
+    if (isTurboMode) {
+      console.log(`[TradeAction/SingleTrade] Turbo mode: Using shared price point for ${instrumentFromAI}: ${priceForThisTrade}`);
+    } else {
+      console.log(`[TradeAction/SingleTrade] Safe mode: Using individual price for ${instrumentFromAI}: ${priceForThisTrade}`);
     }
 
     let calculatedBarrier: string | number | undefined = aiProposal.barrier;
@@ -632,15 +664,18 @@ export async function executeVolatilityAiTradeLoop(
     if (patternTrigger && userSelectedTradeType === 'DigitsEvenOdd') {
       console.log(`[TradeAction/Session] Using pattern-based strategy:`, patternTrigger);
 
-      // Create pattern-based trade proposals
+      // Create pattern-based trade proposals with execution mode consideration
       const stakePerTrade = totalStakeFromUser / numberOfBulkTrades;
+      const tradeDuration = executionMode === 'turbo' ? 1 : 5; // Turbo: 1 tick, Safe: 5 ticks
+      console.log(`[TradeAction/Session] Pattern-based trades using ${executionMode} mode: ${tradeDuration} tick duration`);
+
       const tradesToExecute = Array.from({ length: numberOfBulkTrades }, (_, index) => ({
         derivContractType: patternTrigger.contractType,
         stake: stakePerTrade,
-        duration: 5, // 5 ticks for digit trades
+        duration: tradeDuration,
         durationUnit: 't' as const,
         barrier: undefined,
-        reasoning: `${patternTrigger.reasoning} (Trade ${index + 1}/${numberOfBulkTrades})`
+        reasoning: `${patternTrigger.reasoning} (Trade ${index + 1}/${numberOfBulkTrades}, ${executionMode} mode)`
       }));
 
       aiSessionStrategy = {
