@@ -634,6 +634,7 @@ export default function VolatilityTradingPage() {
 
         // Validate strategy selection for real trading
         if (selectedUserTradeTypeForLoop && !selectedStrategy) {
+            console.log('[VolatilityPage] Strategy validation failed:', { selectedUserTradeTypeForLoop, selectedStrategy });
             toast({ title: "Strategy Required", description: "Please select a trading strategy before starting.", variant: "destructive"});
             setIsAiLoading(false);
             setIsAutoTradingActive(false);
@@ -1468,15 +1469,23 @@ export default function VolatilityTradingPage() {
                       key={option.value}
                       variant={selectedUserTradeTypeForLoop === option.value ? 'default' : 'outline'}
                         onClick={() => {
-                          setSelectedUserTradeTypeForLoop(option.value);
-                          // Reset strategy selection when changing trade types
-                          setSelectedStrategy('');
-                          // Reset digit selections when changing trade types
-                          if (option.value !== 'DigitsOverUnder') {
-                            setSelectedOverDigit(null);
-                            setSelectedUnderDigit(null);
-                            setPredictionDigit(null);
-                            setPredictionDigitError('');
+                          // Only reset strategy and digit selections when actually changing to a different trade type
+                          if (selectedUserTradeTypeForLoop !== option.value) {
+                            console.log('[VolatilityPage] Trade type changed:', { from: selectedUserTradeTypeForLoop, to: option.value, resettingStrategy: true });
+                            setSelectedUserTradeTypeForLoop(option.value);
+                            // Reset strategy selection when changing trade types
+                            setSelectedStrategy('');
+                            // Reset digit selections when changing trade types
+                            if (option.value !== 'DigitsOverUnder') {
+                              setSelectedOverDigit(null);
+                              setSelectedUnderDigit(null);
+                              setPredictionDigit(null);
+                              setPredictionDigitError('');
+                            }
+                          } else {
+                            // If clicking the same trade type, just ensure it's selected (no reset)
+                            console.log('[VolatilityPage] Same trade type clicked:', { tradeType: option.value, keepingStrategy: selectedStrategy });
+                            setSelectedUserTradeTypeForLoop(option.value);
                           }
                         }}
                       disabled={isAutoTradingActive || isAiLoading}
@@ -1506,7 +1515,10 @@ export default function VolatilityTradingPage() {
                   <Label htmlFor="strategy-select">Strategy</Label>
                   <Select
                     value={selectedStrategy}
-                    onValueChange={setSelectedStrategy}
+                    onValueChange={(value) => {
+                      console.log('[VolatilityPage] Strategy selection changed:', { from: selectedStrategy, to: value });
+                      setSelectedStrategy(value);
+                    }}
                     disabled={isAutoTradingActive || isAiLoading}
                   >
                     <SelectTrigger id="strategy-select">
