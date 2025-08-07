@@ -586,7 +586,18 @@ export default function VolatilityTradingPage() {
   }, [toast]);
 
   const executePatternDetectedTrade = useCallback(async (strategy: string, consecutiveCount: number, triggerDigit: number) => {
-    console.log('[VolatilityPage] Executing pattern-detected trade in Manual Mode');
+    console.log('[VolatilityPage] 🎯 STARTING executePatternDetectedTrade in Manual Mode:', {
+      strategy,
+      consecutiveCount,
+      triggerDigit,
+      timestamp: new Date().toISOString(),
+      userInfo: userInfo?.id,
+      selectedDerivAccountType,
+      autoTradeTotalStake,
+      executionMode,
+      numberOfBulkTrades,
+      currentVolatilityInstrument
+    });
 
     // Stop monitoring first
     if (monitoringTimeoutId) {
@@ -640,6 +651,7 @@ export default function VolatilityTradingPage() {
 
       while (retryCount <= maxRetries) {
         try {
+          // CRITICAL FIX: Call manual execution with pattern bypass flag
           results = await executeVolatilityManualTradeLoop(
             userDerivApiToken,
             targetAccountId,
@@ -651,7 +663,16 @@ export default function VolatilityTradingPage() {
               executionMode,
               numberOfBulkTrades,
               selectedInstrument: currentVolatilityInstrument,
-              selectedStrategy: strategy
+              selectedStrategy: strategy,
+              bypassPatternValidation: true, // CRITICAL: Skip pattern validation since we already detected it
+              preValidatedPattern: {
+                shouldExecute: true,
+                contractType: strategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD',
+                reasoning: `Manual pattern monitoring detected: ${consecutiveCount} consecutive ${strategy === 'Even' ? 'odd' : 'even'} digits followed by ${strategy === 'Even' ? 'even' : 'odd'} digit ${triggerDigit}`,
+                currentDigit: triggerDigit,
+                consecutiveCount: consecutiveCount,
+                patternType: strategy === 'Even' ? 'even_after_odds' : 'odd_after_evens'
+              }
             }
           );
           break; // Success, exit retry loop
@@ -1718,16 +1739,30 @@ export default function VolatilityTradingPage() {
 
                   if (consecutiveRequiredCount >= 3) {
                     patternFound = true;
-                    console.log('[VolatilityPage] PATTERN FOUND! Executing automatic trade:', {
+                    console.log('[VolatilityPage] 🎯 PATTERN FOUND! Executing automatic trade:', {
                       strategy: selectedStrategy,
                       consecutiveRequiredCount,
                       currentDigit: lastDigit,
                       pattern: `${consecutiveRequiredCount} consecutive ${requiredType} → ${targetType} (${lastDigit})`,
-                      recentSequence: recentTicks.slice(-6).map(t => `${t.digit}(${t.digit % 2 === 0 ? 'E' : 'O'})`).join(' ')
+                      recentSequence: recentTicks.slice(-6).map(t => `${t.digit}(${t.digit % 2 === 0 ? 'E' : 'O'})`).join(' '),
+                      timestamp: new Date().toISOString(),
+                      userSettings: {
+                        executionMode,
+                        numberOfBulkTrades,
+                        autoTradeTotalStake,
+                        selectedDerivAccountType,
+                        currentVolatilityInstrument
+                      }
                     });
 
                     // Pattern found! Execute trade automatically
-                    executePatternDetectedTrade(selectedStrategy, consecutiveRequiredCount, lastDigit);
+                    console.log('[VolatilityPage] 🚀 Calling executePatternDetectedTrade...');
+                    try {
+                      executePatternDetectedTrade(selectedStrategy, consecutiveRequiredCount, lastDigit);
+                      console.log('[VolatilityPage] ✅ executePatternDetectedTrade called successfully');
+                    } catch (executeError) {
+                      console.error('[VolatilityPage] ❌ Error calling executePatternDetectedTrade:', executeError);
+                    }
                   } else {
                     console.log('[VolatilityPage] Target digit found but insufficient required sequence:', {
                       consecutiveRequiredCount,

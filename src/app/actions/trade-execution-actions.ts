@@ -594,6 +594,8 @@ export interface VolatilityTradeOptions {
     contractType: string;
     reasoning: string;
   }; // Pattern-based trade trigger
+  bypassPatternValidation?: boolean; // CRITICAL: Allow bypassing pattern validation
+  preValidatedPattern?: PatternAnalysisResult; // CRITICAL: Use pre-validated pattern from WebSocket
 }
 
 // Helper function to wait for next tick using WebSocket
@@ -1006,9 +1008,16 @@ export async function executeVolatilityManualTradeLoop(
   const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
   const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
   const selectedStrategy = options?.selectedStrategy || '';
+  const bypassPatternValidation = options?.bypassPatternValidation || false;
+  const preValidatedPattern = options?.preValidatedPattern;
 
   console.log(`[TradeAction/ManualSession] 🚀 ENHANCED MANUAL EXECUTION MODE - Starting session for ${selectedInstrument}`);
   console.log(`[TradeAction/ManualSession] User Settings - Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}, Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Account: ${selectedAccountType}, Strategy: ${selectedStrategy}`);
+
+  if (bypassPatternValidation && preValidatedPattern) {
+    console.log(`[TradeAction/ManualSession] 🎯 PATTERN BYPASS MODE: Using pre-validated pattern from WebSocket monitoring`);
+    console.log(`[TradeAction/ManualSession] Pre-validated Pattern:`, preValidatedPattern);
+  }
 
   const results: VolatilityTradeExecutionResult[] = [];
 
@@ -1065,12 +1074,20 @@ export async function executeVolatilityManualTradeLoop(
 
     console.log(`[TradeAction/ManualSession] Recent digits: [${tickDigits.slice(-10).join(', ')}]`);
 
-    // CRITICAL FIX: Implement Even/Odd pattern recognition logic
-    const patternAnalysis = analyzeEvenOddPatterns(tickDigits, selectedStrategy);
+    // CRITICAL FIX: Use pre-validated pattern or analyze fresh data
+    let patternAnalysis: PatternAnalysisResult;
+
+    if (bypassPatternValidation && preValidatedPattern) {
+      console.log(`[TradeAction/ManualSession] 🎯 Using pre-validated pattern from WebSocket monitoring`);
+      patternAnalysis = preValidatedPattern;
+    } else {
+      console.log(`[TradeAction/ManualSession] 🔍 Analyzing fresh tick data for pattern validation`);
+      patternAnalysis = analyzeEvenOddPatterns(tickDigits, selectedStrategy);
+    }
 
     console.log(`[TradeAction/ManualSession] Pattern Analysis Result:`, patternAnalysis);
 
-    // CRITICAL FIX: Validate pattern conditions before execution
+    // CRITICAL FIX: Validate pattern conditions before execution (only if not bypassed)
     if (!patternAnalysis.shouldExecute) {
       console.log(`[TradeAction/ManualSession] ❌ Pattern validation failed: ${patternAnalysis.reasoning}`);
       return [{
