@@ -493,6 +493,13 @@ export default function VolatilityTradingPage() {
       }
 
       // Set monitoring state
+      console.log('[VolatilityPage] Setting pattern monitoring state:', {
+        strategy: selectedStrategy,
+        tradeType: selectedUserTradeTypeForLoop,
+        requiredType: selectedStrategy === 'Even' ? 'odd' : 'even',
+        targetType: selectedStrategy === 'Even' ? 'even' : 'odd'
+      });
+
       setIsPatternMonitoring(true);
       setMonitoringStartTime(Date.now());
       setMonitoringStatus(`Monitoring patterns for ${selectedStrategy} strategy using existing WebSocket stream...`);
@@ -508,6 +515,12 @@ export default function VolatilityTradingPage() {
         handleMonitoringTimeout();
       }, 60000);
       setMonitoringTimeoutId(timeoutId);
+
+      console.log('[VolatilityPage] Pattern monitoring state set successfully:', {
+        isPatternMonitoring: true,
+        timeoutId: !!timeoutId,
+        startTime: Date.now()
+      });
 
       toast({
         title: "Pattern Monitoring Started",
@@ -990,7 +1003,14 @@ export default function VolatilityTradingPage() {
 
         // Enhanced Manual Mode: Start pattern monitoring instead of immediate execution
         if (isManualMode) {
-          console.log(`[VolatilityPage] Manual Mode: Starting intelligent pattern monitoring instead of immediate execution`);
+          console.log(`[VolatilityPage] Manual Mode detected - starting intelligent pattern monitoring:`, {
+            isManualMode,
+            selectedStrategy,
+            selectedUserTradeTypeForLoop,
+            autoTradeTotalStake,
+            executionMode,
+            numberOfBulkTrades
+          });
 
           // Reset loading states since we're not executing immediately
           setIsAiLoading(false);
@@ -1653,84 +1673,111 @@ export default function VolatilityTradingPage() {
 
             // Enhanced Manual Mode: Real-time Pattern Monitoring
             if (isPatternMonitoring && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && selectedStrategy) {
-              console.log('[VolatilityPage] Analyzing patterns during monitoring:', {
+              console.log('[VolatilityPage] Pattern monitoring active - analyzing tick:', {
                 currentDigit: lastDigit,
                 strategy: selectedStrategy,
-                sequenceLength: finalSequence.length
+                sequenceLength: finalSequence.length,
+                isPatternMonitoring,
+                monitoringTimeoutId: !!monitoringTimeoutId
               });
 
               // Analyze current sequence for pattern detection
               if (finalSequence.length >= 4) {
-                const recentTicks = finalSequence.slice(-10); // Last 10 ticks for analysis
+                const recentTicks = finalSequence.slice(-20); // Last 20 ticks for better analysis
                 const currentDigitIsEven = lastDigit % 2 === 0;
                 const currentType = currentDigitIsEven ? 'even' : 'odd';
 
-                // Count consecutive digits of the same type at the end
-                let consecutiveCount = 1;
-                for (let i = recentTicks.length - 2; i >= 0; i--) {
-                  const tickType = recentTicks[i].digit % 2 === 0 ? 'even' : 'odd';
-                  if (tickType === currentType) {
-                    consecutiveCount++;
-                  } else {
-                    break;
-                  }
-                }
-
-                // Update monitoring progress
+                // Improved pattern detection algorithm
                 const requiredType = selectedStrategy === 'Even' ? 'odd' : 'even';
                 const targetType = selectedStrategy === 'Even' ? 'even' : 'odd';
 
-                if (currentType === requiredType) {
-                  // We're building the required sequence
-                  const neededCount = Math.max(0, 3 - consecutiveCount);
-                  setMonitoringProgress({
-                    consecutiveCount,
-                    requiredType,
-                    targetType,
-                    neededCount
-                  });
+                console.log('[VolatilityPage] Pattern analysis details:', {
+                  currentDigit: lastDigit,
+                  currentType,
+                  requiredType,
+                  targetType,
+                  strategy: selectedStrategy,
+                  recentDigits: recentTicks.slice(-5).map(t => t.digit)
+                });
 
-                  if (consecutiveCount >= 3) {
-                    setMonitoringStatus(`3+ consecutive ${requiredType} digits detected! Waiting for ${targetType} digit...`);
-                  } else {
-                    setMonitoringStatus(`${consecutiveCount} consecutive ${requiredType} digits detected, need ${neededCount} more for ${targetType} trigger...`);
-                  }
-                } else if (currentType === targetType && consecutiveCount >= 1) {
-                  // Check if we had 3+ of the required type before this target digit
-                  let previousConsecutive = 0;
-                  let foundRequiredSequence = false;
+                // Check for the complete pattern: 3+ consecutive required type followed by target type
+                let patternFound = false;
+                let consecutiveRequiredCount = 0;
 
-                  // Look backwards from the current position to find the previous sequence
+                // If current digit is the target type, check if we have 3+ required type before it
+                if (currentType === targetType) {
+                  // Count consecutive required type digits before the current target digit
                   for (let i = recentTicks.length - 2; i >= 0; i--) {
                     const tickType = recentTicks[i].digit % 2 === 0 ? 'even' : 'odd';
                     if (tickType === requiredType) {
-                      previousConsecutive++;
+                      consecutiveRequiredCount++;
+                    } else {
+                      break; // Stop at first non-required type
+                    }
+                  }
+
+                  if (consecutiveRequiredCount >= 3) {
+                    patternFound = true;
+                    console.log('[VolatilityPage] PATTERN FOUND! Executing automatic trade:', {
+                      strategy: selectedStrategy,
+                      consecutiveRequiredCount,
+                      currentDigit: lastDigit,
+                      pattern: `${consecutiveRequiredCount} consecutive ${requiredType} → ${targetType} (${lastDigit})`,
+                      recentSequence: recentTicks.slice(-6).map(t => `${t.digit}(${t.digit % 2 === 0 ? 'E' : 'O'})`).join(' ')
+                    });
+
+                    // Pattern found! Execute trade automatically
+                    executePatternDetectedTrade(selectedStrategy, consecutiveRequiredCount, lastDigit);
+                  } else {
+                    console.log('[VolatilityPage] Target digit found but insufficient required sequence:', {
+                      consecutiveRequiredCount,
+                      needed: 3,
+                      currentDigit: lastDigit
+                    });
+                  }
+                }
+
+                // Update monitoring progress for UI feedback
+                if (!patternFound) {
+                  // Count current consecutive sequence of the same type
+                  let currentConsecutiveCount = 1;
+                  for (let i = recentTicks.length - 2; i >= 0; i--) {
+                    const tickType = recentTicks[i].digit % 2 === 0 ? 'even' : 'odd';
+                    if (tickType === currentType) {
+                      currentConsecutiveCount++;
                     } else {
                       break;
                     }
                   }
 
-                  if (previousConsecutive >= 3) {
-                    console.log('[VolatilityPage] PATTERN FOUND! Executing automatic trade:', {
-                      strategy: selectedStrategy,
-                      previousConsecutive,
-                      currentDigit: lastDigit,
-                      pattern: `${previousConsecutive} ${requiredType} → ${targetType}`
+                  if (currentType === requiredType) {
+                    // Building the required sequence
+                    const neededCount = Math.max(0, 3 - currentConsecutiveCount);
+                    setMonitoringProgress({
+                      consecutiveCount: currentConsecutiveCount,
+                      requiredType,
+                      targetType,
+                      neededCount
                     });
 
-                    // Pattern found! Execute trade automatically
-                    executePatternDetectedTrade(selectedStrategy, previousConsecutive, lastDigit);
+                    if (currentConsecutiveCount >= 3) {
+                      setMonitoringStatus(`${currentConsecutiveCount} consecutive ${requiredType} digits detected! Waiting for ${targetType} digit...`);
+                    } else {
+                      setMonitoringStatus(`${currentConsecutiveCount} consecutive ${requiredType} digits detected, need ${neededCount} more for ${targetType} trigger...`);
+                    }
+                  } else {
+                    // Different type or reset
+                    setMonitoringProgress({
+                      consecutiveCount: 0,
+                      requiredType,
+                      targetType,
+                      neededCount: 3
+                    });
+                    setMonitoringStatus(`Monitoring patterns for ${selectedStrategy} strategy - current: ${currentType} digit (${lastDigit})`);
                   }
-                } else {
-                  // Reset or different pattern
-                  setMonitoringProgress({
-                    consecutiveCount: currentType === requiredType ? consecutiveCount : 0,
-                    requiredType,
-                    targetType,
-                    neededCount: currentType === requiredType ? Math.max(0, 3 - consecutiveCount) : 3
-                  });
-                  setMonitoringStatus(`Monitoring patterns for ${selectedStrategy} strategy using existing WebSocket stream...`);
                 }
+              } else {
+                console.log('[VolatilityPage] Insufficient tick data for pattern analysis:', finalSequence.length);
               }
             }
 
@@ -1823,7 +1870,7 @@ export default function VolatilityTradingPage() {
         unsubscribe();
       }
     };
-  }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument]);
+  }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument, isPatternMonitoring, selectedStrategy, monitoringTimeoutId, executePatternDetectedTrade]);
 
   // CRITICAL FIX: Additional safety effect to ensure state cleanup on instrument change
   useEffect(() => {
