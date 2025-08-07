@@ -79,31 +79,77 @@ export default function TradeHistoryPage() {
       
       const apiTrades = await response.json();
       
-      // Convert API trades to match our TradeRecord format with new Deriv-style fields
-      const dbTrades = apiTrades.map((trade: any) => ({
-        id: trade.id,
-        timestamp: new Date(trade.openTime).getTime(),
-        instrument: trade.symbol,
-        tradeType: trade.tradeType || (trade.type.toUpperCase() === 'BUY' ? 'Rise/Fall' : (trade.type.toUpperCase() === 'SELL' ? 'Rise/Fall' : 'Higher/Lower')),
-        entryPrice: trade.entryPrice || trade.price,
-        exitPrice: trade.exitPrice || (trade.closeTime ? trade.metadata?.exitPrice || trade.price : null),
-        buyPrice: trade.buyPrice || trade.amount,
-        profitLoss: trade.profitLoss || trade.profit,
-        status: trade.status === 'closed'
-          ? (trade.profit > 0 ? 'won' : (trade.metadata?.outcome === 'closed_manual' ? 'closed_manual' : 'lost'))
-          : trade.status,
-        date: new Date(trade.openTime).toISOString().split('T')[0], // YYYY-MM-DD format
-        time: trade.closeTime ? new Date(trade.closeTime).toTimeString().split(' ')[0] : '-', // HH:MM:SS format
-        accountType: trade.metadata?.accountType || 'paper',
-        tradeCategory: trade.metadata?.tradeCategory || 'volatility',
-        reasoning: trade.metadata?.reasoning || '',
+      // Convert API trades to match our TradeRecord format with enhanced Deriv-style fields
+      const dbTrades = apiTrades.map((trade: any) => {
+        // Extract metadata for better field mapping
+        const metadata = trade.metadata || {};
 
-        // Legacy fields for backward compatibility
-        action: trade.type.toUpperCase() === 'BUY' ? 'CALL' : (trade.type.toUpperCase() === 'SELL' ? 'PUT' : trade.type.toUpperCase()),
-        duration: trade.metadata?.duration || '-',
-        stake: trade.amount,
-        pnl: trade.profit
-      }));
+        // Determine trade type from multiple sources
+        let tradeType = 'Unknown';
+        if (metadata.tradeType) {
+          tradeType = metadata.tradeType;
+        } else if (metadata.contractType) {
+          // Map contract types to display names
+          switch (metadata.contractType) {
+            case 'DIGITEVEN': tradeType = 'Even/Odd (Even)'; break;
+            case 'DIGITODD': tradeType = 'Even/Odd (Odd)'; break;
+            case 'DIGITOVER': tradeType = 'Over/Under (Over)'; break;
+            case 'DIGITUNDER': tradeType = 'Over/Under (Under)'; break;
+            case 'CALL': tradeType = 'Rise/Fall (Rise)'; break;
+            case 'PUT': tradeType = 'Rise/Fall (Fall)'; break;
+            default: tradeType = metadata.contractType;
+          }
+        } else if (trade.type) {
+          tradeType = trade.type;
+        }
+
+        // Determine account type
+        const accountType = metadata.isPaperTrade ? 'demo' :
+                           metadata.accountType ||
+                           (trade.accountType === 'demo' ? 'demo' : 'real');
+
+        // Calculate profit/loss with fallback logic
+        const profitLoss = trade.profitLoss || trade.profit || 0;
+
+        // Determine status with enhanced logic
+        let status = trade.status?.toLowerCase() || 'unknown';
+        if (status === 'open') {
+          status = 'open';
+        } else if (status === 'closed') {
+          if (profitLoss > 0) status = 'won';
+          else if (profitLoss < 0) status = 'lost';
+          else status = 'closed';
+        }
+
+        return {
+          id: trade.id,
+          timestamp: new Date(trade.openTime).getTime(),
+          instrument: metadata.instrument || trade.symbol,
+          tradeType: tradeType,
+          entryPrice: metadata.entryPrice || trade.entryPrice || trade.price,
+          exitPrice: metadata.exitPrice || trade.exitPrice || (trade.closeTime ? trade.price : null),
+          buyPrice: metadata.buyPrice || trade.buyPrice || trade.amount,
+          profitLoss: profitLoss,
+          status: status,
+          date: new Date(trade.openTime).toISOString().split('T')[0], // YYYY-MM-DD format
+          time: trade.closeTime ? new Date(trade.closeTime).toTimeString().split(' ')[0] : '-', // HH:MM:SS format
+          accountType: accountType,
+          tradeCategory: metadata.tradeCategory || 'volatility',
+          reasoning: metadata.reasoning || '',
+
+          // Legacy fields for backward compatibility
+          action: metadata.contractType || trade.type?.toUpperCase() || 'UNKNOWN',
+          duration: metadata.executionMode || metadata.duration || '-',
+          stake: trade.amount,
+          pnl: profitLoss,
+
+          // Additional fields for enhanced display
+          contractType: metadata.contractType,
+          derivContractId: metadata.derivContractId || trade.derivContractId,
+          executionMode: metadata.executionMode,
+          patternAnalysis: metadata.patternAnalysis
+        };
+      });
       
       console.log("Fetched trades from database:", dbTrades.length);
       setTradeHistory(dbTrades.sort((a: TradeRecord, b: TradeRecord) => b.timestamp - a.timestamp));

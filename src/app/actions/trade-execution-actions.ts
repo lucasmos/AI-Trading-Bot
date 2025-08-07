@@ -18,6 +18,68 @@ import { calculateAllIndicators } from '@/lib/technical-analysis';
 import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
+// Simple trade monitoring function for manual trades
+async function startTradeMonitoring(contractId: string, dbTradeId: string, apiToken: string, accountId: string) {
+  console.log(`[TradeMonitoring] Starting monitoring for contract ${contractId}, DB trade ${dbTradeId}`);
+
+  // Set up a simple polling mechanism to check trade status
+  const checkInterval = setInterval(async () => {
+    try {
+      // Call the contract status API
+      const response = await fetch('/api/deriv/contract-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contractId,
+          token: apiToken,
+          accountId
+        })
+      });
+
+      if (!response.ok) return;
+
+      const contractData = await response.json();
+
+      // Check if contract is completed
+      if (contractData.status === 'sold' || contractData.status === 'expired' || contractData.is_expired) {
+        console.log(`[TradeMonitoring] Contract ${contractId} completed:`, contractData);
+
+        // Update the trade in database
+        const profit = (contractData.sell_price || contractData.payout || 0) - (contractData.buy_price || 0);
+        const isWin = profit > 0;
+
+        await prisma.trade.update({
+          where: { id: dbTradeId },
+          data: {
+            status: 'closed',
+            closeTime: new Date(),
+            profit: profit,
+            exitPrice: contractData.exit_spot || contractData.current_spot,
+            profitLoss: profit,
+            metadata: {
+              ...(await prisma.trade.findUnique({ where: { id: dbTradeId }, select: { metadata: true } }))?.metadata as object || {},
+              contractCompleted: true,
+              finalStatus: isWin ? 'won' : 'lost',
+              derivContractData: contractData
+            }
+          }
+        });
+
+        console.log(`[TradeMonitoring] Updated DB trade ${dbTradeId}: ${isWin ? 'WON' : 'LOST'} with profit ${profit}`);
+        clearInterval(checkInterval);
+      }
+    } catch (error) {
+      console.error(`[TradeMonitoring] Error checking contract ${contractId}:`, error);
+    }
+  }, 5000); // Check every 5 seconds
+
+  // Clear interval after 5 minutes to prevent infinite polling
+  setTimeout(() => {
+    clearInterval(checkInterval);
+    console.log(`[TradeMonitoring] Stopped monitoring contract ${contractId} after timeout`);
+  }, 300000); // 5 minutes
+}
+
 // Kept for other parts of the application that might use it.
 export interface TradeExecutionResult {
   success: boolean;
@@ -156,25 +218,36 @@ async function executeManualTurboMode(
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
-          instrument: instrument,
-          tradeType: 'DigitsEvenOdd',
-          entryPrice: sharedPricePoint, // CRITICAL: Use shared price for consistency
-          buyPrice: stakePerTrade,
+          symbol: instrumentToDerivSymbol(instrument), // CRITICAL FIX: Add required symbol field
+          type: `DigitsEvenOdd (${contractType})`, // Use type field instead of tradeType
+          amount: stakePerTrade,
+          price: sharedPricePoint, // CRITICAL: Use shared price for consistency
+          totalValue: stakePerTrade,
           status: 'open',
-          entryTime: new Date(executionTimestamp),
-          isPaperTrade: selectedAccountType === 'demo',
+          openTime: new Date(executionTimestamp),
           metadata: {
+            instrument: instrument,
+            tradeType: 'DigitsEvenOdd',
             contractType: contractType,
             derivContractId: tradeResponse.contract_id,
             patternAnalysis: patternAnalysis,
             executionMode: 'turbo',
             sharedPricePoint: sharedPricePoint,
-            reasoning: `TURBO MANUAL: ${patternAnalysis.reasoning}`
+            reasoning: `TURBO MANUAL: ${patternAnalysis.reasoning}`,
+            isPaperTrade: selectedAccountType === 'demo',
+            entryPrice: sharedPricePoint,
+            buyPrice: stakePerTrade
           }
         }
       });
 
       console.log(`[TradeAction/TurboMode] ✅ Trade ${index + 1} executed - Contract ID: ${tradeResponse.contract_id}, DB ID: ${dbTrade.id}`);
+
+      // CRITICAL: Start trade monitoring for completion detection
+      if (tradeResponse.contract_id) {
+        console.log(`[TradeAction/TurboMode] Starting trade monitoring for contract ${tradeResponse.contract_id}`);
+        startTradeMonitoring(tradeResponse.contract_id.toString(), dbTrade.id, userDerivApiToken, targetAccountId);
+      }
 
       return {
         success: true,
@@ -338,26 +411,37 @@ async function executeSafeModeTradesBatch(
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
-          instrument: instrument,
-          tradeType: 'DigitsEvenOdd',
-          entryPrice: actualEntryPrice, // Use actual entry price from API
-          buyPrice: stakePerTrade,
+          symbol: instrumentToDerivSymbol(instrument), // CRITICAL FIX: Add required symbol field
+          type: `DigitsEvenOdd (${contractType})`, // Use type field instead of tradeType
+          amount: stakePerTrade,
+          price: actualEntryPrice, // Use actual entry price from API
+          totalValue: stakePerTrade,
           status: 'open',
-          entryTime: new Date(batchTimestamp + (i * 100)), // Slight offset for sequential execution
-          isPaperTrade: selectedAccountType === 'demo',
+          openTime: new Date(batchTimestamp + (i * 100)), // Slight offset for sequential execution
           metadata: {
+            instrument: instrument,
+            tradeType: 'DigitsEvenOdd',
             contractType: contractType,
             derivContractId: tradeResponse.contract_id,
             patternAnalysis: patternAnalysis,
             executionMode: 'safe',
             batchNumber: batchNumber,
             batchPosition: i + 1,
-            reasoning: `SAFE MANUAL Batch ${batchNumber}: ${patternAnalysis.reasoning}`
+            reasoning: `SAFE MANUAL Batch ${batchNumber}: ${patternAnalysis.reasoning}`,
+            isPaperTrade: selectedAccountType === 'demo',
+            entryPrice: actualEntryPrice,
+            buyPrice: stakePerTrade
           }
         }
       });
 
       console.log(`[TradeAction/SafeMode/Batch${batchNumber}] ✅ Trade ${i + 1} executed - Contract ID: ${tradeResponse.contract_id}, Entry: ${actualEntryPrice}`);
+
+      // CRITICAL: Start trade monitoring for completion detection
+      if (tradeResponse.contract_id) {
+        console.log(`[TradeAction/SafeMode/Batch${batchNumber}] Starting trade monitoring for contract ${tradeResponse.contract_id}`);
+        startTradeMonitoring(tradeResponse.contract_id.toString(), dbTrade.id, userDerivApiToken, targetAccountId);
+      }
 
       results.push({
         success: true,
