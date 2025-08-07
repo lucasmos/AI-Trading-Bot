@@ -113,6 +113,18 @@ export default function VolatilityTradingPage() {
   // CRITICAL FIX: Manual execution mode toggle
   const [isManualMode, setIsManualMode] = useState<boolean>(false);
 
+  // Pattern monitoring state for Enhanced Manual Mode
+  const [isPatternMonitoring, setIsPatternMonitoring] = useState<boolean>(false);
+  const [monitoringStatus, setMonitoringStatus] = useState<string>('');
+  const [monitoringProgress, setMonitoringProgress] = useState<{
+    consecutiveCount: number;
+    requiredType: 'even' | 'odd';
+    targetType: 'even' | 'odd';
+    neededCount: number;
+  } | null>(null);
+  const [monitoringTimeoutId, setMonitoringTimeoutId] = useState<NodeJS.Timeout | null>(null);
+  const [monitoringStartTime, setMonitoringStartTime] = useState<number | null>(null);
+
   // State for Over/Under digit selection
   const [selectedOverDigit, setSelectedOverDigit] = useState<number | null>(null);
   const [selectedUnderDigit, setSelectedUnderDigit] = useState<number | null>(null);
@@ -423,6 +435,291 @@ export default function VolatilityTradingPage() {
     }
   }, [userInfo, selectedDerivAccountType, autoTradeTotalStake, numberOfBulkTrades, executionMode, currentVolatilityInstrument, selectedStrategy, currentStreamingPrice, toast]);
 
+  // Enhanced Manual Mode: Pattern Monitoring Functions
+  const startPatternMonitoring = useCallback(() => {
+    console.log('[VolatilityPage] Starting intelligent pattern monitoring for Manual Mode');
+
+    try {
+      // Validate prerequisites
+      if (!selectedStrategy || selectedUserTradeTypeForLoop !== 'DigitsEvenOdd') {
+        toast({
+          title: "Configuration Error",
+          description: "Please select Even or Odd strategy for pattern monitoring",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Validate user authentication and account setup
+      if (!userInfo?.id || !selectedDerivAccountType) {
+        toast({
+          title: "Authentication Error",
+          description: "Please ensure you are logged in and have selected an account type",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const userDerivApiToken = selectedDerivAccountType === 'demo' ? userInfo.derivDemoApiToken : userInfo.derivRealApiToken;
+      const targetAccountId = selectedDerivAccountType === 'demo' ? userInfo.derivDemoAccountId : userInfo.derivRealAccountId;
+
+      if (!userDerivApiToken || !targetAccountId) {
+        toast({
+          title: "Account Configuration Error",
+          description: `Missing ${selectedDerivAccountType} account credentials. Please check your profile settings.`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Validate stake amount
+      if (autoTradeTotalStake <= 0) {
+        toast({
+          title: "Invalid Stake Amount",
+          description: "Please enter a valid stake amount before starting pattern monitoring",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Check if already monitoring
+      if (isPatternMonitoring) {
+        toast({
+          title: "Already Monitoring",
+          description: "Pattern monitoring is already active. Please stop current monitoring before starting new session.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Set monitoring state
+      setIsPatternMonitoring(true);
+      setMonitoringStartTime(Date.now());
+      setMonitoringStatus(`Monitoring patterns for ${selectedStrategy} strategy using existing WebSocket stream...`);
+      setMonitoringProgress({
+        consecutiveCount: 0,
+        requiredType: selectedStrategy === 'Even' ? 'odd' : 'even',
+        targetType: selectedStrategy === 'Even' ? 'even' : 'odd',
+        neededCount: 3
+      });
+
+      // Set 60-second timeout
+      const timeoutId = setTimeout(() => {
+        handleMonitoringTimeout();
+      }, 60000);
+      setMonitoringTimeoutId(timeoutId);
+
+      toast({
+        title: "Pattern Monitoring Started",
+        description: `Waiting for ${selectedStrategy} pattern using real-time WebSocket data`,
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('[VolatilityPage] Error starting pattern monitoring:', error);
+
+      // Reset monitoring state in case of error
+      setIsPatternMonitoring(false);
+      setMonitoringStatus('');
+      setMonitoringProgress(null);
+      setMonitoringStartTime(null);
+
+      toast({
+        title: "Pattern Monitoring Error",
+        description: `Failed to start pattern monitoring: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive",
+        duration: 5000
+      });
+    }
+  }, [selectedStrategy, selectedUserTradeTypeForLoop, userInfo, selectedDerivAccountType, autoTradeTotalStake, isPatternMonitoring, toast]);
+
+  const stopPatternMonitoring = useCallback(() => {
+    console.log('[VolatilityPage] Stopping pattern monitoring');
+
+    // Clear timeout
+    if (monitoringTimeoutId) {
+      clearTimeout(monitoringTimeoutId);
+      setMonitoringTimeoutId(null);
+    }
+
+    // Reset monitoring state
+    setIsPatternMonitoring(false);
+    setMonitoringStatus('');
+    setMonitoringProgress(null);
+    setMonitoringStartTime(null);
+
+    toast({
+      title: "Pattern Monitoring Stopped",
+      description: "Monitoring cancelled by user",
+      duration: 2000
+    });
+  }, [monitoringTimeoutId, toast]);
+
+  const handleMonitoringTimeout = useCallback(() => {
+    console.log('[VolatilityPage] Pattern monitoring timeout reached');
+
+    // Reset monitoring state
+    setIsPatternMonitoring(false);
+    setMonitoringStatus('');
+    setMonitoringProgress(null);
+    setMonitoringStartTime(null);
+    setMonitoringTimeoutId(null);
+
+    toast({
+      title: "Pattern Monitoring Timeout",
+      description: "No suitable pattern found within 60 seconds. Try again or adjust strategy.",
+      variant: "destructive",
+      duration: 5000
+    });
+  }, [toast]);
+
+  const executePatternDetectedTrade = useCallback(async (strategy: string, consecutiveCount: number, triggerDigit: number) => {
+    console.log('[VolatilityPage] Executing pattern-detected trade in Manual Mode');
+
+    // Stop monitoring first
+    if (monitoringTimeoutId) {
+      clearTimeout(monitoringTimeoutId);
+      setMonitoringTimeoutId(null);
+    }
+    setIsPatternMonitoring(false);
+
+    // Validate prerequisites
+    if (!userInfo?.id || !selectedDerivAccountType) {
+      toast({
+        title: "Execution Error",
+        description: "Missing user information for trade execution",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const userDerivApiToken = selectedDerivAccountType === 'demo' ? userInfo.derivDemoApiToken : userInfo.derivRealApiToken;
+    const targetAccountId = selectedDerivAccountType === 'demo' ? userInfo.derivDemoAccountId : userInfo.derivRealAccountId;
+
+    if (!userDerivApiToken || !targetAccountId) {
+      toast({
+        title: "Execution Error",
+        description: `Missing ${selectedDerivAccountType} account credentials`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setMonitoringStatus(`Pattern found! Executing ${numberOfBulkTrades} trades in ${executionMode} mode...`);
+
+      // Additional validation before execution
+      const currentBalance = selectedDerivAccountType === 'demo' ? derivDemoBalance : derivLiveBalance;
+      if (autoTradeTotalStake > (currentBalance ?? 0)) {
+        throw new Error(`Insufficient balance: $${autoTradeTotalStake} required, $${(currentBalance ?? 0).toFixed(2)} available`);
+      }
+
+      // Calculate stake per trade
+      const stakePerTrade = autoTradeTotalStake / numberOfBulkTrades;
+
+      if (stakePerTrade < 0.35) {
+        throw new Error(`Stake per trade ($${stakePerTrade.toFixed(2)}) is below minimum requirement ($0.35)`);
+      }
+
+      // Execute trades using the existing manual execution function with retry logic
+      let results;
+      let retryCount = 0;
+      const maxRetries = 2;
+
+      while (retryCount <= maxRetries) {
+        try {
+          results = await executeVolatilityManualTradeLoop(
+            userDerivApiToken,
+            targetAccountId,
+            selectedDerivAccountType as 'demo' | 'real',
+            userInfo.id,
+            'DigitsEvenOdd',
+            autoTradeTotalStake,
+            {
+              executionMode,
+              numberOfBulkTrades,
+              selectedInstrument: currentVolatilityInstrument,
+              selectedStrategy: strategy
+            }
+          );
+          break; // Success, exit retry loop
+        } catch (executionError: any) {
+          retryCount++;
+          console.error(`[VolatilityPage] Trade execution attempt ${retryCount} failed:`, executionError);
+
+          if (retryCount > maxRetries) {
+            // Check for specific error types
+            if (executionError.message?.includes('rate limit') || executionError.message?.includes('too many requests')) {
+              throw new Error('API rate limit exceeded. Please wait a moment before trying again.');
+            } else if (executionError.message?.includes('network') || executionError.message?.includes('connection')) {
+              throw new Error('Network connection error. Please check your internet connection and try again.');
+            } else if (executionError.message?.includes('insufficient balance')) {
+              throw new Error('Insufficient account balance for trade execution.');
+            } else {
+              throw executionError; // Re-throw original error
+            }
+          } else {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            setMonitoringStatus(`Execution failed, retrying... (${retryCount}/${maxRetries})`);
+          }
+        }
+      }
+
+      // Reset monitoring state
+      setMonitoringStatus('');
+      setMonitoringProgress(null);
+      setMonitoringStartTime(null);
+
+      if (results && results.length > 0 && results.some(r => r.success)) {
+        const successCount = results.filter(r => r.success).length;
+        toast({
+          title: "Pattern Trade Executed Successfully",
+          description: `${successCount}/${results.length} trades executed after detecting ${consecutiveCount} consecutive pattern → ${triggerDigit}`,
+          duration: 5000
+        });
+
+        // Add successful trades to monitoring
+        const newTrades = results.filter(r => r.success).map(result => ({
+          id: uuidv4(),
+          instrument: currentVolatilityInstrument,
+          tradeType: strategy,
+          entryPrice: result.tradeResponse?.entry_spot || currentStreamingPrice,
+          buyPrice: stakePerTrade,
+          profitLoss: undefined,
+          derivContractType: strategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD',
+          userSelectedTradeType: 'DigitsEvenOdd' as UserTradeTypeValue,
+          stake: stakePerTrade,
+          durationSeconds: executionMode === 'turbo' ? 1 : 5,
+          reasoning: `Manual pattern detection: ${consecutiveCount} consecutive → ${triggerDigit}`,
+          startTime: Date.now(),
+          status: 'active' as const,
+          currentPrice: currentStreamingPrice,
+          pnl: 0,
+          error: undefined
+        }));
+
+        setActiveAutomatedTrades(prev => [...prev, ...newTrades]);
+      } else {
+        toast({
+          title: "Pattern Trade Failed",
+          description: "Failed to execute trades after pattern detection. Check logs for details.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('[VolatilityPage] Pattern-detected trade execution failed:', error);
+      setMonitoringStatus('');
+      setMonitoringProgress(null);
+      setMonitoringStartTime(null);
+
+      toast({
+        title: "Pattern Trade Execution Error",
+        description: `Failed to execute pattern-detected trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+    }
+  }, [monitoringTimeoutId, userInfo, selectedDerivAccountType, numberOfBulkTrades, executionMode, autoTradeTotalStake, currentVolatilityInstrument, currentStreamingPrice, toast]);
+
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
     if (authStatus === 'authenticated') {
@@ -691,8 +988,21 @@ export default function VolatilityTradingPage() {
             return;
         }
 
-        // CRITICAL FIX: Choose execution mode based on manual toggle
-        const executionModeText = isManualMode ? "MANUAL" : "AI";
+        // Enhanced Manual Mode: Start pattern monitoring instead of immediate execution
+        if (isManualMode) {
+          console.log(`[VolatilityPage] Manual Mode: Starting intelligent pattern monitoring instead of immediate execution`);
+
+          // Reset loading states since we're not executing immediately
+          setIsAiLoading(false);
+          setIsAutoTradingActive(false);
+
+          // Start pattern monitoring
+          startPatternMonitoring();
+          return; // Exit early - no immediate execution
+        }
+
+        // AI Mode: Continue with normal AI execution
+        const executionModeText = "AI";
         console.log(`[VolatilityPage] Initiating REAL trade loop (${executionModeText} MODE). User: ${userInfo.id}, Account: ${targetAccountId}, Type: ${selectedUserTradeTypeForLoop}, Total Stake: ${autoTradeTotalStake}`);
         toast({
           title: `Volatility ${executionModeText} Loop Starting...`,
@@ -700,23 +1010,8 @@ export default function VolatilityTradingPage() {
         });
 
         try {
-            // CRITICAL FIX: Use manual or AI execution based on toggle
-            const loopResults: VolatilityTradeExecutionResult[] = isManualMode
-              ? await executeVolatilityManualTradeLoop(
-                  userDerivApiToken,
-                  targetAccountId,
-                  selectedDerivAccountType as 'demo' | 'real',
-                  userInfo.id,
-                  selectedUserTradeTypeForLoop,
-                  autoTradeTotalStake,
-                  {
-                    executionMode,
-                    numberOfBulkTrades,
-                    selectedInstrument: currentVolatilityInstrument,
-                    selectedStrategy: selectedStrategy
-                  }
-                )
-              : await executeVolatilityAiTradeLoop(
+            // AI execution only
+            const loopResults: VolatilityTradeExecutionResult[] = await executeVolatilityAiTradeLoop(
                   userDerivApiToken,
                   targetAccountId,
                   selectedDerivAccountType as 'demo' | 'real',
@@ -885,9 +1180,9 @@ export default function VolatilityTradingPage() {
   }, [
     authStatus, userInfo, selectedDerivAccountType, autoTradeTotalStake, currentBalance,
     consecutiveAiCallCount, lastAiCallTimestamp, router, toast,
-    selectedUserTradeTypeForLoop,
+    selectedUserTradeTypeForLoop, selectedStrategy, predictionDigit,
     executionMode, numberOfBulkTrades, currentVolatilityInstrument,
-    tradingMode, selectedAiStrategyId
+    tradingMode, selectedAiStrategyId, isManualMode, startPatternMonitoring
 ]);
 
   const handleStopAiAutoTrade = () => {
@@ -1356,12 +1651,120 @@ export default function VolatilityTradingPage() {
               }
             }
 
+            // Enhanced Manual Mode: Real-time Pattern Monitoring
+            if (isPatternMonitoring && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && selectedStrategy) {
+              console.log('[VolatilityPage] Analyzing patterns during monitoring:', {
+                currentDigit: lastDigit,
+                strategy: selectedStrategy,
+                sequenceLength: finalSequence.length
+              });
+
+              // Analyze current sequence for pattern detection
+              if (finalSequence.length >= 4) {
+                const recentTicks = finalSequence.slice(-10); // Last 10 ticks for analysis
+                const currentDigitIsEven = lastDigit % 2 === 0;
+                const currentType = currentDigitIsEven ? 'even' : 'odd';
+
+                // Count consecutive digits of the same type at the end
+                let consecutiveCount = 1;
+                for (let i = recentTicks.length - 2; i >= 0; i--) {
+                  const tickType = recentTicks[i].digit % 2 === 0 ? 'even' : 'odd';
+                  if (tickType === currentType) {
+                    consecutiveCount++;
+                  } else {
+                    break;
+                  }
+                }
+
+                // Update monitoring progress
+                const requiredType = selectedStrategy === 'Even' ? 'odd' : 'even';
+                const targetType = selectedStrategy === 'Even' ? 'even' : 'odd';
+
+                if (currentType === requiredType) {
+                  // We're building the required sequence
+                  const neededCount = Math.max(0, 3 - consecutiveCount);
+                  setMonitoringProgress({
+                    consecutiveCount,
+                    requiredType,
+                    targetType,
+                    neededCount
+                  });
+
+                  if (consecutiveCount >= 3) {
+                    setMonitoringStatus(`3+ consecutive ${requiredType} digits detected! Waiting for ${targetType} digit...`);
+                  } else {
+                    setMonitoringStatus(`${consecutiveCount} consecutive ${requiredType} digits detected, need ${neededCount} more for ${targetType} trigger...`);
+                  }
+                } else if (currentType === targetType && consecutiveCount >= 1) {
+                  // Check if we had 3+ of the required type before this target digit
+                  let previousConsecutive = 0;
+                  let foundRequiredSequence = false;
+
+                  // Look backwards from the current position to find the previous sequence
+                  for (let i = recentTicks.length - 2; i >= 0; i--) {
+                    const tickType = recentTicks[i].digit % 2 === 0 ? 'even' : 'odd';
+                    if (tickType === requiredType) {
+                      previousConsecutive++;
+                    } else {
+                      break;
+                    }
+                  }
+
+                  if (previousConsecutive >= 3) {
+                    console.log('[VolatilityPage] PATTERN FOUND! Executing automatic trade:', {
+                      strategy: selectedStrategy,
+                      previousConsecutive,
+                      currentDigit: lastDigit,
+                      pattern: `${previousConsecutive} ${requiredType} → ${targetType}`
+                    });
+
+                    // Pattern found! Execute trade automatically
+                    executePatternDetectedTrade(selectedStrategy, previousConsecutive, lastDigit);
+                  }
+                } else {
+                  // Reset or different pattern
+                  setMonitoringProgress({
+                    consecutiveCount: currentType === requiredType ? consecutiveCount : 0,
+                    requiredType,
+                    targetType,
+                    neededCount: currentType === requiredType ? Math.max(0, 3 - consecutiveCount) : 3
+                  });
+                  setMonitoringStatus(`Monitoring patterns for ${selectedStrategy} strategy using existing WebSocket stream...`);
+                }
+              }
+            }
+
             return finalSequence;
           });
         };
 
         const handleError = (error: Error) => {
           console.error('[VolatilityPage] WebSocket tick stream error:', error);
+
+          // Enhanced Error Handling: Stop pattern monitoring if active
+          if (isPatternMonitoring) {
+            console.log('[VolatilityPage] WebSocket error during pattern monitoring - stopping monitoring');
+
+            // Clear timeout
+            if (monitoringTimeoutId) {
+              clearTimeout(monitoringTimeoutId);
+              setMonitoringTimeoutId(null);
+            }
+
+            // Reset monitoring state
+            setIsPatternMonitoring(false);
+            setMonitoringStatus('');
+            setMonitoringProgress(null);
+            setMonitoringStartTime(null);
+
+            // Notify user of the error
+            toast({
+              title: "WebSocket Connection Error",
+              description: "Pattern monitoring stopped due to connection issues. Please try again.",
+              variant: "destructive",
+              duration: 5000
+            });
+          }
         };
 
         const handleConnect = () => {
@@ -1383,6 +1786,31 @@ export default function VolatilityTradingPage() {
         console.log('[VolatilityPage] WebSocket streaming setup complete for', currentVolatilityInstrument);
       } catch (error) {
         console.error('[VolatilityPage] Error setting up WebSocket streaming:', error);
+
+        // Enhanced Error Handling: Stop pattern monitoring if WebSocket setup fails
+        if (isPatternMonitoring) {
+          console.log('[VolatilityPage] WebSocket setup failed during pattern monitoring - stopping monitoring');
+
+          // Clear timeout
+          if (monitoringTimeoutId) {
+            clearTimeout(monitoringTimeoutId);
+            setMonitoringTimeoutId(null);
+          }
+
+          // Reset monitoring state
+          setIsPatternMonitoring(false);
+          setMonitoringStatus('');
+          setMonitoringProgress(null);
+          setMonitoringStartTime(null);
+
+          // Notify user of the setup error
+          toast({
+            title: "WebSocket Setup Failed",
+            description: "Unable to establish real-time data connection. Pattern monitoring stopped. Please refresh and try again.",
+            variant: "destructive",
+            duration: 7000
+          });
+        }
       }
     };
 
@@ -1417,6 +1845,17 @@ export default function VolatilityTradingPage() {
       console.warn(`[VolatilityPage] WARNING: Price sequence not empty after instrument change. This indicates a state management issue.`);
     }
   }, [currentVolatilityInstrument]); // Only trigger when instrument changes
+
+  // Enhanced Manual Mode: Cleanup effect for pattern monitoring
+  useEffect(() => {
+    return () => {
+      // Cleanup pattern monitoring on component unmount
+      if (monitoringTimeoutId) {
+        console.log('[VolatilityPage] Cleaning up pattern monitoring timeout on unmount');
+        clearTimeout(monitoringTimeoutId);
+      }
+    };
+  }, [monitoringTimeoutId]);
 
   // Cleanup effect for component unmount
   useEffect(() => {
@@ -1714,10 +2153,13 @@ export default function VolatilityTradingPage() {
                 </Button>
                 ) : (
                 <Button onClick={handleStartAiAutoTrade} className="w-full bg-blue-600 hover:bg-blue-700 text-primary-foreground"
-                    disabled={isAiLoading || (selectedUserTradeTypeForLoop ? autoTradeTotalStake < 0.35 : autoTradeTotalStake <= 0) || autoTradeTotalStake > (currentBalance ?? Infinity) || !selectedDerivAccountType}
+                    disabled={isAiLoading || (selectedUserTradeTypeForLoop ? autoTradeTotalStake < 0.35 : autoTradeTotalStake <= 0) || autoTradeTotalStake > (currentBalance ?? Infinity) || !selectedDerivAccountType || isPatternMonitoring}
                 >
                     <Bot className="mr-2 h-5 w-5" />
-                    {isAiLoading ? 'AI Initializing...' : (selectedUserTradeTypeForLoop ? 'Start Real AI Loop' : 'Start Simulation')}
+                    {isAiLoading ? 'AI Initializing...' :
+                     isPatternMonitoring ? 'Pattern Monitoring Active...' :
+                     isManualMode ? (selectedUserTradeTypeForLoop ? 'Start Manual Pattern Trading' : 'Start Manual Simulation') :
+                     (selectedUserTradeTypeForLoop ? 'Start Real AI Loop' : 'Start Simulation')}
                 </Button>
               )}
               <p className="text-xs text-muted-foreground text-center">
@@ -1725,6 +2167,89 @@ export default function VolatilityTradingPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Enhanced Manual Mode: Pattern Monitoring Status Card */}
+          {isManualMode && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && isPatternMonitoring && (
+            <Card className="shadow-lg border-blue-200 bg-blue-50">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Pattern Monitoring Active</span>
+                </CardTitle>
+                <CardDescription>
+                  Intelligent continuous monitoring for {selectedStrategy} strategy
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Status Message */}
+                  <div className="p-3 bg-white rounded-lg border">
+                    <p className="text-sm font-medium text-blue-800">{monitoringStatus}</p>
+                  </div>
+
+                  {/* Progress Indicator */}
+                  {monitoringProgress && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>Progress</span>
+                        <span>
+                          {monitoringProgress.consecutiveCount >= 3
+                            ? `Ready! Waiting for ${monitoringProgress.targetType} digit`
+                            : `${monitoringProgress.consecutiveCount}/3 consecutive ${monitoringProgress.requiredType} digits`
+                          }
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            monitoringProgress.consecutiveCount >= 3
+                              ? 'bg-green-500 animate-pulse'
+                              : 'bg-blue-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, (monitoringProgress.consecutiveCount / 3) * 100)}%`
+                          }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Monitoring Timer */}
+                  {monitoringStartTime && (
+                    <div className="flex justify-between items-center text-xs text-gray-500">
+                      <span>Monitoring Time:</span>
+                      <span>{Math.floor((Date.now() - monitoringStartTime) / 1000)}s / 60s</span>
+                    </div>
+                  )}
+
+                  {/* Cancel Button */}
+                  <Button
+                    onClick={stopPatternMonitoring}
+                    variant="outline"
+                    className="w-full border-red-300 text-red-600 hover:bg-red-50"
+                  >
+                    Cancel Monitoring
+                  </Button>
+
+                  {/* Configuration Display */}
+                  <div className="grid grid-cols-2 gap-4 text-xs bg-gray-50 p-3 rounded-lg">
+                    <div>
+                      <span className="font-medium">Strategy:</span> {selectedStrategy}
+                    </div>
+                    <div>
+                      <span className="font-medium">Mode:</span> {executionMode.toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="font-medium">Trades:</span> {numberOfBulkTrades}
+                    </div>
+                    <div>
+                      <span className="font-medium">Stake:</span> ${autoTradeTotalStake}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Pattern Analysis Card */}
           {selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && (
