@@ -230,14 +230,14 @@ async function executeManualTurboMode(
           totalValue: stakePerTrade,
           status: 'OPEN',
           openTime: new Date(executionTimestamp),
-          derivContractId: tradeResponse.contract_id, // CRITICAL FIX: Store contract ID in main field
+          derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
             contractType: contractType,
-            derivContractId: tradeResponse.contract_id,
+            derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string
             patternAnalysis: patternAnalysis,
             executionMode: 'turbo',
             sharedPricePoint: sharedPricePoint,
@@ -426,14 +426,14 @@ async function executeSafeModeTradesBatch(
           totalValue: stakePerTrade,
           status: 'OPEN',
           openTime: new Date(batchTimestamp + (i * 100)), // Slight offset for sequential execution
-          derivContractId: tradeResponse.contract_id, // CRITICAL FIX: Store contract ID in main field
+          derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
             contractType: contractType,
-            derivContractId: tradeResponse.contract_id,
+            derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string
             patternAnalysis: patternAnalysis,
             executionMode: 'safe',
             batchNumber: batchNumber,
