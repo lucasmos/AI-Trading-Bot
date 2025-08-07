@@ -111,14 +111,26 @@ export default function TradeHistoryPage() {
         // Calculate profit/loss with fallback logic
         const profitLoss = trade.profitLoss || trade.profit || 0;
 
-        // Determine status with enhanced logic
+        // Enhanced status determination with better logic
         let status = trade.status?.toLowerCase() || 'unknown';
-        if (status === 'open') {
-          status = 'open';
+
+        // Check if trade has completion indicators
+        const hasCloseTime = trade.closeTime || metadata.completionTime;
+        const hasExitPrice = trade.exitPrice || metadata.exitPrice;
+        const hasProfitLoss = profitLoss !== null && profitLoss !== undefined && profitLoss !== 0;
+
+        if (status === 'open' && (hasCloseTime || hasExitPrice || hasProfitLoss)) {
+          // Trade appears to be completed but status wasn't updated
+          if (profitLoss > 0) status = 'won';
+          else if (profitLoss < 0) status = 'lost';
+          else status = 'closed';
         } else if (status === 'closed') {
           if (profitLoss > 0) status = 'won';
           else if (profitLoss < 0) status = 'lost';
           else status = 'closed';
+        } else if (metadata.finalStatus) {
+          // Use metadata final status if available
+          status = metadata.finalStatus;
         }
 
         return {
@@ -127,7 +139,7 @@ export default function TradeHistoryPage() {
           instrument: metadata.instrument || trade.symbol,
           tradeType: tradeType,
           entryPrice: metadata.entryPrice || trade.entryPrice || trade.price,
-          exitPrice: metadata.exitPrice || trade.exitPrice || (trade.closeTime ? trade.price : null),
+          exitPrice: metadata.exitPrice || trade.exitPrice || (hasCloseTime ? (metadata.currentSpot || trade.price) : null),
           buyPrice: metadata.buyPrice || trade.buyPrice || trade.amount,
           profitLoss: profitLoss,
           status: status,
