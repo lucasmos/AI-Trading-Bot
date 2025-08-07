@@ -662,7 +662,27 @@ export default function VolatilityTradingPage() {
 
       while (retryCount <= maxRetries) {
         try {
-          // CRITICAL FIX: Call manual execution with pattern bypass flag
+          // CRITICAL FIX: Call manual execution with pattern bypass flag and strict parameter validation
+          console.log('[VolatilityPage] 🔧 MANUAL EXECUTION PARAMETERS VALIDATION:', {
+            executionMode,
+            numberOfBulkTrades,
+            currentVolatilityInstrument,
+            strategy,
+            autoTradeTotalStake,
+            selectedDerivAccountType
+          });
+
+          // CRITICAL FIX: Validate parameters before passing to execution
+          if (!executionMode) {
+            throw new Error('Execution mode is required for manual trading');
+          }
+          if (!numberOfBulkTrades || numberOfBulkTrades < 1 || numberOfBulkTrades > 20) {
+            throw new Error(`Invalid numberOfBulkTrades: ${numberOfBulkTrades}. Must be between 1-20`);
+          }
+          if (!currentVolatilityInstrument) {
+            throw new Error('Volatility instrument selection is required');
+          }
+
           results = await executeVolatilityManualTradeLoop(
             userDerivApiToken,
             targetAccountId,
@@ -671,9 +691,9 @@ export default function VolatilityTradingPage() {
             'DigitsEvenOdd',
             autoTradeTotalStake,
             {
-              executionMode,
-              numberOfBulkTrades,
-              selectedInstrument: currentVolatilityInstrument,
+              executionMode: executionMode, // Explicit parameter passing
+              numberOfBulkTrades: numberOfBulkTrades, // Explicit parameter passing
+              selectedInstrument: currentVolatilityInstrument, // Explicit parameter passing
               selectedStrategy: strategy,
               bypassPatternValidation: true, // CRITICAL: Skip pattern validation since we already detected it
               preValidatedPattern: {

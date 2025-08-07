@@ -1015,19 +1015,37 @@ export async function executeVolatilityManualTradeLoop(
   totalStakeFromUser: number,
   options?: VolatilityTradeOptions
 ): Promise<VolatilityTradeExecutionResult[]> {
-  const executionMode = options?.executionMode || 'safe';
-  const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
-  const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
-  const selectedStrategy = options?.selectedStrategy || '';
-  const bypassPatternValidation = options?.bypassPatternValidation || false;
-  const preValidatedPattern = options?.preValidatedPattern;
+  // CRITICAL FIX: Validate and protect user settings - no defaults that override user input
+  if (!options) {
+    throw new Error('Manual trading requires explicit options - no defaults allowed');
+  }
 
-  console.log(`[TradeAction/ManualSession] 🚀 ENHANCED MANUAL EXECUTION MODE - Starting session for ${selectedInstrument}`);
-  console.log(`[TradeAction/ManualSession] User Settings - Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}, Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Account: ${selectedAccountType}, Strategy: ${selectedStrategy}`);
+  const executionMode = options.executionMode;
+  const numberOfBulkTrades = options.numberOfBulkTrades;
+  const selectedInstrument = options.selectedInstrument;
+  const selectedStrategy = options.selectedStrategy || '';
+  const bypassPatternValidation = options.bypassPatternValidation || false;
+  const preValidatedPattern = options.preValidatedPattern;
+
+  // CRITICAL FIX: Validate required parameters to prevent defaults
+  if (!executionMode) {
+    throw new Error('Manual trading requires explicit execution mode setting');
+  }
+  if (!numberOfBulkTrades || numberOfBulkTrades < 1 || numberOfBulkTrades > 20) {
+    throw new Error(`Manual trading requires valid numberOfBulkTrades (1-20), received: ${numberOfBulkTrades}`);
+  }
+  if (!selectedInstrument) {
+    throw new Error('Manual trading requires explicit instrument selection');
+  }
+
+  // CRITICAL FIX: Proper logging for MANUAL mode (not AI session)
+  console.log(`[TradeAction/MANUAL_SESSION] 🎯 MANUAL TRADING EXECUTION - Starting session for ${selectedInstrument}`);
+  console.log(`[TradeAction/MANUAL_SESSION] User Settings - Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}, Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Account: ${selectedAccountType}, Strategy: ${selectedStrategy}`);
+  console.log(`[TradeAction/MANUAL_SESSION] SETTINGS VALIDATION PASSED - All user parameters preserved and validated`);
 
   if (bypassPatternValidation && preValidatedPattern) {
-    console.log(`[TradeAction/ManualSession] 🎯 PATTERN BYPASS MODE: Using pre-validated pattern from WebSocket monitoring`);
-    console.log(`[TradeAction/ManualSession] Pre-validated Pattern:`, preValidatedPattern);
+    console.log(`[TradeAction/MANUAL_SESSION] 🎯 PATTERN BYPASS MODE: Using pre-validated pattern from WebSocket monitoring`);
+    console.log(`[TradeAction/MANUAL_SESSION] Pre-validated Pattern:`, preValidatedPattern);
   }
 
   const results: VolatilityTradeExecutionResult[] = [];
@@ -1041,14 +1059,14 @@ export async function executeVolatilityManualTradeLoop(
   // CRITICAL FIX: Only support Even/Odd trades in manual mode
   if (userSelectedTradeType !== 'DigitsEvenOdd') {
     const errorMsg = `Manual execution mode only supports Even/Odd trades. Selected: ${userSelectedTradeType}`;
-    console.error(`[TradeAction/ManualSession] Unsupported trade type: ${errorMsg}`);
+    console.error(`[TradeAction/MANUAL_SESSION] Unsupported trade type: ${errorMsg}`);
     return [{ success: false, instrument: selectedInstrument as VolatilityInstrumentType, error: errorMsg }];
   }
 
   // CRITICAL FIX: Validate strategy selection
   if (!selectedStrategy || (selectedStrategy !== 'Even' && selectedStrategy !== 'Odd')) {
     const errorMsg = `Manual execution requires Even or Odd strategy selection. Selected: ${selectedStrategy}`;
-    console.error(`[TradeAction/ManualSession] Invalid strategy: ${errorMsg}`);
+    console.error(`[TradeAction/MANUAL_SESSION] Invalid strategy: ${errorMsg}`);
     return [{ success: false, instrument: selectedInstrument as VolatilityInstrumentType, error: errorMsg }];
   }
 
@@ -1073,8 +1091,8 @@ export async function executeVolatilityManualTradeLoop(
     instrumentLatestSpot[apiSymbol] = latestTick.price;
     instrumentATR[apiSymbol] = 0; // Not needed for manual mode
 
-    console.log(`[TradeAction/ManualSession] Latest price for ${targetInstrument}: ${latestTick.price}`);
-    console.log(`[TradeAction/ManualSession] Fetched ${ticksForInstrument.length} ticks for pattern analysis`);
+    console.log(`[TradeAction/MANUAL_SESSION] Latest price for ${targetInstrument}: ${latestTick.price}`);
+    console.log(`[TradeAction/MANUAL_SESSION] Fetched ${ticksForInstrument.length} ticks for pattern analysis`);
 
     // CRITICAL FIX: Extract last digits and perform pattern analysis
     const tickDigits = ticksForInstrument.map(tick => {
@@ -1083,24 +1101,24 @@ export async function executeVolatilityManualTradeLoop(
       return Math.floor((tick.price * multiplier) % 10);
     });
 
-    console.log(`[TradeAction/ManualSession] Recent digits: [${tickDigits.slice(-10).join(', ')}]`);
+    console.log(`[TradeAction/MANUAL_SESSION] Recent digits: [${tickDigits.slice(-10).join(', ')}]`);
 
     // CRITICAL FIX: Use pre-validated pattern or analyze fresh data
     let patternAnalysis: PatternAnalysisResult;
 
     if (bypassPatternValidation && preValidatedPattern) {
-      console.log(`[TradeAction/ManualSession] 🎯 Using pre-validated pattern from WebSocket monitoring`);
+      console.log(`[TradeAction/MANUAL_SESSION] 🎯 Using pre-validated pattern from WebSocket monitoring`);
       patternAnalysis = preValidatedPattern;
     } else {
-      console.log(`[TradeAction/ManualSession] 🔍 Analyzing fresh tick data for pattern validation`);
+      console.log(`[TradeAction/MANUAL_SESSION] 🔍 Analyzing fresh tick data for pattern validation`);
       patternAnalysis = analyzeEvenOddPatterns(tickDigits, selectedStrategy);
     }
 
-    console.log(`[TradeAction/ManualSession] Pattern Analysis Result:`, patternAnalysis);
+    console.log(`[TradeAction/MANUAL_SESSION] Pattern Analysis Result:`, patternAnalysis);
 
     // CRITICAL FIX: Validate pattern conditions before execution (only if not bypassed)
     if (!patternAnalysis.shouldExecute) {
-      console.log(`[TradeAction/ManualSession] ❌ Pattern validation failed: ${patternAnalysis.reasoning}`);
+      console.log(`[TradeAction/MANUAL_SESSION] ❌ Pattern validation failed: ${patternAnalysis.reasoning}`);
       return [{
         success: false,
         instrument: targetInstrument,
@@ -1108,18 +1126,25 @@ export async function executeVolatilityManualTradeLoop(
       }];
     }
 
-    console.log(`[TradeAction/ManualSession] ✅ Pattern validation passed: ${patternAnalysis.reasoning}`);
+    console.log(`[TradeAction/MANUAL_SESSION] ✅ Pattern validation passed: ${patternAnalysis.reasoning}`);
 
-    // CRITICAL FIX: Use pattern-validated contract type
+    // CRITICAL FIX: Use pattern-validated contract type and validate stake calculation
     const contractType = patternAnalysis.contractType;
     const stakePerTrade = Math.round((totalStakeFromUser / numberOfBulkTrades) * 100) / 100;
 
-    console.log(`[TradeAction/ManualSession] PATTERN-BASED LOGIC - Strategy: ${selectedStrategy} -> Contract Type: ${contractType}`);
-    console.log(`[TradeAction/ManualSession] Pattern Details - Type: ${patternAnalysis.patternType}, Consecutive: ${patternAnalysis.consecutiveCount}, Current Digit: ${patternAnalysis.currentDigit}`);
+    // CRITICAL FIX: Additional validation to ensure no parameter manipulation
+    if (stakePerTrade < 0.35) {
+      throw new Error(`Calculated stake per trade (${stakePerTrade}) is below minimum (0.35). Total: ${totalStakeFromUser}, Bulk Trades: ${numberOfBulkTrades}`);
+    }
 
-    // CRITICAL FIX: Enhanced execution based on mode
+    console.log(`[TradeAction/MANUAL_SESSION] PATTERN-BASED LOGIC - Strategy: ${selectedStrategy} -> Contract Type: ${contractType}`);
+    console.log(`[TradeAction/MANUAL_SESSION] Pattern Details - Type: ${patternAnalysis.patternType}, Consecutive: ${patternAnalysis.consecutiveCount}, Current Digit: ${patternAnalysis.currentDigit}`);
+    console.log(`[TradeAction/MANUAL_SESSION] EXECUTION PARAMETERS - Total Stake: ${totalStakeFromUser}, Bulk Trades: ${numberOfBulkTrades}, Stake Per Trade: ${stakePerTrade}`);
+
+    // CRITICAL FIX: Enhanced execution based on mode with strict parameter validation
     if (executionMode === 'turbo') {
-      console.log(`[TradeAction/ManualSession] 🚀 TURBO MODE: Executing ALL ${numberOfBulkTrades} trades simultaneously with identical entry/exit prices`);
+      console.log(`[TradeAction/MANUAL_SESSION] 🚀 TURBO MODE: Executing ALL ${numberOfBulkTrades} trades simultaneously with identical entry/exit prices`);
+      console.log(`[TradeAction/MANUAL_SESSION] TURBO MODE VALIDATION - User requested ${numberOfBulkTrades} trades, executing exactly ${numberOfBulkTrades} trades`);
 
       // Execute all trades simultaneously with shared price point
       const executionResults = await executeManualTurboMode(
@@ -1135,10 +1160,16 @@ export async function executeVolatilityManualTradeLoop(
         instrumentLatestSpot[apiSymbol]!
       );
 
+      // CRITICAL FIX: Validate execution count matches user setting
+      if (executionResults.length !== numberOfBulkTrades) {
+        console.error(`[TradeAction/MANUAL_SESSION] EXECUTION COUNT MISMATCH - Expected: ${numberOfBulkTrades}, Actual: ${executionResults.length}`);
+      }
+
       results.push(...executionResults);
 
     } else {
-      console.log(`[TradeAction/ManualSession] 🛡️ SAFE MODE: Implementing two-tick execution strategy`);
+      console.log(`[TradeAction/MANUAL_SESSION] 🛡️ SAFE MODE: Implementing two-tick execution strategy`);
+      console.log(`[TradeAction/MANUAL_SESSION] SAFE MODE VALIDATION - User requested ${numberOfBulkTrades} trades, executing exactly ${numberOfBulkTrades} trades`);
 
       // Execute with two-tick strategy
       const executionResults = await executeManualSafeMode(
@@ -1154,11 +1185,16 @@ export async function executeVolatilityManualTradeLoop(
         instrumentLatestSpot[apiSymbol]!
       );
 
+      // CRITICAL FIX: Validate execution count matches user setting
+      if (executionResults.length !== numberOfBulkTrades) {
+        console.error(`[TradeAction/MANUAL_SESSION] EXECUTION COUNT MISMATCH - Expected: ${numberOfBulkTrades}, Actual: ${executionResults.length}`);
+      }
+
       results.push(...executionResults);
     }
 
   } catch (error: any) {
-    console.error(`[TradeAction/ManualSession] CRITICAL ERROR during manual execution:`, error.message, error.stack);
+    console.error(`[TradeAction/MANUAL_SESSION] CRITICAL ERROR during manual execution:`, error.message, error.stack);
     results.push({
       success: false,
       instrument: selectedInstrument as VolatilityInstrumentType,
@@ -1166,17 +1202,23 @@ export async function executeVolatilityManualTradeLoop(
     });
   }
 
-  // CRITICAL FIX: Final execution summary with performance metrics
+  // CRITICAL FIX: Final execution summary with performance metrics and validation
   const successCount = results.filter(r => r.success).length;
   const failureCount = results.length - successCount;
 
-  console.log(`[TradeAction/ManualSession] 🎯 MANUAL EXECUTION SUMMARY:`);
-  console.log(`[TradeAction/ManualSession] ✅ Successful trades: ${successCount}/${results.length}`);
-  console.log(`[TradeAction/ManualSession] ❌ Failed trades: ${failureCount}/${results.length}`);
-  console.log(`[TradeAction/ManualSession] 📊 Execution mode: ${executionMode.toUpperCase()}`);
-  console.log(`[TradeAction/ManualSession] 🎲 Strategy: ${selectedStrategy} (${contractType || 'N/A'})`); // CRITICAL FIX: Handle undefined contractType
-  console.log(`[TradeAction/ManualSession] 📈 Pattern: ${patternAnalysis?.patternType || 'N/A'}`);
-  console.log(`[TradeAction/ManualSession] ⚡ Manual session completed in ~2-3 seconds (vs ~15 seconds for AI mode)`);
+  console.log(`[TradeAction/MANUAL_SESSION] 🎯 MANUAL EXECUTION SUMMARY:`);
+  console.log(`[TradeAction/MANUAL_SESSION] ✅ Successful trades: ${successCount}/${results.length}`);
+  console.log(`[TradeAction/MANUAL_SESSION] ❌ Failed trades: ${failureCount}/${results.length}`);
+  console.log(`[TradeAction/MANUAL_SESSION] 📊 Execution mode: ${executionMode.toUpperCase()}`);
+  console.log(`[TradeAction/MANUAL_SESSION] 🎲 Strategy: ${selectedStrategy}`);
+  console.log(`[TradeAction/MANUAL_SESSION] 📈 Pattern: ${patternAnalysis?.patternType || 'N/A'}`);
+  console.log(`[TradeAction/MANUAL_SESSION] 🔢 USER SETTINGS VALIDATION - Requested: ${numberOfBulkTrades} trades, Executed: ${results.length} trades`);
+  console.log(`[TradeAction/MANUAL_SESSION] ⚡ Manual session completed in ~2-3 seconds (vs ~15 seconds for AI mode)`);
+
+  // CRITICAL FIX: Final validation to ensure user settings were respected
+  if (results.length !== numberOfBulkTrades) {
+    console.error(`[TradeAction/MANUAL_SESSION] 🚨 SETTINGS COMPLIANCE VIOLATION - User requested ${numberOfBulkTrades} trades but ${results.length} were executed`);
+  }
 
   return results;
 }
@@ -1190,13 +1232,29 @@ export async function executeVolatilityAiTradeLoop(
   totalStakeFromUser: number,
   options?: VolatilityTradeOptions
 ): Promise<VolatilityTradeExecutionResult[]> {
-  // Use the new options or defaults
-  const executionMode = options?.executionMode || 'safe';
-  const numberOfBulkTrades = options?.numberOfBulkTrades || 1;
-  const selectedInstrument = options?.selectedInstrument || 'Volatility 100 Index';
-  const predictionDigit = options?.predictionDigit || null;
-  const selectedStrategy = options?.selectedStrategy || '';
-  const patternTrigger = options?.patternTrigger || null;
+  // CRITICAL FIX: Validate options are provided for AI trading to prevent defaults
+  if (!options) {
+    throw new Error('AI trading requires explicit options - no defaults allowed');
+  }
+
+  // CRITICAL FIX: Use explicit options without fallback defaults
+  const executionMode = options.executionMode;
+  const numberOfBulkTrades = options.numberOfBulkTrades;
+  const selectedInstrument = options.selectedInstrument;
+  const predictionDigit = options.predictionDigit || null;
+  const selectedStrategy = options.selectedStrategy || '';
+  const patternTrigger = options.patternTrigger || null;
+
+  // CRITICAL FIX: Validate required parameters
+  if (!executionMode) {
+    throw new Error('AI trading requires explicit execution mode setting');
+  }
+  if (!numberOfBulkTrades || numberOfBulkTrades < 1 || numberOfBulkTrades > 20) {
+    throw new Error(`AI trading requires valid numberOfBulkTrades (1-20), received: ${numberOfBulkTrades}`);
+  }
+  if (!selectedInstrument) {
+    throw new Error('AI trading requires explicit instrument selection');
+  }
 
   // CRITICAL FIX: Include ALL volatility indices including 1-second indices
   // Use proper display names (not API symbols) to match VolatilityInstrumentType
@@ -1216,10 +1274,12 @@ export async function executeVolatilityAiTradeLoop(
   const isVercelEnvironment = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
   const is1sIndex = selectedInstrument.includes('(1s)');
 
-  console.log(`[TradeAction/Session] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
-  console.log(`[TradeAction/Session] Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Selected Instrument: ${selectedInstrument}`);
-  console.log(`[TradeAction/Session] Environment: ${isVercelEnvironment ? 'Vercel Serverless' : 'Local/Other'}, 1s Index: ${is1sIndex}`);
-  console.log(`[TradeAction/Session] CRITICAL FIX: Available volatility indices for data fetching:`, AVAILABLE_VOLATILITY_INDICES);
+  // CRITICAL FIX: Proper logging for AI session (not manual)
+  console.log(`[TradeAction/AI_SESSION] Starting AI session. User: ${userId}, Account: ${targetAccountId}, Trade Type: ${userSelectedTradeType}, Total Stake: ${totalStakeFromUser}`);
+  console.log(`[TradeAction/AI_SESSION] Execution Mode: ${executionMode}, Bulk Trades: ${numberOfBulkTrades}, Selected Instrument: ${selectedInstrument}`);
+  console.log(`[TradeAction/AI_SESSION] Environment: ${isVercelEnvironment ? 'Vercel Serverless' : 'Local/Other'}, 1s Index: ${is1sIndex}`);
+  console.log(`[TradeAction/AI_SESSION] USER SETTINGS VALIDATION - Requested: ${numberOfBulkTrades} trades, Mode: ${executionMode}, Instrument: ${selectedInstrument}`);
+  console.log(`[TradeAction/AI_SESSION] CRITICAL FIX: Available volatility indices for data fetching:`, AVAILABLE_VOLATILITY_INDICES);
 
   const instrumentTicksForAI: Record<string, PriceTick[]> = {};
   const instrumentIndicatorsForAI: Record<string, InstrumentIndicatorData | undefined> = {};
