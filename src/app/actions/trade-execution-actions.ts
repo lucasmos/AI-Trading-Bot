@@ -1106,7 +1106,7 @@ export async function executeVolatilityManualTradeLoop(
 
     // CRITICAL FIX: Use pattern-validated contract type
     const contractType = patternAnalysis.contractType;
-    const stakePerTrade = totalStakeFromUser / numberOfBulkTrades;
+    const stakePerTrade = Math.round((totalStakeFromUser / numberOfBulkTrades) * 100) / 100;
 
     console.log(`[TradeAction/ManualSession] PATTERN-BASED LOGIC - Strategy: ${selectedStrategy} -> Contract Type: ${contractType}`);
     console.log(`[TradeAction/ManualSession] Pattern Details - Type: ${patternAnalysis.patternType}, Consecutive: ${patternAnalysis.consecutiveCount}, Current Digit: ${patternAnalysis.currentDigit}`);

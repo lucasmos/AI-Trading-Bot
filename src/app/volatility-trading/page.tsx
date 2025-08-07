@@ -376,8 +376,8 @@ export default function VolatilityTradingPage() {
     try {
       console.log('[VolatilityPage] Executing pattern-triggered trade:', trigger);
 
-      // Calculate stake per trade based on bulk trades setting
-      const stakePerTrade = autoTradeTotalStake / numberOfBulkTrades;
+      // Calculate stake per trade based on bulk trades setting with proper rounding for Deriv API (max 2 decimal places)
+      const stakePerTrade = Math.round((autoTradeTotalStake / numberOfBulkTrades) * 100) / 100;
 
       // Execute the pattern-triggered trade
       const results = await executeVolatilityAiTradeLoop(

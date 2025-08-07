@@ -140,7 +140,7 @@ export function getTradeTypeDisplayName(userTradeType: string | undefined, contr
       case 'DIGITUNDER': return 'Over/Under';
       case 'DIGITEVEN': return 'Even/Odd';
       case 'DIGITODD': return 'Even/Odd';
-      default: return contractType;
+      default: return contractType || 'N/A'; // CRITICAL FIX: Handle undefined/null contractType
     }
   }
 
