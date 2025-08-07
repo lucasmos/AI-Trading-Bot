@@ -510,6 +510,11 @@ export default function VolatilityTradingPage() {
         neededCount: 3
       });
 
+      // CRITICAL FIX: Set UI states for proper table rendering
+      setIsAutoTradingActive(true);
+      setIsAiLoading(false);
+      setActiveAutomatedTrades([]); // Clear any existing trades
+
       // Set 60-second timeout
       const timeoutId = setTimeout(() => {
         handleMonitoringTimeout();
@@ -559,6 +564,10 @@ export default function VolatilityTradingPage() {
     setMonitoringStatus('');
     setMonitoringProgress(null);
     setMonitoringStartTime(null);
+
+    // CRITICAL FIX: Reset UI states when stopping pattern monitoring
+    setIsAutoTradingActive(false);
+    setIsAiLoading(false);
 
     toast({
       title: "Pattern Monitoring Stopped",

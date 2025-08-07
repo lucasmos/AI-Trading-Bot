@@ -228,8 +228,11 @@ async function executeManualTurboMode(
           amount: stakePerTrade,
           price: sharedPricePoint, // CRITICAL: Use shared price for consistency
           totalValue: stakePerTrade,
-          status: 'open',
+          status: 'OPEN',
           openTime: new Date(executionTimestamp),
+          derivContractId: tradeResponse.contract_id, // CRITICAL FIX: Store contract ID in main field
+          derivAccountId: targetAccountId,
+          accountType: selectedAccountType,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
@@ -421,8 +424,11 @@ async function executeSafeModeTradesBatch(
           amount: stakePerTrade,
           price: actualEntryPrice, // Use actual entry price from API
           totalValue: stakePerTrade,
-          status: 'open',
+          status: 'OPEN',
           openTime: new Date(batchTimestamp + (i * 100)), // Slight offset for sequential execution
+          derivContractId: tradeResponse.contract_id, // CRITICAL FIX: Store contract ID in main field
+          derivAccountId: targetAccountId,
+          accountType: selectedAccountType,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
@@ -1168,7 +1174,7 @@ export async function executeVolatilityManualTradeLoop(
   console.log(`[TradeAction/ManualSession] ✅ Successful trades: ${successCount}/${results.length}`);
   console.log(`[TradeAction/ManualSession] ❌ Failed trades: ${failureCount}/${results.length}`);
   console.log(`[TradeAction/ManualSession] 📊 Execution mode: ${executionMode.toUpperCase()}`);
-  console.log(`[TradeAction/ManualSession] 🎲 Strategy: ${selectedStrategy} (${contractType})`);
+  console.log(`[TradeAction/ManualSession] 🎲 Strategy: ${selectedStrategy} (${contractType || 'N/A'})`); // CRITICAL FIX: Handle undefined contractType
   console.log(`[TradeAction/ManualSession] 📈 Pattern: ${patternAnalysis?.patternType || 'N/A'}`);
   console.log(`[TradeAction/ManualSession] ⚡ Manual session completed in ~2-3 seconds (vs ~15 seconds for AI mode)`);
 

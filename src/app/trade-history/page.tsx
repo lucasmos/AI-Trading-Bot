@@ -108,8 +108,8 @@ export default function TradeHistoryPage() {
                            metadata.accountType ||
                            (trade.accountType === 'demo' ? 'demo' : 'real');
 
-        // Calculate profit/loss with fallback logic
-        const profitLoss = trade.profitLoss || trade.profit || 0;
+        // Calculate profit/loss with enhanced fallback logic
+        const profitLoss = trade.profitLoss || trade.profit || metadata.finalProfit || metadata.profit || 0;
 
         // Enhanced status determination with better logic
         let status = trade.status?.toLowerCase() || 'unknown';
@@ -119,46 +119,54 @@ export default function TradeHistoryPage() {
         const hasExitPrice = trade.exitPrice || metadata.exitPrice;
         const hasProfitLoss = profitLoss !== null && profitLoss !== undefined && profitLoss !== 0;
 
-        if (status === 'open' && (hasCloseTime || hasExitPrice || hasProfitLoss)) {
+        // CRITICAL FIX: Proper status mapping from database values
+        if (metadata.finalStatus) {
+          // Use metadata final status if available (most reliable)
+          status = metadata.finalStatus;
+        } else if (status === 'won' || status === 'lost') {
+          // Status is already correct
+          status = status;
+        } else if (status === 'open' && (hasCloseTime || hasExitPrice || hasProfitLoss)) {
           // Trade appears to be completed but status wasn't updated
           if (profitLoss > 0) status = 'won';
-          else if (profitLoss < 0) status = 'lost';
-          else status = 'closed';
+          else if (profitLoss < 0) status = 'lost_duration';
+          else status = 'closed_manual';
         } else if (status === 'closed') {
+          // Map generic closed status based on profit/loss
           if (profitLoss > 0) status = 'won';
-          else if (profitLoss < 0) status = 'lost';
-          else status = 'closed';
-        } else if (metadata.finalStatus) {
-          // Use metadata final status if available
-          status = metadata.finalStatus;
+          else if (profitLoss < 0) status = 'lost_duration';
+          else status = 'closed_manual';
+        } else if (status === 'open' && !hasCloseTime && !hasExitPrice) {
+          // Trade is genuinely still open
+          status = 'open';
         }
 
         return {
           id: trade.id,
           timestamp: new Date(trade.openTime).getTime(),
-          instrument: metadata.instrument || trade.symbol,
-          tradeType: tradeType,
-          entryPrice: metadata.entryPrice || trade.entryPrice || trade.price,
-          exitPrice: metadata.exitPrice || trade.exitPrice || (hasCloseTime ? (metadata.currentSpot || trade.price) : null),
-          buyPrice: metadata.buyPrice || trade.buyPrice || trade.amount,
+          instrument: metadata.instrument || trade.symbol || 'Unknown',
+          tradeType: tradeType || 'Unknown',
+          entryPrice: metadata.entryPrice || trade.entryPrice || trade.price || 0,
+          exitPrice: metadata.exitPrice || trade.exitPrice || (hasCloseTime ? (metadata.currentSpot || metadata.finalPrice || trade.price) : null),
+          buyPrice: metadata.buyPrice || trade.buyPrice || trade.amount || 0,
           profitLoss: profitLoss,
           status: status,
           date: new Date(trade.openTime).toISOString().split('T')[0], // YYYY-MM-DD format
-          time: trade.closeTime ? new Date(trade.closeTime).toTimeString().split(' ')[0] : '-', // HH:MM:SS format
+          time: trade.closeTime ? new Date(trade.closeTime).toTimeString().split(' ')[0] : (hasCloseTime ? new Date(metadata.completionTime || trade.openTime).toTimeString().split(' ')[0] : '-'), // Enhanced time handling
           accountType: accountType,
           tradeCategory: metadata.tradeCategory || 'volatility',
-          reasoning: metadata.reasoning || '',
+          reasoning: metadata.reasoning || metadata.aiReasoning || 'No reasoning provided',
 
-          // Legacy fields for backward compatibility
-          action: metadata.contractType || trade.type?.toUpperCase() || 'UNKNOWN',
-          duration: metadata.executionMode || metadata.duration || '-',
-          stake: trade.amount,
+          // Legacy fields for backward compatibility with enhanced fallbacks
+          action: metadata.contractType || trade.type?.toUpperCase() || metadata.action || 'UNKNOWN',
+          duration: metadata.executionMode || metadata.duration || (metadata.durationSeconds ? `${metadata.durationSeconds}s` : '-'),
+          stake: trade.amount || metadata.stake || 0,
           pnl: profitLoss,
 
           // Additional fields for enhanced display
-          contractType: metadata.contractType,
+          contractType: metadata.contractType || metadata.finalContractType,
           derivContractId: metadata.derivContractId || trade.derivContractId,
-          executionMode: metadata.executionMode,
+          executionMode: metadata.executionMode || 'standard',
           patternAnalysis: metadata.patternAnalysis
         };
       });

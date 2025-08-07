@@ -12,6 +12,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Map the status correctly for database storage
+    let dbStatus: string;
+    switch (status) {
+      case 'won':
+        dbStatus = 'WON';
+        break;
+      case 'lost':
+        dbStatus = 'LOST';
+        break;
+      default:
+        dbStatus = 'CLOSED';
+    }
+
     // Update the trade in the database
     const updatedTrade = await prisma.trade.update({
       where: {
@@ -19,14 +32,16 @@ export async function POST(request: NextRequest) {
       },
       data: {
         exitPrice: exitPrice,
-        profit: profit,
-        status: status === 'won' ? 'CLOSED' : 'CLOSED',
+        profitLoss: profit, // CRITICAL FIX: Use profitLoss field instead of profit
+        profit: profit, // Keep for backward compatibility
+        status: dbStatus, // CRITICAL FIX: Use proper status mapping
         closeTime: new Date(closeTime),
         metadata: {
           update: true,
           outcome: status,
           finalProfit: profit,
-          exitPrice: exitPrice
+          exitPrice: exitPrice,
+          finalStatus: status // Add final status to metadata
         }
       }
     });
