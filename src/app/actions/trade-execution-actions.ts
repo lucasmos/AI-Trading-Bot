@@ -1359,7 +1359,7 @@ export async function executeVolatilityAiTradeLoop(
       console.log(`[TradeAction/Session] Using pattern-based strategy:`, patternTrigger);
 
       // Create pattern-based trade proposals with execution mode consideration
-      const stakePerTrade = totalStakeFromUser / numberOfBulkTrades;
+      const stakePerTrade = Math.round((totalStakeFromUser / numberOfBulkTrades) * 100) / 100;
       const tradeDuration = executionMode === 'turbo' ? 1 : 5; // Turbo: 1 tick, Safe: 5 ticks
       console.log(`[TradeAction/Session] Pattern-based trades using ${executionMode} mode: ${tradeDuration} tick duration`);
 

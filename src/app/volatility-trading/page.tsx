@@ -637,8 +637,10 @@ export default function VolatilityTradingPage() {
         throw new Error(`Insufficient balance: $${autoTradeTotalStake} required, $${(currentBalance ?? 0).toFixed(2)} available`);
       }
 
-      // Calculate stake per trade
-      const stakePerTrade = autoTradeTotalStake / numberOfBulkTrades;
+      // Calculate stake per trade with proper rounding for Deriv API (max 2 decimal places)
+      const stakePerTrade = Math.round((autoTradeTotalStake / numberOfBulkTrades) * 100) / 100;
+
+      console.log(`[VolatilityPage] Stake calculation: Total ${autoTradeTotalStake} / ${numberOfBulkTrades} trades = ${stakePerTrade} (rounded to 2 decimal places)`);
 
       if (stakePerTrade < 0.35) {
         throw new Error(`Stake per trade ($${stakePerTrade.toFixed(2)}) is below minimum requirement ($0.35)`);

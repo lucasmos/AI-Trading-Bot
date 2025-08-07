@@ -511,7 +511,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
           derivContractType: input.patternTrigger.contractType,
           duration: input.executionMode === 'turbo' ? 1 : 5, // Turbo: 1 tick, Safe: 5 ticks
           durationUnit: 't',
-          stake: Math.max(0.35, stakePerTrade), // Ensure minimum stake
+          stake: Math.max(0.35, Math.round(stakePerTrade * 100) / 100), // Ensure minimum stake with proper rounding
           reasoning: `PATTERN-BASED TRADE ${i + 1}/${input.numberOfBulkTrades}: ${input.patternTrigger.reasoning}. Execution Mode: ${input.executionMode}. Strategy: ${input.selectedStrategy}. Account: ${input.accountType}. Confidence: ${(input.patternTrigger.confidence || 1) * 100}%.`
         });
       }
@@ -526,9 +526,10 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
     const tradesToExecute: VolatilitySingleTradeProposal[] = [];
     let totalStakeAllocated = 0;
 
-    // Calculate stake per trade based on bulk trades setting
+    // Calculate stake per trade based on bulk trades setting with proper rounding
     const numberOfTrades = input.numberOfBulkTrades || 1;
-    const stakePerTrade = Math.max(0.35, input.totalSessionStake / numberOfTrades);
+    const rawStakePerTrade = input.totalSessionStake / numberOfTrades;
+    const stakePerTrade = Math.max(0.35, Math.round(rawStakePerTrade * 100) / 100);
 
     console.log(`[AI Session Flow] SINGLE INSTRUMENT SESSION - Processing ${targetInstrumentDisplayName} (Code: ${targetInstrumentCode}) with ${numberOfTrades} trades, $${stakePerTrade.toFixed(2)} per trade`);
 
