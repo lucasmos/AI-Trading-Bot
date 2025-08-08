@@ -600,12 +600,23 @@ export default function VolatilityTradingPage() {
   }, [toast]);
 
   const executePatternDetectedTrade = useCallback(async (strategy: string, consecutiveCount: number, triggerDigit: number) => {
-    // CRITICAL FIX: Execution lock to prevent duplicate calls
+    // CRITICAL FIX: Enhanced execution lock to prevent duplicate calls
     if (isExecutingTrade) {
       console.log('[VolatilityPage] 🔒 Trade execution already in progress, skipping duplicate call');
       return;
     }
 
+    // CRITICAL FIX: Additional validation to prevent rapid successive calls
+    const now = Date.now();
+    const lastExecutionKey = `lastExecution_${strategy}_${consecutiveCount}_${triggerDigit}`;
+    const lastExecutionTime = sessionStorage.getItem(lastExecutionKey);
+
+    if (lastExecutionTime && (now - parseInt(lastExecutionTime)) < 5000) {
+      console.log('[VolatilityPage] 🔒 Duplicate pattern execution blocked - same pattern executed within 5 seconds');
+      return;
+    }
+
+    sessionStorage.setItem(lastExecutionKey, now.toString());
     setIsExecutingTrade(true);
 
     console.log('[VolatilityPage] 🎯 STARTING executePatternDetectedTrade in Manual Mode:', {
@@ -1694,6 +1705,14 @@ export default function VolatilityTradingPage() {
       return;
     }
 
+    // CRITICAL FIX: Prevent multiple subscriptions to the same instrument
+    const subscriptionKey = `ws_${currentVolatilityInstrument}_${selectedUserTradeTypeForLoop}`;
+    if (sessionStorage.getItem(subscriptionKey)) {
+      console.log('[VolatilityPage] WebSocket subscription already active for', currentVolatilityInstrument);
+      return;
+    }
+
+    sessionStorage.setItem(subscriptionKey, 'active');
     console.log('[VolatilityPage] Setting up WebSocket streaming for', currentVolatilityInstrument);
 
     let unsubscribe: (() => void) | null = null;
@@ -1804,6 +1823,18 @@ export default function VolatilityTradingPage() {
                         currentVolatilityInstrument
                       }
                     });
+
+                    // CRITICAL FIX: Add pattern detection cooldown to prevent rapid successive detections
+                    const patternKey = `pattern_${selectedStrategy}_${consecutiveRequiredCount}_${lastDigit}`;
+                    const lastPatternTime = sessionStorage.getItem(patternKey);
+                    const now = Date.now();
+
+                    if (lastPatternTime && (now - parseInt(lastPatternTime)) < 10000) {
+                      console.log('[VolatilityPage] 🔒 Pattern detection cooldown active - same pattern detected within 10 seconds');
+                      return;
+                    }
+
+                    sessionStorage.setItem(patternKey, now.toString());
 
                     // Pattern found! Execute trade automatically
                     console.log('[VolatilityPage] 🚀 Calling executePatternDetectedTrade...');
@@ -1952,6 +1983,10 @@ export default function VolatilityTradingPage() {
 
     // Cleanup function
     return () => {
+      // CRITICAL FIX: Clean up subscription tracking
+      const subscriptionKey = `ws_${currentVolatilityInstrument}_${selectedUserTradeTypeForLoop}`;
+      sessionStorage.removeItem(subscriptionKey);
+
       if (unsubscribe) {
         console.log('[VolatilityPage] Unsubscribing from WebSocket tick stream for', currentVolatilityInstrument);
         unsubscribe();
@@ -2001,6 +2036,16 @@ export default function VolatilityTradingPage() {
         clearInterval(realTradeMonitoringInterval.current);
         realTradeMonitoringInterval.current = null;
       }
+
+      // CRITICAL FIX: Clean up session storage to prevent memory leaks
+      const keysToRemove = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && (key.startsWith('lastExecution_') || key.startsWith('pattern_') || key.startsWith('ws_'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => sessionStorage.removeItem(key));
     };
   }, []);
 

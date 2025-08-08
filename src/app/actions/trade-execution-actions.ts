@@ -219,7 +219,7 @@ async function executeManualTurboMode(
     try {
       const tradeResponse = await placeTrade(tradeDetails, targetAccountId);
 
-      // Save to database
+      // Save to database with complete field data
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
@@ -233,6 +233,10 @@ async function executeManualTurboMode(
           derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
+          // CRITICAL FIX: Add missing fields for complete trade records
+          tradeType: 'DigitsEvenOdd',
+          entryPrice: sharedPricePoint,
+          buyPrice: stakePerTrade,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
@@ -429,6 +433,10 @@ async function executeSafeModeTradesBatch(
           derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
+          // CRITICAL FIX: Add missing fields for complete trade records
+          tradeType: 'DigitsEvenOdd',
+          entryPrice: actualEntryPrice,
+          buyPrice: stakePerTrade,
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
@@ -1051,6 +1059,9 @@ export async function executeVolatilityManualTradeLoop(
 
   const results: VolatilityTradeExecutionResult[] = [];
 
+  // CRITICAL FIX: Declare patternAnalysis outside try block to ensure scope accessibility
+  let patternAnalysis: PatternAnalysisResult | null = null;
+
   if (!userDerivApiToken || !targetAccountId || !userId) {
     const errorMsg = "User token, target account ID, or user ID is missing for Manual trade loop.";
     console.error(`[TradeAction/ManualSession] Pre-condition failed: ${errorMsg}`);
@@ -1105,8 +1116,6 @@ export async function executeVolatilityManualTradeLoop(
     console.log(`[TradeAction/MANUAL_SESSION] Recent digits: [${tickDigits.slice(-10).join(', ')}]`);
 
     // CRITICAL FIX: Use pre-validated pattern or analyze fresh data
-    let patternAnalysis: PatternAnalysisResult;
-
     if (bypassPatternValidation && preValidatedPattern) {
       console.log(`[TradeAction/MANUAL_SESSION] 🎯 Using pre-validated pattern from WebSocket monitoring`);
       patternAnalysis = preValidatedPattern;
