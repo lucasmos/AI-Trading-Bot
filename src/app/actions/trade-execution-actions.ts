@@ -607,6 +607,7 @@ export interface VolatilityTradeOptions {
   }; // Pattern-based trade trigger
   bypassPatternValidation?: boolean; // CRITICAL: Allow bypassing pattern validation
   preValidatedPattern?: PatternAnalysisResult; // CRITICAL: Use pre-validated pattern from WebSocket
+  isManualMode?: boolean; // CRITICAL: Flag to prevent AI execution during manual mode
 }
 
 // Helper function to wait for next tick using WebSocket
@@ -1232,6 +1233,12 @@ export async function executeVolatilityAiTradeLoop(
   totalStakeFromUser: number,
   options?: VolatilityTradeOptions
 ): Promise<VolatilityTradeExecutionResult[]> {
+  // CRITICAL FIX: Prevent AI execution during manual mode
+  if (options?.isManualMode) {
+    console.error('[TradeAction/AI_SESSION] BLOCKED: AI execution attempted during manual mode');
+    throw new Error('AI trading is not allowed during manual mode');
+  }
+
   // CRITICAL FIX: Validate options are provided for AI trading to prevent defaults
   if (!options) {
     throw new Error('AI trading requires explicit options - no defaults allowed');

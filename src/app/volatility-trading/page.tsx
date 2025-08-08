@@ -115,6 +115,8 @@ export default function VolatilityTradingPage() {
 
   // Pattern monitoring state for Enhanced Manual Mode
   const [isPatternMonitoring, setIsPatternMonitoring] = useState<boolean>(false);
+  const [isManualPatternMonitoring, setIsManualPatternMonitoring] = useState<boolean>(false);
+  const [isExecutingTrade, setIsExecutingTrade] = useState<boolean>(false);
   const [monitoringStatus, setMonitoringStatus] = useState<string>('');
   const [monitoringProgress, setMonitoringProgress] = useState<{
     consecutiveCount: number;
@@ -254,7 +256,7 @@ export default function VolatilityTradingPage() {
           { value: 'Under', label: 'Under' }
         ];
       default:
-        return []; // No strategies for Simulation Mode or undefined
+        return []; // No strategies for undefined trade type
     }
   }, []);
 
@@ -510,8 +512,8 @@ export default function VolatilityTradingPage() {
         neededCount: 3
       });
 
-      // CRITICAL FIX: Set UI states for proper table rendering
-      setIsAutoTradingActive(true);
+      // CRITICAL FIX: Set UI states for manual pattern monitoring (NOT AI auto trading)
+      setIsManualPatternMonitoring(true);
       setIsAiLoading(false);
       setActiveAutomatedTrades([]); // Clear any existing trades
 
@@ -537,6 +539,7 @@ export default function VolatilityTradingPage() {
 
       // Reset monitoring state in case of error
       setIsPatternMonitoring(false);
+      setIsManualPatternMonitoring(false);
       setMonitoringStatus('');
       setMonitoringProgress(null);
       setMonitoringStartTime(null);
@@ -561,6 +564,7 @@ export default function VolatilityTradingPage() {
 
     // Reset monitoring state
     setIsPatternMonitoring(false);
+    setIsManualPatternMonitoring(false);
     setMonitoringStatus('');
     setMonitoringProgress(null);
     setMonitoringStartTime(null);
@@ -581,6 +585,7 @@ export default function VolatilityTradingPage() {
 
     // Reset monitoring state
     setIsPatternMonitoring(false);
+    setIsManualPatternMonitoring(false);
     setMonitoringStatus('');
     setMonitoringProgress(null);
     setMonitoringStartTime(null);
@@ -595,6 +600,14 @@ export default function VolatilityTradingPage() {
   }, [toast]);
 
   const executePatternDetectedTrade = useCallback(async (strategy: string, consecutiveCount: number, triggerDigit: number) => {
+    // CRITICAL FIX: Execution lock to prevent duplicate calls
+    if (isExecutingTrade) {
+      console.log('[VolatilityPage] 🔒 Trade execution already in progress, skipping duplicate call');
+      return;
+    }
+
+    setIsExecutingTrade(true);
+
     console.log('[VolatilityPage] 🎯 STARTING executePatternDetectedTrade in Manual Mode:', {
       strategy,
       consecutiveCount,
@@ -614,6 +627,7 @@ export default function VolatilityTradingPage() {
       setMonitoringTimeoutId(null);
     }
     setIsPatternMonitoring(false);
+    setIsManualPatternMonitoring(false);
 
     // Validate prerequisites
     if (!userInfo?.id || !selectedDerivAccountType) {
@@ -696,6 +710,7 @@ export default function VolatilityTradingPage() {
               selectedInstrument: currentVolatilityInstrument, // Explicit parameter passing
               selectedStrategy: strategy,
               bypassPatternValidation: true, // CRITICAL: Skip pattern validation since we already detected it
+              isManualMode: true, // CRITICAL: Flag to prevent AI execution during manual mode
               preValidatedPattern: {
                 shouldExecute: true,
                 contractType: strategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD',
@@ -782,8 +797,11 @@ export default function VolatilityTradingPage() {
         description: `Failed to execute pattern-detected trade: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive"
       });
+    } finally {
+      // CRITICAL FIX: Always release execution lock
+      setIsExecutingTrade(false);
     }
-  }, [monitoringTimeoutId, userInfo, selectedDerivAccountType, numberOfBulkTrades, executionMode, autoTradeTotalStake, currentVolatilityInstrument, currentStreamingPrice, toast]);
+  }, [monitoringTimeoutId, userInfo, selectedDerivAccountType, numberOfBulkTrades, executionMode, autoTradeTotalStake, currentVolatilityInstrument, currentStreamingPrice, toast, isExecutingTrade]);
 
   const currentBalance = useMemo(() => {
     if (authStatus === 'pending' || !userInfo) return null;
@@ -1713,18 +1731,19 @@ export default function VolatilityTradingPage() {
               lastAnalyzedLength: finalSequence.length
             });
 
-            // Check for pattern-based trade triggers (only if AI trading is active)
-            if (isAutoTradingActive && !isAiLoading && selectedUserTradeTypeForLoop === 'DigitsEvenOdd') {
+            // CRITICAL FIX: Separate AI and Manual execution paths to prevent conflicts
+            // AI Mode: Check for pattern-based trade triggers (only if AI trading is active and NOT in manual mode)
+            if (isAutoTradingActive && !isAiLoading && !isManualMode && selectedUserTradeTypeForLoop === 'DigitsEvenOdd') {
               const trigger = checkPatternTriggers(finalSequence);
               if (trigger?.shouldTrade) {
-                console.log('[VolatilityPage] Pattern trigger detected:', trigger);
-                // Trigger automatic trade execution
+                console.log('[VolatilityPage] AI Pattern trigger detected:', trigger);
+                // Trigger automatic AI trade execution
                 handlePatternTriggeredTrade(trigger);
               }
             }
 
-            // Enhanced Manual Mode: Real-time Pattern Monitoring
-            if (isPatternMonitoring && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && selectedStrategy) {
+            // Manual Mode: Real-time Pattern Monitoring (only if manual pattern monitoring is active)
+            if (isManualPatternMonitoring && isManualMode && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && selectedStrategy) {
               console.log('[VolatilityPage] Pattern monitoring active - analyzing tick:', {
                 currentDigit: lastDigit,
                 strategy: selectedStrategy,
@@ -1866,6 +1885,7 @@ export default function VolatilityTradingPage() {
 
             // Reset monitoring state
             setIsPatternMonitoring(false);
+            setIsManualPatternMonitoring(false);
             setMonitoringStatus('');
             setMonitoringProgress(null);
             setMonitoringStartTime(null);
@@ -1912,6 +1932,7 @@ export default function VolatilityTradingPage() {
 
           // Reset monitoring state
           setIsPatternMonitoring(false);
+          setIsManualPatternMonitoring(false);
           setMonitoringStatus('');
           setMonitoringProgress(null);
           setMonitoringStartTime(null);
@@ -2171,22 +2192,11 @@ export default function VolatilityTradingPage() {
                       {option.label}
                     </Button>
                   ))}
-                  <Button
-                    variant={selectedUserTradeTypeForLoop === undefined ? 'default' : 'outline'}
-                    onClick={() => {
-                      setSelectedUserTradeTypeForLoop(undefined);
-                      setSelectedStrategy(''); // Reset strategy for simulation mode
-                    }}
-                    disabled={isAutoTradingActive || isAiLoading}
-                    className="h-12 text-sm font-medium border-2 col-span-2"
-                  >
-                    Simulation Mode
-                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {isManualMode
                     ? "Manual Mode only supports Even/Odd trades for optimal performance."
-                    : "Select a trade type for real trading or use Simulation Mode for practice."
+                    : "Select a trade type for real trading with live market data."
                   }
                 </p>
               </div>
