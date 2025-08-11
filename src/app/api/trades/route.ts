@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         derivSellPrice,
         derivSellTime: derivSellTime ? BigInt(derivSellTime) : null,
         derivContractId: derivContractId ? BigInt(derivContractId) : null,
-        derivTransactionId: derivTransactionId ? derivTransactionId.toString() : null,
+        derivTransactionId: derivTransactionId ? BigInt(derivTransactionId) : null,
         derivLongcode,
         derivShortcode,
         derivUnderlyingSymbol,
