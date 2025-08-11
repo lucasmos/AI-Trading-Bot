@@ -58,16 +58,8 @@ async function startTradeMonitoring(contractId: string, dbTradeId: string, apiTo
           where: { id: dbTradeId },
           data: {
             status: 'closed',
-            closeTime: new Date(),
             derivSellPrice: 0, // Use Deriv API field
-            derivSellTime: BigInt(Math.floor(Date.now() / 1000)),
-            metadata: {
-              ...(await prisma.trade.findUnique({ where: { id: dbTradeId }, select: { metadata: true } }))?.metadata as object || {},
-              contractCompleted: true,
-              finalStatus: 'closed',
-              error: 'Monitoring error - marked as closed',
-              profit: 0 // Store in metadata for backward compatibility
-            }
+            derivSellTime: BigInt(Math.floor(Date.now() / 1000))
           }
         });
         console.log(`[TradeMonitoring] ⚠️ Fallback: Marked trade ${dbTradeId} as closed due to monitoring error`);
@@ -432,34 +424,17 @@ async function executeSafeModeTradesBatch(
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
-          symbol: instrumentToDerivSymbol(instrument), // CRITICAL FIX: Add required symbol field
-          type: `DigitsEvenOdd (${contractType})`, // Use type field instead of tradeType
-          amount: stakePerTrade,
-          price: actualEntryPrice, // Use actual entry price from API
-          totalValue: stakePerTrade,
+          symbol: instrumentToDerivSymbol(instrument),
           status: 'OPEN',
-          openTime: new Date(batchTimestamp + (i * 100)), // Slight offset for sequential execution
-          derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
+
+          // Use Deriv-specific fields
+          derivContractId: tradeResponse.contract_id.toString(),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
-          // CRITICAL FIX: Add missing fields for complete trade records
-          tradeType: 'DigitsEvenOdd',
-          entryPrice: actualEntryPrice,
-          buyPrice: stakePerTrade,
-          metadata: {
-            instrument: instrument,
-            tradeType: 'DigitsEvenOdd',
-            contractType: contractType,
-            derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string
-            patternAnalysis: patternAnalysis,
-            executionMode: 'safe',
-            batchNumber: batchNumber,
-            batchPosition: i + 1,
-            reasoning: `SAFE MANUAL Batch ${batchNumber}: ${patternAnalysis.reasoning}`,
-            isPaperTrade: selectedAccountType === 'demo',
-            entryPrice: actualEntryPrice,
-            buyPrice: stakePerTrade
-          }
+          derivContractType: contractType,
+          derivBuyPrice: stakePerTrade,
+          derivPurchaseTime: BigInt(Math.floor((batchTimestamp + (i * 100)) / 1000)),
+          derivLongcode: tradeResponse.longcode
         }
       });
 
@@ -564,27 +539,16 @@ export async function executeAiTradingStrategy(
         data: {
           userId: userId,
           symbol: tradeProposal.instrument,
-          type: tradeProposal.action,
-          amount: tradeProposal.stake,
-          price: derivTradeResponse.entry_spot,
-          totalValue: tradeProposal.stake,
           status: 'OPEN',
-          openTime: new Date(),
+
+          // Use Deriv-specific fields
           derivContractId: derivTradeResponse.contract_id.toString(),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
-          aiStrategyId: strategy.aiStrategyId || null,
-          metadata: {
-            reasoning: tradeProposal.reasoning,
-            derivLongcode: derivTradeResponse.longcode,
-            tradeCategory: 'forexCrypto',
-            automated: true,
-            tradingMode: strategy.tradingMode || 'balanced',
-            durationString: tradeProposal.durationString,
-            multiplier: tradeProposal.multiplier,
-            stopLoss: tradeProposal.stop_loss,
-            takeProfit: tradeProposal.take_profit
-          }
+          derivContractType: tradeProposal.action,
+          derivBuyPrice: tradeProposal.stake,
+          derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
+          derivLongcode: derivTradeResponse.longcode
         },
       });
       console.log(`[executeAiTradingStrategy] Trade for ${tradeProposal.instrument} saved to DB. DB Trade ID: ${savedDbTrade.id}, Deriv Contract ID: ${derivTradeResponse.contract_id}`);
@@ -975,31 +939,17 @@ async function executeSingleTrade(
       data: {
         userId: userId,
         symbol: instrumentFromAI,
-        type: `${userSelectedTradeType} (${finalContractType})`,
-        amount: tradeDetailsForApi.amount,
-        price: derivTradeResponse.entry_spot,
-        totalValue: tradeDetailsForApi.amount,
         status: 'OPEN',
-        openTime: new Date(),
+
+        // Use Deriv-specific fields
         derivContractId: derivTradeResponse.contract_id.toString(),
         derivAccountId: targetAccountId,
         accountType: selectedAccountType,
-        aiStrategyId: null,
-        metadata: {
-          reasoning: aiReasoningForThisTrade,
-          derivLongcode: derivTradeResponse.longcode,
-          barrier: calculatedBarrier,
-          duration: aiProposal.duration,
-          durationUnit: aiProposal.durationUnit,
-          userSelectedTradeType: userSelectedTradeType,
-          derivSymbol: currentApiSymbol,
-          totalSessionStake: totalStakeFromUser,
-          selectedStrategy: selectedStrategy,
-          finalContractType: finalContractType,
-          patternTrigger: patternTrigger,
-          isPatternBasedTrade: !!patternTrigger,
-        }
-      },
+        derivContractType: finalContractType,
+        derivBuyPrice: tradeDetailsForApi.amount,
+        derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
+        derivLongcode: derivTradeResponse.longcode
+      }
     });
 
     console.log(`[TradeAction/SingleTrade] Trade for ${instrumentFromAI} saved to DB. DB ID: ${savedDbTrade.id}`);

@@ -11,21 +11,24 @@ export async function POST(request: Request) {
     // email and name are no longer strictly needed here for user creation, 
     // as /api/auth/verify should handle user reconciliation.
     const {
-      userId, symbol, type, amount, price, metadata, aiStrategyId,
-      // New Deriv-style fields
-      tradeType, entryPrice, buyPrice
+      userId, symbol, metadata,
+      // Legacy fields (will be mapped to Deriv fields)
+      type, amount, price, aiStrategyId, tradeType, entryPrice, buyPrice,
+      // Deriv-specific fields (preferred)
+      derivContractType, derivBuyPrice, derivPayout, derivContractId, derivAccountId, accountType
     } = requestBody;
 
     console.log('[Create Trade API] Attempting to create trade with data:', {
-      userId, symbol, type, amount, price,
-      metadata: metadata ? 'provided' : 'not provided',
-      aiStrategyId
+      userId, symbol,
+      derivContractType: derivContractType || type,
+      derivBuyPrice: derivBuyPrice || amount || buyPrice,
+      metadata: metadata ? 'provided' : 'not provided'
     });
 
-    if (!userId || !symbol || !type || !amount || !price) {
+    if (!userId || !symbol) {
       console.error('[Create Trade API] Missing required fields for trade creation.');
       return NextResponse.json(
-        { error: 'Missing required fields for trade creation' },
+        { error: 'Missing required fields: userId and symbol are required' },
         { status: 400 }
       );
     }
@@ -58,26 +61,36 @@ export async function POST(request: Request) {
 
     console.log(`[Create Trade API] User ${userId} confirmed. Proceeding with trade creation.`);
 
-    const totalValue = amount * price;
-    
+    // Map legacy fields to Deriv fields and metadata
+    const mappedMetadata = {
+      ...(metadata || {}),
+      // Store legacy fields in metadata for backward compatibility
+      legacyType: type,
+      legacyAmount: amount,
+      legacyPrice: price,
+      legacyTotalValue: amount && price ? amount * price : undefined,
+      legacyTradeType: tradeType,
+      legacyEntryPrice: entryPrice,
+      legacyBuyPrice: buyPrice,
+      aiStrategyId: aiStrategyId
+    };
+
     const trade = await prisma.trade.create({
       data: {
         userId,
         symbol,
-        type,
-        amount,
-        price,
-        totalValue,
+        status: 'OPEN', // Default status for a new trade
 
-        // New Deriv-style fields
-        tradeType: tradeType || null,
-        entryPrice: entryPrice || price,
-        buyPrice: buyPrice || amount,
+        // Use Deriv fields (preferred) or map from legacy fields
+        derivContractType: derivContractType || type,
+        derivBuyPrice: derivBuyPrice || amount || buyPrice,
+        derivPayout: derivPayout,
+        derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
+        derivContractId: derivContractId,
+        derivAccountId: derivAccountId,
+        accountType: accountType,
 
-        status: 'open', // Default status for a new trade
-        openTime: new Date(),
-        metadata: metadata || {},
-        aiStrategyId,
+        metadata: mappedMetadata,
       },
     });
 
@@ -86,7 +99,8 @@ export async function POST(request: Request) {
       userId: trade.userId,
       symbol: trade.symbol,
       status: trade.status,
-      aiStrategyId: trade.aiStrategyId
+      derivContractType: trade.derivContractType,
+      derivBuyPrice: trade.derivBuyPrice
     });
 
     await prisma.$disconnect();
