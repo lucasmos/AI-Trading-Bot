@@ -3,19 +3,20 @@
  */
 
 /**
- * Converts BigInt fields to numbers for JSON serialization
+ * Converts BigInt fields to strings for JSON serialization
  * This is needed because JSON.stringify() cannot serialize BigInt values
+ * Using strings instead of numbers to preserve precision for large contract IDs
  *
  * @param trade - Trade object that may contain BigInt fields
- * @returns Trade object with BigInt fields converted to numbers
+ * @returns Trade object with BigInt fields converted to strings
  */
 export function serializeTradeForJSON(trade: any) {
   return {
     ...trade,
-    derivContractId: trade.derivContractId ? Number(trade.derivContractId) : null,
+    derivContractId: trade.derivContractId ? trade.derivContractId.toString() : null,
     derivPurchaseTime: trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) : null,
     derivSellTime: trade.derivSellTime ? Number(trade.derivSellTime) : null,
-    derivTransactionId: trade.derivTransactionId ? Number(trade.derivTransactionId) : null,
+    derivTransactionId: trade.derivTransactionId ? trade.derivTransactionId.toString() : null,
   };
 }
 

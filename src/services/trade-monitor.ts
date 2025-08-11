@@ -26,6 +26,29 @@ export class TradeMonitor {
   private apiToken: string;
   private accountId: string;
 
+  /**
+   * Normalize contract status from Deriv API to our internal format
+   */
+  private normalizeContractStatus(derivStatus: string): 'won' | 'lost' | 'open' | 'cancelled' {
+    if (!derivStatus) return 'open';
+    
+    switch (derivStatus.toLowerCase()) {
+      case 'won':
+      case 'win':
+        return 'won';
+      case 'lost':
+      case 'loss':
+        return 'lost';
+      case 'cancelled':
+      case 'canceled':
+        return 'cancelled';
+      case 'open':
+      case 'pending':
+      default:
+        return 'open';
+    }
+  }
+
   constructor(apiToken: string, accountId: string, options: TradeMonitorOptions = {}) {
     this.apiToken = apiToken;
     this.accountId = accountId;
@@ -109,17 +132,33 @@ export class TradeMonitor {
       const { getContractStatus } = await import('@/services/deriv');
       const statusData = await getContractStatus(Number(contractId), this.apiToken, this.accountId);
 
-      // Normalize to expected fields
-      const contractData = {
-        contract_id: statusData.contract_id,
+      // Validate required fields
+      if (!statusData || !statusData.contract_id) {
+        console.error(`[TradeMonitor] Invalid status data for contract ${contractId}:`, statusData);
+        return;
+      }
+
+      // Log detailed contract status for debugging
+      console.log(`[TradeMonitor] Contract ${contractId} status:`, {
         status: statusData.status,
-        buy_price: statusData.buy_price,
-        sell_price: statusData.sell_price,
-        entry_spot: statusData.entry_spot,
-        exit_spot: statusData.exit_tick,
-        sell_time: statusData.exit_tick_time,
-        underlying: '', // Deriv response may not include; optional for DB update/toast
-      } as any;
+        buyPrice: statusData.buy_price,
+        sellPrice: statusData.sell_price,
+        entrySpot: statusData.entry_spot,
+        exitTick: statusData.exit_tick,
+        exitTime: statusData.exit_tick_time
+      });
+
+      // Normalize to expected fields and handle money values (stored as cents)
+      const contractData = {
+        contract_id: statusData.contract_id.toString(),
+        status: this.normalizeContractStatus(statusData.status),
+        buy_price: Math.round(Number(statusData.buy_price || 0) * 100), // Convert to cents
+        sell_price: statusData.sell_price != null ? Math.round(Number(statusData.sell_price) * 100) : undefined, // Convert to cents if exists
+        entry_spot: Number(statusData.entry_spot || 0),
+        exit_spot: Number(statusData.exit_tick || 0),
+        sell_time: statusData.exit_tick_time, // Use exit_tick_time as sell_time
+        underlying: statusData.symbol || '', // Use symbol field for underlying
+      };
 
       // Completed if 'sold' or has sell_price/time
       if (

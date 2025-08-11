@@ -108,15 +108,21 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   const metadata = trade.metadata || {};
   
   // Extract Deriv API fields from metadata or trade object (prefer new Deriv fields first)
-  const contractId = metadata.derivContractId || trade.derivContractId || trade.id;
+  // Handle both BigInt and string contract IDs from serialization
+  let contractId = metadata.derivContractId || trade.derivContractId || trade.id;
+  if (typeof contractId === 'bigint') {
+    contractId = contractId.toString();
+  }
 
   // Prefer longcode/shortcode from trade if present
   const longcode = trade.derivLongcode || metadata.derivLongcode || generateLongcode(trade);
   const shortcode = trade.derivShortcode || metadata.derivShortcode || generateShortcodeFromTrade(trade);
 
-  // Buy price: DB stores derivBuyPrice as integer cents; convert to dollars for display
+  // Buy price: Handle both integer cents and direct dollar amounts
   const buyPriceRaw = trade.derivBuyPrice != null
-    ? Number(trade.derivBuyPrice) / 100
+    ? typeof trade.derivBuyPrice === 'bigint'
+      ? Number(trade.derivBuyPrice) / 100 // Convert BigInt cents to dollars
+      : Number(trade.derivBuyPrice) / 100 // Convert number cents to dollars
     : (metadata.derivBuyPrice ?? trade.buyPrice ?? trade.amount ?? 0);
   const buyPrice = Number(buyPriceRaw);
 
@@ -138,7 +144,30 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
 
   // Compute profit/loss and status based on normalized prices
   const profitLoss = sellPrice !== undefined ? Number(sellPrice) - buyPrice : 0;
-  const status = getTradeStatus(sellPrice, buyPrice);
+
+  // Determine status: prefer database status if available, otherwise derive from sell_price
+  let status: 'won' | 'lost' | 'open' | 'cancelled';
+  if (trade.status) {
+    // Map database status to display status
+    switch (trade.status.toUpperCase()) {
+      case 'WON':
+        status = 'won';
+        break;
+      case 'LOST':
+        status = 'lost';
+        break;
+      case 'OPEN':
+        status = 'open';
+        break;
+      case 'CANCELLED':
+        status = 'cancelled';
+        break;
+      default:
+        status = getTradeStatus(sellPrice, buyPrice);
+    }
+  } else {
+    status = getTradeStatus(sellPrice, buyPrice);
+  }
 
   return {
     contract_id: contractId.toString(),
@@ -173,7 +202,7 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
 /**
  * Generate longcode from trade data
  */
-function generateLongcode(trade: any): string {
+export function generateLongcode(trade: any): string {
   const metadata = trade.metadata || {};
   const contractType = metadata.contractType || trade.type || 'UNKNOWN';
   const instrument = getInstrumentDisplay(metadata.underlyingSymbol || trade.symbol || 'R_10');

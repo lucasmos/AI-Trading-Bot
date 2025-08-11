@@ -5,6 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DerivTradeRecord } from '@/types';
+import {
+  getTradeTypeDisplay,
+  getInstrumentDisplay,
+  getDurationDisplay,
+  formatDate,
+  formatTime,
+  generateLongcode
+} from '@/utils/deriv-trade-utils';
 
 interface DerivTradeTableProps {
   trades: DerivTradeRecord[];
@@ -83,63 +91,69 @@ export function DerivTradeTable({
             <TableRow key={trade.contract_id}>
               {/* Contract ID */}
               <TableCell className="font-mono text-xs">
-                {trade.contract_id.slice(-8)}...
+                {String(trade.contract_id).slice(-8)}...
               </TableCell>
 
               {/* Trade Type */}
               <TableCell>
                 <Badge variant="outline" className="font-medium">
-                  {trade.trade_type_display}
+                  {trade.trade_type_display || getTradeTypeDisplay(trade.contract_type)}
                 </Badge>
               </TableCell>
 
               {/* Instrument */}
               <TableCell className="text-sm">
-                {trade.instrument_display}
+                {trade.instrument_display || getInstrumentDisplay(trade.underlying_symbol)}
               </TableCell>
 
               {/* Duration */}
               <TableCell className="text-sm">
-                {trade.duration_display}
+                {trade.duration_display || getDurationDisplay(trade.longcode)}
               </TableCell>
 
               {/* Buy Price */}
               <TableCell className="text-right font-medium">
-                {formatCurrency(trade.buy_price)}
+                {formatCurrency(typeof trade.buy_price === 'bigint' 
+                  ? Number(trade.buy_price) / 100 
+                  : trade.buy_price)}
               </TableCell>
 
               {/* Payout */}
               <TableCell className="text-right">
-                {formatCurrency(trade.payout)}
+                {formatCurrency(typeof trade.payout === 'bigint'
+                  ? Number(trade.payout) / 100
+                  : trade.payout)}
               </TableCell>
 
               {/* Profit/Loss */}
               <TableCell className="text-right">
-                {formatProfitLoss(trade.profit_loss)}
+                {formatProfitLoss(typeof trade.profit_loss === 'bigint'
+                  ? Number(trade.profit_loss) / 100
+                  : trade.profit_loss)}
               </TableCell>
 
               {/* Status */}
               <TableCell className="text-center">
-                {getStatusBadge(trade.status)}
+                {getStatusBadge(trade.status.toLowerCase())}
               </TableCell>
 
               {/* Purchase Time */}
               <TableCell className="text-sm">
                 <div className="flex flex-col">
-                  <span>{trade.purchase_date}</span>
+                  <span>{trade.purchase_date || formatDate(Number(trade.purchase_time))}</span>
                   <span className="text-xs text-muted-foreground">
-                    {trade.purchase_time_display}
+                    {trade.purchase_time_display || formatTime(Number(trade.purchase_time))}
                   </span>
                 </div>
               </TableCell>
 
               {/* Sell Time */}
               <TableCell className="text-sm">
-                {trade.sell_date ? (
+                {trade.sell_time ? (
                   <div className="flex flex-col">
-                    <span>{trade.sell_date}</span>
+                    <span>{trade.sell_date || formatDate(Number(trade.sell_time))}</span>
                     <span className="text-xs text-muted-foreground">
-                      {trade.sell_time_display}
+                      {trade.sell_time_display || formatTime(Number(trade.sell_time))}
                     </span>
                   </div>
                 ) : (
@@ -153,7 +167,7 @@ export function DerivTradeTable({
                   className="text-xs text-muted-foreground truncate" 
                   title={trade.longcode}
                 >
-                  {trade.longcode}
+                  {trade.longcode || generateLongcode(trade)}
                 </div>
               </TableCell>
             </TableRow>
