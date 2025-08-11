@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { serializeTradesForJSON } from '@/lib/api-utils';
 
 export const runtime = 'nodejs';
 
@@ -83,7 +84,10 @@ export async function GET(request: Request) {
     }
 
     await prisma.$disconnect();
-    return NextResponse.json(trades);
+
+    // Serialize trades to handle BigInt fields before JSON response
+    const serializedTrades = serializeTradesForJSON(trades);
+    return NextResponse.json(serializedTrades);
   } catch (error) {
     console.error('[Trade History API] Error in trade history API:', error);
     

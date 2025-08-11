@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { serializeTradeForJSON } from '@/lib/api-utils';
 
 export const runtime = 'nodejs';
 
@@ -104,7 +105,10 @@ export async function POST(request: Request) {
     });
 
     await prisma.$disconnect();
-    return NextResponse.json(trade);
+
+    // Serialize trade to handle BigInt fields before JSON response
+    const serializedTrade = serializeTradeForJSON(trade);
+    return NextResponse.json(serializedTrade);
   } catch (error: any) {
     console.error('[Create Trade API] Error during trade creation process:', error);
     
