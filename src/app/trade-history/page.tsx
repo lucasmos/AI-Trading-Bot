@@ -11,7 +11,9 @@ import { useState, useEffect } from 'react';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { InstrumentType as GlobalTradingInstrument } from '@/types';
+import { DerivTradeTable } from '@/components/trade-history/deriv-trade-table';
+import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
+import type { InstrumentType as GlobalTradingInstrument, DerivTradeRecord } from '@/types';
 
 // Local type definitions
 // type TradingInstrument = string;
@@ -48,9 +50,11 @@ interface TradeRecord {
 export default function TradeHistoryPage() {
   const { userInfo } = useAuth();
   const [tradeHistory, setTradeHistory] = useState<TradeRecord[]>([]);
+  const [derivTradeHistory, setDerivTradeHistory] = useState<DerivTradeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [apiError, setApiError] = useState<string | null>(null);
+  const [useDerivFormat, setUseDerivFormat] = useState(true); // Toggle between formats
   // New state variables for filtering
   const [filterInstrument, setFilterInstrument] = useState<GlobalTradingInstrument | 'all'>('all');
   const [filterAction, setFilterAction] = useState<'all' | 'CALL' | 'PUT' | 'BUY' | 'SELL'>('all');
@@ -173,6 +177,10 @@ export default function TradeHistoryPage() {
       
       console.log("Fetched trades from database:", dbTrades.length);
       setTradeHistory(dbTrades.sort((a: TradeRecord, b: TradeRecord) => b.timestamp - a.timestamp));
+
+      // Convert to Deriv format
+      const derivTrades = dbTrades.map(trade => convertToDerivTradeRecord(trade));
+      setDerivTradeHistory(derivTrades.sort((a, b) => b.purchase_time - a.purchase_time));
 
     } catch (error) {
       console.error("Error fetching trades from API:", error);
@@ -402,18 +410,26 @@ export default function TradeHistoryPage() {
 
             {/* Action Buttons */}
             {/* @ts-ignore */}
-            <Button 
-              size="sm" 
-              variant="outline" 
+            <Button
+              size="sm"
+              variant={useDerivFormat ? "default" : "outline"}
+              onClick={() => setUseDerivFormat(!useDerivFormat)}
+            >
+              <Database className="h-4 w-4 mr-1" />
+              {useDerivFormat ? "Deriv Format" : "Legacy Format"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => refreshHistory()}
               disabled={isLoading}
             >
               <RefreshCw className="h-4 w-4 mr-1" />
               Refresh
             </Button>
-            <Button 
-              size="sm" 
-              variant="outline" 
+            <Button
+              size="sm"
+              variant="outline"
               onClick={exportToCsv}
               disabled={filteredTrades.length === 0}
             >
@@ -437,6 +453,12 @@ export default function TradeHistoryPage() {
                 Please try refreshing or check your connection.
               </p>
             </div>
+          ) : useDerivFormat ? (
+            <DerivTradeTable
+              trades={derivTradeHistory}
+              maxHeight="600px"
+              emptyMessage="No trade history available in the database."
+            />
           ) : (
             <ScrollArea className="h-[600px] w-full">
               <Table>

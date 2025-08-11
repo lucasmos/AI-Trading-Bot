@@ -104,10 +104,10 @@ export async function POST(
         where: {
           userId: trade.userId,
           status: 'closed',
-          closeTime: { gte: lookbackTime },
+          derivSellTime: { gte: BigInt(Math.floor(lookbackTime.getTime() / 1000)) },
         },
-        select: { profit: true, closeTime: true },
-        orderBy: { closeTime: 'desc' }, // Most recent first
+        select: { derivSellPrice: true, derivBuyPrice: true, derivSellTime: true },
+        orderBy: { derivSellTime: 'desc' }, // Most recent first
       });
 
       console.log(`[Close Trade API] Found ${recentClosedTrades.length} recent closed trades for user ${trade.userId} within lookback period.`);
@@ -117,9 +117,11 @@ export async function POST(
       let lastEffectiveTradeTimeInSequence = tradeClosingTime;
 
       for (const closedTrade of recentClosedTrades) {
-        if (!closedTrade.closeTime) continue; // Should be set for closed trades
+        if (!closedTrade.derivSellTime) continue; // Should be set for closed trades
 
-        const timeDiffMs = lastEffectiveTradeTimeInSequence.getTime() - closedTrade.closeTime.getTime();
+        const closedTradeTime = new Date(Number(closedTrade.derivSellTime) * 1000);
+        const timeDiffMs = lastEffectiveTradeTimeInSequence.getTime() - closedTradeTime.getTime();
+        const profit = (closedTrade.derivSellPrice || 0) - (closedTrade.derivBuyPrice || 0);
 
         if (timeDiffMs >= MIN_TIME_BETWEEN_CONSECUTIVE_TRADES_MS && timeDiffMs <= MAX_TIME_BETWEEN_CONSECUTIVE_TRADES_MS) {
           sequenceIncludingCurrent.push({ profit: closedTrade.profit ?? 0, time: closedTrade.closeTime });
@@ -196,22 +198,21 @@ export async function POST(
       where: { id },
       data: {
         status: 'closed',
-        closeTime: tradeClosingTime,
-        profit: pnlToStore,
-
-        // New Deriv-style fields
-        exitPrice: exitPrice || null,
-        profitLoss: profitLoss !== undefined ? profitLoss : pnlToStore,
-
-        metadata: finalMetadata,
+        derivSellPrice: exitPrice || 0,
+        derivSellTime: BigInt(Math.floor(tradeClosingTime.getTime() / 1000)),
+        metadata: {
+          ...finalMetadata,
+          profit: pnlToStore, // Store profit in metadata for backward compatibility
+          profitLoss: profitLoss !== undefined ? profitLoss : pnlToStore
+        },
       },
     });
 
-    console.log('[Close Trade API] Trade closed successfully:', { 
-      id: updatedTrade.id, 
-      status: updatedTrade.status, 
-      profit: updatedTrade.profit,
-      closeTime: updatedTrade.closeTime,
+    console.log('[Close Trade API] Trade closed successfully:', {
+      id: updatedTrade.id,
+      status: updatedTrade.status,
+      derivSellPrice: updatedTrade.derivSellPrice,
+      derivSellTime: updatedTrade.derivSellTime,
       updatedMetadata: updatedTrade.metadata // Log the metadata from the updated record
     });
 

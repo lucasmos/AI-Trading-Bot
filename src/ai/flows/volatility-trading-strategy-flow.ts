@@ -509,7 +509,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
           instrument: targetInstrumentCode as ExternalVolatilityInstrumentType,
           shouldTrade: true,
           derivContractType: input.patternTrigger.contractType,
-          duration: input.executionMode === 'turbo' ? 1 : 5, // Turbo: 1 tick, Safe: 5 ticks
+          duration: input.tickDuration || 1, // Use user-selected tick duration or default to 1
           durationUnit: 't',
           stake: Math.max(0.35, Math.round(stakePerTrade * 100) / 100), // Ensure minimum stake with proper rounding
           reasoning: `PATTERN-BASED TRADE ${i + 1}/${input.numberOfBulkTrades}: ${input.patternTrigger.reasoning}. Execution Mode: ${input.executionMode}. Strategy: ${input.selectedStrategy}. Account: ${input.accountType}. Confidence: ${(input.patternTrigger.confidence || 1) * 100}%.`
@@ -588,7 +588,7 @@ export const generateVolatilitySessionStrategy = ai.defineFlow(
             const finalTrade = {
               ...decision,
               stake: parseFloat(actualStakeForThisTrade.toFixed(2)),
-              duration: input.executionMode === 'turbo' ? 1 : (decision.duration || 5), // Turbo: 1 tick, Safe: original or 5 ticks
+              duration: input.tickDuration || 1, // Use user-selected tick duration or default to 1
               reasoning: `${decision.reasoning} [Trade ${tradeIndex + 1}/${numberOfTrades}, ${input.executionMode} mode, ${input.accountType} account]`
             };
 

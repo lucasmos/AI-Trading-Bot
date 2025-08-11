@@ -91,6 +91,7 @@ export const VolatilitySessionStrategyInputSchema = z.object({
   accountType: z.enum(['demo', 'real']).default('demo'), // Account type selection
   selectedStrategy: z.string().optional(), // User-selected strategy (Even/Odd, etc.)
   predictionDigit: z.number().min(0).max(9).nullable().optional(), // For DigitsOverUnder trades (nullable to handle null values)
+  tickDuration: z.number().min(1).max(10).default(1), // Number of ticks for trade duration (1-10)
 
   // Pattern-based trading
   patternTrigger: PatternTriggerSchema.nullable().optional(), // Pattern-based trade trigger for session (nullable to handle null values)

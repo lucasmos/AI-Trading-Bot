@@ -194,22 +194,18 @@ export async function logExtensionEvent(
 export async function createTrade(
   userId: string,
   symbol: string,
-  type: 'buy' | 'sell',
-  amount: number,
-  price: number,
+  derivContractType: string,
+  derivBuyPrice: number,
   metadata?: Prisma.InputJsonValue
 ) {
-  const totalValue = amount * price;
-  
   return await prisma.trade.create({
     data: {
       userId,
       symbol,
-      type,
-      amount,
-      price,
-      totalValue,
       status: 'open',
+      derivContractType,
+      derivBuyPrice,
+      derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
       metadata
     }
   });
@@ -217,7 +213,7 @@ export async function createTrade(
 
 export async function closeTrade(
   tradeId: string,
-  closePrice: number,
+  sellPrice: number,
   metadata?: Prisma.InputJsonValue
 ) {
   const trade = await prisma.trade.findUnique({
@@ -226,16 +222,12 @@ export async function closeTrade(
 
   if (!trade) throw new Error('Trade not found');
 
-  const profit = trade.type === 'buy' 
-    ? (closePrice - trade.price) * trade.amount
-    : (trade.price - closePrice) * trade.amount;
-
   const updatedTrade = await prisma.trade.update({
     where: { id: tradeId },
     data: {
       status: 'closed',
-      closeTime: new Date(),
-      profit,
+      derivSellPrice: sellPrice,
+      derivSellTime: BigInt(Math.floor(Date.now() / 1000)),
       metadata: metadata ? { ...(trade.metadata as object), ...(metadata as object) } : (trade.metadata as Prisma.InputJsonValue)
     }
   });
@@ -252,7 +244,7 @@ export async function getOpenTrades(userId: string) {
       userId,
       status: 'open'
     },
-    orderBy: { openTime: 'desc' }
+    orderBy: { derivPurchaseTime: 'desc' }
   });
 }
 
@@ -265,15 +257,18 @@ export async function getTradeHistory(
     status?: 'open' | 'closed' | 'cancelled';
   }
 ) {
+  const startTimestamp = options?.startDate ? BigInt(Math.floor(options.startDate.getTime() / 1000)) : undefined;
+  const endTimestamp = options?.endDate ? BigInt(Math.floor(options.endDate.getTime() / 1000)) : undefined;
+
   return await prisma.trade.findMany({
     where: {
       userId,
       ...(options?.symbol && { symbol: options.symbol }),
       ...(options?.status && { status: options.status }),
-      ...(options?.startDate && { openTime: { gte: options.startDate } }),
-      ...(options?.endDate && { openTime: { lte: options.endDate } })
+      ...(startTimestamp && { derivPurchaseTime: { gte: startTimestamp } }),
+      ...(endTimestamp && { derivPurchaseTime: { lte: endTimestamp } })
     },
-    orderBy: { openTime: 'desc' }
+    orderBy: { derivPurchaseTime: 'desc' }
   });
 }
 

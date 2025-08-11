@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CompactDerivTradeTable } from '@/components/trade-history/deriv-trade-table';
+import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
 
 import { getCandles, getContractStatus } from '@/services/deriv';
 import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails, getTradeTypeDisplayName } from '@/lib/utils';
@@ -109,6 +111,7 @@ export default function VolatilityTradingPage() {
   // New state variables for the updated controls
   const [executionMode, setExecutionMode] = useState<'turbo' | 'safe'>('safe');
   const [numberOfBulkTrades, setNumberOfBulkTrades] = useState<number>(1);
+  const [tickDuration, setTickDuration] = useState<number>(1); // Number of ticks (1-10)
 
   // CRITICAL FIX: Manual execution mode toggle
   const [isManualMode, setIsManualMode] = useState<boolean>(false);
@@ -206,6 +209,7 @@ export default function VolatilityTradingPage() {
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(10);
   const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
   const [activeAutomatedTrades, setActiveAutomatedTrades] = useState<ActiveAutomatedVolatilityTrade[]>([]);
+  const [useDerivFormat, setUseDerivFormat] = useState(true); // Use Deriv format by default
   const [profitsClaimable, setProfitsClaimable] = useState<ProfitsClaimable>({
     totalNetProfit: 0,
     tradeCount: 0,
@@ -1124,7 +1128,8 @@ export default function VolatilityTradingPage() {
                     numberOfBulkTrades,
                     selectedInstrument: currentVolatilityInstrument,
                     predictionDigit: selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? predictionDigit : null,
-                    selectedStrategy: selectedStrategy
+                    selectedStrategy: selectedStrategy,
+                    tickDuration: tickDuration
                   }
                 );
 
@@ -2281,6 +2286,30 @@ export default function VolatilityTradingPage() {
                 </div>
               )}
 
+              {/* Number of Ticks Control */}
+              <div className="space-y-2">
+                <Label htmlFor="tick-duration">Number of Ticks</Label>
+                <Select
+                  value={tickDuration.toString()}
+                  onValueChange={(value) => setTickDuration(parseInt(value, 10))}
+                  disabled={isAutoTradingActive || isAiLoading}
+                >
+                  <SelectTrigger id="tick-duration">
+                    <SelectValue placeholder="Select number of ticks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((ticks) => (
+                      <SelectItem key={ticks} value={ticks.toString()}>
+                        {ticks} tick{ticks > 1 ? 's' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-muted-foreground">
+                  Duration for each trade (1 tick recommended for optimal win rates)
+                </div>
+              </div>
+
               {/* Conditional Prediction Digit Input for Over/Under */}
               {selectedUserTradeTypeForLoop === 'DigitsOverUnder' && (
                 <div className="space-y-3">
@@ -2677,16 +2706,34 @@ export default function VolatilityTradingPage() {
              />
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Active AI Volatility Trades ({selectedDerivAccountType || 'N/A'})</CardTitle>
-                <CardDescription>
-                  {selectedUserTradeTypeForLoop ? "Monitoring real trade placements." : "Monitoring simulated trades. Stop-Loss is 5% of entry (simulated)."}
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Active AI Volatility Trades ({selectedDerivAccountType || 'N/A'})</CardTitle>
+                    <CardDescription>
+                      {selectedUserTradeTypeForLoop ? "Monitoring real trade placements." : "Monitoring simulated trades. Stop-Loss is 5% of entry (simulated)."}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={useDerivFormat ? "default" : "outline"}
+                    onClick={() => setUseDerivFormat(!useDerivFormat)}
+                    className="ml-4"
+                  >
+                    {useDerivFormat ? "Deriv Format" : "Legacy Format"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {activeAutomatedTrades.length === 0 && !isAutoTradingActive && !isAiLoading ? (
                     <p className="text-muted-foreground text-center py-4">No active AI trades. Start a session to begin.</p>
                 ) : activeAutomatedTrades.length === 0 && isAutoTradingActive && isAiLoading ? (
                      <p className="text-muted-foreground text-center py-4">AI is analyzing markets...</p>
+                ) : activeAutomatedTrades.length > 0 && useDerivFormat ? (
+                  <CompactDerivTradeTable
+                    trades={activeAutomatedTrades.map(trade => convertToDerivTradeRecord(trade))}
+                    maxHeight="400px"
+                    emptyMessage="No active AI trades. Start a session to begin."
+                  />
                 ) : activeAutomatedTrades.length > 0 ? (
                 <Table>
                   <TableHeader>

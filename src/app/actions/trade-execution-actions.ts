@@ -15,6 +15,7 @@ import {
 } from '@/ai/flows/volatility-trading-strategy-flow';
 import { UserTradeType } from '@/types/ai-shared-types';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
+import { generateShortcode, calculatePayout } from '@/utils/deriv-trade-utils';
 import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
@@ -36,22 +37,13 @@ async function startTradeMonitoring(contractId: string, dbTradeId: string, apiTo
 
       console.log(`[TradeMonitoring] Contract ${contractId} completed - ${isWin ? 'WON' : 'LOST'} with profit ${profit}`);
 
-      // Update the trade in database
+      // Update the trade in database using Deriv API fields
       await prisma.trade.update({
         where: { id: dbTradeId },
         data: {
           status: 'closed',
-          closeTime: new Date(),
-          profit: profit,
-          exitPrice: exitPrice,
-          profitLoss: profit,
-          metadata: {
-            ...(await prisma.trade.findUnique({ where: { id: dbTradeId }, select: { metadata: true } }))?.metadata as object || {},
-            contractCompleted: true,
-            finalStatus: isWin ? 'won' : 'lost',
-            simulatedCompletion: true,
-            completionTime: new Date().toISOString()
-          }
+          derivSellPrice: exitPrice,
+          derivSellTime: BigInt(Math.floor(Date.now() / 1000))
         }
       });
 
@@ -67,13 +59,14 @@ async function startTradeMonitoring(contractId: string, dbTradeId: string, apiTo
           data: {
             status: 'closed',
             closeTime: new Date(),
-            profit: 0,
-            profitLoss: 0,
+            derivSellPrice: 0, // Use Deriv API field
+            derivSellTime: BigInt(Math.floor(Date.now() / 1000)),
             metadata: {
               ...(await prisma.trade.findUnique({ where: { id: dbTradeId }, select: { metadata: true } }))?.metadata as object || {},
               contractCompleted: true,
               finalStatus: 'closed',
-              error: 'Monitoring error - marked as closed'
+              error: 'Monitoring error - marked as closed',
+              profit: 0 // Store in metadata for backward compatibility
             }
           }
         });
@@ -189,7 +182,8 @@ async function executeManualTurboMode(
   selectedAccountType: 'demo' | 'real',
   userId: string,
   patternAnalysis: PatternAnalysisResult,
-  sharedPricePoint: number
+  sharedPricePoint: number,
+  tickDuration: number = 1
 ): Promise<VolatilityTradeExecutionResult[]> {
 
   console.log(`[TradeAction/TurboMode] 🚀 Executing ${numberOfTrades} trades simultaneously`);
@@ -204,7 +198,7 @@ async function executeManualTurboMode(
     const tradeDetails: TradeDetails = {
       symbol: instrumentToDerivSymbol(instrument),
       contract_type: contractType,
-      duration: 1, // 1 tick for Turbo mode
+      duration: tickDuration, // User-selected tick duration
       duration_unit: 't',
       amount: stakePerTrade,
       currency: 'USD',
@@ -219,36 +213,50 @@ async function executeManualTurboMode(
     try {
       const tradeResponse = await placeTrade(tradeDetails, targetAccountId);
 
-      // Save to database with complete field data
+      // Save to database with complete Deriv API fields
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
-          symbol: instrumentToDerivSymbol(instrument), // CRITICAL FIX: Add required symbol field
-          type: `DigitsEvenOdd (${contractType})`, // Use type field instead of tradeType
-          amount: stakePerTrade,
-          price: sharedPricePoint, // CRITICAL: Use shared price for consistency
-          totalValue: stakePerTrade,
+          symbol: instrumentToDerivSymbol(instrument),
           status: 'OPEN',
-          openTime: new Date(executionTimestamp),
-          derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string for database
+          derivContractId: tradeResponse.contract_id.toString(),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
-          // CRITICAL FIX: Add missing fields for complete trade records
-          tradeType: 'DigitsEvenOdd',
-          entryPrice: sharedPricePoint,
-          buyPrice: stakePerTrade,
+
+          // Complete Deriv API fields for database persistence
+          derivLongcode: tradeResponse.longcode,
+          derivShortcode: generateShortcode(contractType, instrumentToDerivSymbol(instrument), tradeResponse.buy_price, Math.floor(executionTimestamp / 1000), tickDuration),
+          derivBuyPrice: tradeResponse.buy_price,
+          derivPayout: calculatePayout(tradeResponse.buy_price, contractType),
+          derivPurchaseTime: BigInt(Math.floor(executionTimestamp / 1000)),
+          derivSellPrice: null, // Will be updated when trade closes
+          derivSellTime: null, // Will be updated when trade closes
+          derivContractType: contractType,
+          derivUnderlyingSymbol: instrumentToDerivSymbol(instrument),
+          derivDurationType: 'ticks',
+          derivAppId: 80447, // Our app ID
+          derivTransactionId: `tx_${tradeResponse.contract_id}`, // Generate transaction ID
+
           metadata: {
             instrument: instrument,
             tradeType: 'DigitsEvenOdd',
             contractType: contractType,
             derivContractId: tradeResponse.contract_id.toString(), // CRITICAL FIX: Convert to string
-            patternAnalysis: patternAnalysis,
+            patternAnalysis: {
+              shouldExecute: patternAnalysis.shouldExecute,
+              contractType: patternAnalysis.contractType,
+              reasoning: patternAnalysis.reasoning,
+              currentDigit: patternAnalysis.currentDigit,
+              consecutiveCount: patternAnalysis.consecutiveCount,
+              patternType: patternAnalysis.patternType
+            },
             executionMode: 'turbo',
             sharedPricePoint: sharedPricePoint,
             reasoning: `TURBO MANUAL: ${patternAnalysis.reasoning}`,
             isPaperTrade: selectedAccountType === 'demo',
             entryPrice: sharedPricePoint,
-            buyPrice: stakePerTrade
+            buyPrice: stakePerTrade,
+            duration: tickDuration
           }
         }
       });
@@ -303,7 +311,8 @@ async function executeManualSafeMode(
   selectedAccountType: 'demo' | 'real',
   userId: string,
   patternAnalysis: PatternAnalysisResult,
-  initialPricePoint: number
+  initialPricePoint: number,
+  tickDuration: number = 1
 ): Promise<VolatilityTradeExecutionResult[]> {
 
   console.log(`[TradeAction/SafeMode] 🛡️ Implementing two-tick execution strategy for ${numberOfTrades} trades`);
@@ -333,7 +342,7 @@ async function executeManualSafeMode(
       patternAnalysis,
       initialPricePoint,
       1, // First batch
-      5 // 5 ticks duration for Safe mode
+      tickDuration // User-selected tick duration
     );
 
     results.push(...firstBatchResults);
@@ -364,7 +373,7 @@ async function executeManualSafeMode(
       patternAnalysis,
       secondTickPrice,
       2, // Second batch
-      5 // 5 ticks duration for Safe mode
+      tickDuration // User-selected tick duration
     );
 
     results.push(...secondBatchResults);
@@ -608,6 +617,7 @@ export interface VolatilityTradeOptions {
   selectedInstrument: string;
   predictionDigit?: number | null; // For Over/Under trade type
   selectedStrategy?: string; // Strategy selection (Even/Odd, Rise/Fall, Over/Under)
+  tickDuration?: number; // Number of ticks (1-10) for trade duration
   patternTrigger?: {
     shouldTrade: boolean;
     contractType: string;
@@ -1035,6 +1045,7 @@ export async function executeVolatilityManualTradeLoop(
   const selectedStrategy = options.selectedStrategy || '';
   const bypassPatternValidation = options.bypassPatternValidation || false;
   const preValidatedPattern = options.preValidatedPattern;
+  const tickDuration = options.tickDuration || 1; // Default to 1 tick if not specified
 
   // CRITICAL FIX: Validate required parameters to prevent defaults
   if (!executionMode) {
@@ -1167,7 +1178,8 @@ export async function executeVolatilityManualTradeLoop(
         selectedAccountType,
         userId,
         patternAnalysis,
-        instrumentLatestSpot[apiSymbol]!
+        instrumentLatestSpot[apiSymbol]!,
+        tickDuration
       );
 
       // CRITICAL FIX: Validate execution count matches user setting
@@ -1192,7 +1204,8 @@ export async function executeVolatilityManualTradeLoop(
         selectedAccountType,
         userId,
         patternAnalysis,
-        instrumentLatestSpot[apiSymbol]!
+        instrumentLatestSpot[apiSymbol]!,
+        tickDuration
       );
 
       // CRITICAL FIX: Validate execution count matches user setting
@@ -1260,6 +1273,7 @@ export async function executeVolatilityAiTradeLoop(
   const predictionDigit = options.predictionDigit || null;
   const selectedStrategy = options.selectedStrategy || '';
   const patternTrigger = options.patternTrigger || null;
+  const tickDuration = options.tickDuration || 1; // Default to 1 tick if not specified
 
   // CRITICAL FIX: Validate required parameters
   if (!executionMode) {
@@ -1419,6 +1433,7 @@ export async function executeVolatilityAiTradeLoop(
     numberOfBulkTrades: numberOfBulkTrades,
     accountType: selectedAccountType,
     selectedStrategy: selectedStrategy,
+    tickDuration: tickDuration,
 
     // Only include predictionDigit if it's not null and trade type is DigitsOverUnder
     ...(predictionDigit !== null && predictionDigit !== undefined && userSelectedTradeType === 'DigitsOverUnder'
@@ -1442,7 +1457,7 @@ export async function executeVolatilityAiTradeLoop(
 
       // Create pattern-based trade proposals with execution mode consideration
       const stakePerTrade = Math.round((totalStakeFromUser / numberOfBulkTrades) * 100) / 100;
-      const tradeDuration = executionMode === 'turbo' ? 1 : 5; // Turbo: 1 tick, Safe: 5 ticks
+      const tradeDuration = tickDuration; // Use user-selected tick duration
       console.log(`[TradeAction/Session] Pattern-based trades using ${executionMode} mode: ${tradeDuration} tick duration`);
 
       const tradesToExecute = Array.from({ length: numberOfBulkTrades }, (_, index) => ({

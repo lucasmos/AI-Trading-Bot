@@ -346,6 +346,37 @@ export interface Trade {
 
 export interface HistoricalTrade extends Trade {}
 
+// NEW: Deriv API-based trade history interface (matches error-logs.md structure)
+export interface DerivTradeRecord {
+  // Core Deriv API fields (from error-logs.md)
+  contract_id: string; // e.g., "279319508848"
+  longcode: string; // e.g., "Win payout if the last digit of Volatility 10 Index is even after 1 tick."
+  shortcode: string; // e.g., "DIGITEVEN_R_10_143.91_1745298644_1T"
+  buy_price: number; // e.g., 3
+  payout: number; // e.g., 4.04
+  purchase_time: number; // Unix timestamp e.g., 1745277401
+  sell_price?: number; // e.g., 4.04 (0 for losses)
+  sell_time?: number; // Unix timestamp e.g., 1745277404
+  contract_type: string; // e.g., "DIGITOVER", "DIGITEVEN", "DIGITODD", "DIGITUNDER"
+  underlying_symbol: string; // e.g., "R_10", "R_50", "R_100"
+  duration_type: string; // e.g., "ticks"
+  app_id: number; // e.g., 52152
+  transaction_id: string; // e.g., "556773095768"
+
+  // Computed fields for UI display
+  profit_loss: number; // sell_price - buy_price (computed)
+  status: 'won' | 'lost' | 'open' | 'cancelled'; // Derived from sell_price
+  trade_type_display: string; // Human-readable trade type
+  instrument_display: string; // Human-readable instrument name
+  duration_display: string; // e.g., "1 tick", "2 ticks"
+
+  // Timestamps for sorting and display
+  purchase_date: string; // YYYY-MM-DD format
+  purchase_time_display: string; // HH:MM:SS format
+  sell_date?: string; // YYYY-MM-DD format
+  sell_time_display?: string; // HH:MM:SS format
+}
+
 export interface TradeHistoryData {
   tradeId: string;
   instrument: string;

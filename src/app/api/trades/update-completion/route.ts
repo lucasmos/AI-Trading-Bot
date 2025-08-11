@@ -25,23 +25,22 @@ export async function POST(request: NextRequest) {
         dbStatus = 'CLOSED';
     }
 
-    // Update the trade in the database
+    // Update the trade in the database using Deriv API fields
     const updatedTrade = await prisma.trade.update({
       where: {
         derivContractId: contractId
       },
       data: {
-        exitPrice: exitPrice,
-        profitLoss: profit, // CRITICAL FIX: Use profitLoss field instead of profit
-        profit: profit, // Keep for backward compatibility
+        derivSellPrice: exitPrice,
+        derivSellTime: BigInt(Math.floor(new Date(closeTime).getTime() / 1000)),
         status: dbStatus, // CRITICAL FIX: Use proper status mapping
-        closeTime: new Date(closeTime),
         metadata: {
           update: true,
           outcome: status,
           finalProfit: profit,
           exitPrice: exitPrice,
-          finalStatus: status // Add final status to metadata
+          finalStatus: status, // Add final status to metadata
+          profit: profit // Store profit in metadata for backward compatibility
         }
       }
     });
