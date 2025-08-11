@@ -110,9 +110,9 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   // Extract Deriv API fields from metadata or trade object
   const contractId = metadata.derivContractId || trade.derivContractId || trade.id;
   const longcode = metadata.derivLongcode || generateLongcode(trade);
-  const shortcode = metadata.derivShortcode || generateShortcode(trade);
+  const shortcode = metadata.derivShortcode || generateShortcodeFromTrade(trade);
   const buyPrice = metadata.derivBuyPrice || trade.buyPrice || trade.amount || 0;
-  const payout = metadata.derivPayout || calculatePayout(trade);
+  const payout = metadata.derivPayout || calculatePayoutFromTrade(trade);
   // Handle BigInt conversion for derivPurchaseTime and derivSellTime
   const purchaseTime = metadata.derivPurchaseTime ||
     (trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) :
@@ -202,7 +202,7 @@ function generateShortcodeFromTrade(trade: any): string {
   const metadata = trade.metadata || {};
   const contractType = metadata.contractType || trade.type || 'UNKNOWN';
   const underlyingSymbol = metadata.underlyingSymbol || deriveUnderlyingSymbol(trade);
-  const payout = metadata.derivPayout || calculatePayout(trade);
+  const payout = metadata.derivPayout || calculatePayoutFromTrade(trade);
   const purchaseTime = metadata.derivPurchaseTime ||
     (trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) :
      (trade.openTime ? Math.floor(new Date(trade.openTime).getTime() / 1000) : Math.floor(Date.now() / 1000)));

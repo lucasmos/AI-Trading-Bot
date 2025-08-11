@@ -164,6 +164,9 @@ model Trade {
   derivAppId            Int?      // Deriv app ID (e.g., 80447)
   derivTransactionId    String?   // Transaction ID (e.g., "556773095768")
 
+  // Additional trade metadata (JSON field for flexible data storage)
+  metadata              Json?     // For AI reasoning, pattern analysis, and other trade details
+
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
