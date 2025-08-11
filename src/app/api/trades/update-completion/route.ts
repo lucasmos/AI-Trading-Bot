@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     // Update the trade in the database using Deriv API fields
     const updatedTrade = await prisma.trade.update({
       where: {
-        derivContractId: contractId
+        derivContractId: BigInt(contractId)
       },
       data: {
         derivSellPrice: exitPrice,

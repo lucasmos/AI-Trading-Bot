@@ -13,16 +13,16 @@ export async function POST(request: Request) {
     // as /api/auth/verify should handle user reconciliation.
     const {
       userId, symbol, metadata,
-      // Legacy fields (will be mapped to Deriv fields)
-      type, amount, price, aiStrategyId, tradeType, entryPrice, buyPrice,
-      // Deriv-specific fields (preferred)
-      derivContractType, derivBuyPrice, derivPayout, derivContractId, derivAccountId, accountType
+      // Deriv API fields (required)
+      derivContractType, derivBuyPrice, derivPayout, derivContractId, derivAccountId, derivTransactionId, accountType,
+      derivLongcode, derivShortcode, derivPurchaseTime, derivSellPrice, derivSellTime, derivUnderlyingSymbol, derivDurationType, derivAppId
     } = requestBody;
 
     console.log('[Create Trade API] Attempting to create trade with data:', {
       userId, symbol,
-      derivContractType: derivContractType || type,
-      derivBuyPrice: derivBuyPrice || amount || buyPrice,
+      derivContractType,
+      derivBuyPrice,
+      derivContractId,
       metadata: metadata ? 'provided' : 'not provided'
     });
 
@@ -62,19 +62,8 @@ export async function POST(request: Request) {
 
     console.log(`[Create Trade API] User ${userId} confirmed. Proceeding with trade creation.`);
 
-    // Map legacy fields to Deriv fields and metadata
-    const mappedMetadata = {
-      ...(metadata || {}),
-      // Store legacy fields in metadata for backward compatibility
-      legacyType: type,
-      legacyAmount: amount,
-      legacyPrice: price,
-      legacyTotalValue: amount && price ? amount * price : undefined,
-      legacyTradeType: tradeType,
-      legacyEntryPrice: entryPrice,
-      legacyBuyPrice: buyPrice,
-      aiStrategyId: aiStrategyId
-    };
+    // Use provided metadata or empty object
+    const tradeMetadata = metadata || {};
 
     const trade = await prisma.trade.create({
       data: {
@@ -82,16 +71,24 @@ export async function POST(request: Request) {
         symbol,
         status: 'OPEN', // Default status for a new trade
 
-        // Use Deriv fields (preferred) or map from legacy fields
-        derivContractType: derivContractType || type,
-        derivBuyPrice: derivBuyPrice || amount || buyPrice,
-        derivPayout: derivPayout,
-        derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
-        derivContractId: derivContractId,
-        derivAccountId: derivAccountId,
-        accountType: accountType,
+        // Deriv API fields
+        derivContractType,
+        derivBuyPrice: derivBuyPrice ? parseInt(derivBuyPrice.toString()) : null,
+        derivPayout,
+        derivPurchaseTime: derivPurchaseTime ? BigInt(derivPurchaseTime) : BigInt(Math.floor(Date.now() / 1000)),
+        derivSellPrice,
+        derivSellTime: derivSellTime ? BigInt(derivSellTime) : null,
+        derivContractId: derivContractId ? BigInt(derivContractId) : null,
+        derivTransactionId: derivTransactionId ? derivTransactionId.toString() : null,
+        derivLongcode,
+        derivShortcode,
+        derivUnderlyingSymbol,
+        derivDurationType,
+        derivAppId,
+        derivAccountId,
+        accountType,
 
-        metadata: mappedMetadata,
+        metadata: tradeMetadata,
       },
     });
 

@@ -324,24 +324,27 @@ export interface DerivAccountShort {
 export interface Trade {
   id: string;
   userId: string;
-  instrument: InstrumentType;
-  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under", "Rise/Fall", "Touch/No Touch"
-  entryPrice: number; // Price when trade began
-  exitPrice?: number; // Price when trade concluded
-  buyPrice: number; // Price of the contract (stake amount)
-  profitLoss?: number; // Profit/Loss after trade completion
-  status: 'open' | 'won' | 'lost' | 'cancelled';
-  entryTime: Date; // When trade started
-  exitTime?: Date; // When trade ended
-  duration?: number; // Trade duration in seconds
-  isPaperTrade: boolean;
-  metadata?: Record<string, any>; // For AI reasoning and other trade details
+  symbol: string;
+  status: 'OPEN' | 'WON' | 'LOST' | 'CLOSED';
 
-  // Legacy fields for backward compatibility
-  type?: 'CALL' | 'PUT'; // Use tradeType instead
-  stake?: number; // Use buyPrice instead
-  durationUnit?: 's' | 'm' | 'h'; // Not needed with duration in seconds
-  profitOrLoss?: number; // Use profitLoss instead
+  // Deriv API fields (matching Prisma schema)
+  derivContractId?: number;
+  derivAccountId?: string;
+  accountType?: 'demo' | 'real';
+  derivLongcode?: string;
+  derivShortcode?: string;
+  derivBuyPrice?: number;
+  derivPayout?: number;
+  derivPurchaseTime?: number;
+  derivSellPrice?: number;
+  derivSellTime?: number;
+  derivContractType?: string;
+  derivUnderlyingSymbol?: string;
+  derivDurationType?: string;
+  derivAppId?: number;
+  derivTransactionId?: number;
+
+  metadata?: Record<string, any>; // For AI reasoning and other trade details
 }
 
 export interface HistoricalTrade extends Trade {}
@@ -378,23 +381,35 @@ export interface DerivTradeRecord {
 }
 
 export interface TradeHistoryData {
-  tradeId: string;
-  instrument: string;
-  tradeType: string; // e.g., "Higher/Lower", "Even/Odd", "Over/Under"
-  entryPrice: string; // Price when trade began
-  exitPrice: string; // Price when trade concluded
-  buyPrice: string; // Price of the contract
-  profitLoss: string; // Profit/Loss after trade completion
-  status: string;
-  entryTime: string; // When trade started
-  exitTime: string; // When trade ended
-  date: string; // Date when trade was executed (YYYY-MM-DD format)
-  time: string; // Time when trade was completed (HH:MM:SS format)
+  // Core trade identification
+  contract_id: string;
 
-  // Legacy fields for backward compatibility
-  type?: string; // Use tradeType instead
-  stake?: string; // Use buyPrice instead
-  profitOrLoss?: string; // Use profitLoss instead
+  // Deriv API fields (matching DerivTradeRecord)
+  longcode: string;
+  shortcode: string;
+  buy_price: number;
+  payout: number;
+  purchase_time: number;
+  sell_price?: number;
+  sell_time?: number;
+  contract_type: string;
+  underlying_symbol: string;
+  duration_type: string;
+  app_id: number;
+  transaction_id: string;
+
+  // Computed fields
+  profit_loss: number;
+  status: 'won' | 'lost' | 'open';
+  trade_type_display: string;
+  instrument_display: string;
+  duration_display: string;
+
+  // Formatted timestamps for display
+  purchase_date: string; // YYYY-MM-DD format
+  purchase_time_display: string; // HH:MM:SS format
+  sell_date?: string; // YYYY-MM-DD format
+  sell_time_display?: string; // HH:MM:SS format
 }
 
 export interface AiRecommendation {

@@ -1,67 +1,400 @@
-2025-08-11T13:54:48.494Z [info] [Trade History API] Fetching trades for user: 17315277
-2025-08-11T13:54:48.575Z [info] [Trade History API] Prisma connection successful
-2025-08-11T13:54:48.591Z [info] [Trade History API] Sample of all trades in database: [
-  {
-    id: '138edef3-ee8d-4509-b956-18da0fd4c3c2',
-    userId: '17315277',
-    symbol: '1HZ100V',
-    status: 'OPEN',
-    derivPurchaseTime: 1754920265n
-  },
-  {
-    id: '5405db58-4cc4-403c-9028-7a624c0667a4',
-    userId: '17315277',
-    symbol: '1HZ100V',
-    status: 'OPEN',
-    derivPurchaseTime: 1754920265n
-  },
-  {
-    id: '8932df7f-23f2-49d5-a589-e1369932f0ee',
-    userId: '17315277',
-    symbol: '1HZ100V',
-    status: 'OPEN',
-    derivPurchaseTime: 1754920265n
-  },
-  {
-    id: 'b9c75a91-ccf1-47d8-a406-a42ed916bd5f',
-    userId: '17315277',
-    symbol: '1HZ100V',
-    status: 'OPEN',
-    derivPurchaseTime: 1754920265n
-  },
-  {
-    id: 'df0f1995-434b-40d6-9b12-7e4a277c1d32',
-    userId: '17315277',
-    symbol: '1HZ100V',
-    status: 'OPEN',
-    derivPurchaseTime: 1754920265n
-  }
-]
-2025-08-11T13:54:48.607Z [info] [Trade History API] Found 5 trades for user 17315277
-2025-08-11T13:54:48.607Z [info] [Trade History API] First trade sample: {
-  id: 'b9c75a91-ccf1-47d8-a406-a42ed916bd5f',
-  userId: '17315277',
-  symbol: '1HZ100V',
-  status: 'OPEN',
-  derivPurchaseTime: 1754920265n,
-  derivSellTime: null,
-  derivBuyPrice: 2.6,
-  derivSellPrice: null
+{
+  "description": 1,
+  "limit": 25,
+  "offset": 25,
+  "profit_table": 1,
+  "req_id": 4,
+  "sort": "ASC"
 }
-2025-08-11T13:54:48.614Z [error] [Trade History API] Error in trade history API: TypeError: Do not know how to serialize a BigInt
-    at JSON.stringify (<anonymous>)
-    at d.json (.next/server/chunks/580.js:1:26743)
-    at c (.next/server/app/api/trades/history/route.js:1:2310)
-
-## RESOLVED - 2025-08-11
-
-**Issue**: BigInt serialization error in trade API routes
-**Root Cause**: Prisma BigInt fields (derivPurchaseTime, derivSellTime) cannot be serialized by JSON.stringify()
-**Solution**:
-1. Created utility function `serializeTradeForJSON()` in `/src/lib/api-utils.ts` to convert BigInt fields to Numbers
-2. Updated affected API routes:
-   - `/api/trades/history/route.ts` - Fixed trade history endpoint
-   - `/api/trades/route.ts` - Fixed trade creation endpoint
-   - `/api/trades/[id]/close/route.ts` - Fixed trade closing endpoint
-3. All routes now properly serialize BigInt fields before JSON response
-**Status**: ✅ FIXED - Build successful, no more BigInt serialization errors
+{
+  "echo_req": {
+    "description": 1,
+    "limit": 25,
+    "offset": 25,
+    "profit_table": 1,
+    "req_id": 4,
+    "sort": "ASC"
+  },
+  "msg_type": "profit_table",
+  "profit_table": {
+    "count": 25,
+    "transactions": [
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319508848,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277401,
+        "sell_price": 4.04,
+        "sell_time": 1745277404,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277401_1T_2_0",
+        "transaction_id": 556773095768,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319514168,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277408,
+        "sell_price": 4.04,
+        "sell_time": 1745277410,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277408_1T_2_0",
+        "transaction_id": 556773106228,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319568088,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277471,
+        "sell_price": 4.04,
+        "sell_time": 1745277474,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277471_1T_2_0",
+        "transaction_id": 556773215588,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319573428,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277477,
+        "sell_price": 4.04,
+        "sell_time": 1745277480,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277477_1T_2_0",
+        "transaction_id": 556773225988,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319580108,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277484,
+        "sell_price": 4.04,
+        "sell_time": 1745277488,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277484_1T_2_0",
+        "transaction_id": 556773239748,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319587348,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277492,
+        "sell_price": 4.04,
+        "sell_time": 1745277496,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277492_1T_2_0",
+        "transaction_id": 556773253788,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319646508,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277561,
+        "sell_price": 4.04,
+        "sell_time": 1745277564,
+        "shortcode": "DIGITOVER_R_50_4.04_1745277561_1T_2_0",
+        "transaction_id": 556773371548,
+        "underlying_symbol": "R_50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319807608,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277757,
+        "sell_price": 4.04,
+        "sell_time": 1745277760,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277757_1T_2_0",
+        "transaction_id": 556773692848,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319811908,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277763,
+        "sell_price": 4.04,
+        "sell_time": 1745277766,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277763_1T_2_0",
+        "transaction_id": 556773701968,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319817188,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277769,
+        "sell_price": 0,
+        "sell_time": 1745277772,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277769_1T_2_0",
+        "transaction_id": 556773712268,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 15,
+        "contract_id": 279319823008,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 20.22,
+        "purchase_time": 1745277777,
+        "sell_price": 20.22,
+        "sell_time": 1745277780,
+        "shortcode": "DIGITOVER_R_10_20.22_1745277777_1T_2_0",
+        "transaction_id": 556773724068,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319832008,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277785,
+        "sell_price": 4.04,
+        "sell_time": 1745277788,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277785_1T_2_0",
+        "transaction_id": 556773741428,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319837888,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277791,
+        "sell_price": 4.04,
+        "sell_time": 1745277794,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277791_1T_2_0",
+        "transaction_id": 556773752928,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319843668,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277798,
+        "sell_price": 4.04,
+        "sell_time": 1745277800,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277798_1T_2_0",
+        "transaction_id": 556773764728,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319848788,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277803,
+        "sell_price": 0,
+        "sell_time": 1745277806,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277803_1T_2_0",
+        "transaction_id": 556773775308,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 15,
+        "contract_id": 279319853968,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 100 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 20.22,
+        "purchase_time": 1745277810,
+        "sell_price": 20.22,
+        "sell_time": 1745277814,
+        "shortcode": "DIGITOVER_R_100_20.22_1745277810_1T_2_0",
+        "transaction_id": 556773785748,
+        "underlying_symbol": "R_100"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319861288,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277819,
+        "sell_price": 4.04,
+        "sell_time": 1745277822,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277819_1T_2_0",
+        "transaction_id": 556773800128,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 3,
+        "contract_id": 279319866628,
+        "contract_type": "DIGITOVER",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
+        "payout": 4.04,
+        "purchase_time": 1745277826,
+        "sell_price": 4.04,
+        "sell_time": 1745277828,
+        "shortcode": "DIGITOVER_R_10_4.04_1745277826_1T_2_0",
+        "transaction_id": 556773810648,
+        "underlying_symbol": "R_10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333405508,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Jump 10 Index is not 0 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296179,
+        "sell_price": 955.41,
+        "sell_time": 1745296181,
+        "shortcode": "DIGITDIFF_JD10_955.41_1745296179_1T_0_0",
+        "transaction_id": 556800739208,
+        "underlying_symbol": "JD10"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333415948,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Jump 100 Index is not 7 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296194,
+        "sell_price": 955.41,
+        "sell_time": 1745296196,
+        "shortcode": "DIGITDIFF_JD100_955.41_1745296194_1T_7_0",
+        "transaction_id": 556800759328,
+        "underlying_symbol": "JD100"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333490088,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 75 Index is not 1 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296290,
+        "sell_price": 955.41,
+        "sell_time": 1745296292,
+        "shortcode": "DIGITDIFF_R_75_955.41_1745296290_1T_1_0",
+        "transaction_id": 556800908088,
+        "underlying_symbol": "R_75"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333496568,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Jump 50 Index is not 7 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296299,
+        "sell_price": 0,
+        "sell_time": 1745296301,
+        "shortcode": "DIGITDIFF_JD50_955.41_1745296299_1T_7_0",
+        "transaction_id": 556800921348,
+        "underlying_symbol": "JD50"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333548028,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Jump 100 Index is not 1 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296367,
+        "sell_price": 955.41,
+        "sell_time": 1745296369,
+        "shortcode": "DIGITDIFF_JD100_955.41_1745296367_1T_1_0",
+        "transaction_id": 556801023248,
+        "underlying_symbol": "JD100"
+      },
+      {
+        "app_id": 52152,
+        "buy_price": 900,
+        "contract_id": 279333553808,
+        "contract_type": "DIGITDIFF",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 25 (1s) Index is not 8 after 1 tick.",
+        "payout": 955.41,
+        "purchase_time": 1745296376,
+        "sell_price": 0,
+        "sell_time": 1745296378,
+        "shortcode": "DIGITDIFF_1HZ25V_955.41_1745296376_1T_8_0",
+        "transaction_id": 556801034668,
+        "underlying_symbol": "1HZ25V"
+      },
+      {
+        "app_id": 68848,
+        "buy_price": 78,
+        "contract_id": 279335382628,
+        "contract_type": "DIGITEVEN",
+        "duration_type": "ticks",
+        "longcode": "Win payout if the last digit of Volatility 10 Index is even after 2 ticks.",
+        "payout": 143.91,
+        "purchase_time": 1745298644,
+        "sell_price": 0,
+        "sell_time": 1745298650,
+        "shortcode": "DIGITEVEN_R_10_143.91_1745298644_2T",
+        "transaction_id": 556804676208,
+        "underlying_symbol": "R_10"
+      }
+    ]
+  },
+  "req_id": 4
+}
