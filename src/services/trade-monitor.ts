@@ -105,24 +105,29 @@ export class TradeMonitor {
    */
   private async checkContractStatus(contractId: string) {
     try {
-      // This would typically call the Deriv API to get contract status
-      // For now, we'll simulate the API call structure
-      const response = await fetch('/api/deriv/contract-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contractId,
-          token: this.apiToken,
-          accountId: this.accountId
-        })
-      });
+      // Use WebSocket-based getContractStatus for reliable Deriv status
+      const { getContractStatus } = await import('@/services/deriv');
+      const statusData = await getContractStatus(Number(contractId), this.apiToken, this.accountId);
 
-      if (!response.ok) return;
+      // Normalize to expected fields
+      const contractData = {
+        contract_id: statusData.contract_id,
+        status: statusData.status,
+        buy_price: statusData.buy_price,
+        sell_price: statusData.sell_price,
+        entry_spot: statusData.entry_spot,
+        exit_spot: statusData.exit_tick,
+        sell_time: statusData.exit_tick_time,
+        underlying: '', // Deriv response may not include; optional for DB update/toast
+      } as any;
 
-      const contractData = await response.json();
-      
-      // Check if contract is completed
-      if (contractData.status === 'sold' || contractData.status === 'expired') {
+      // Completed if 'sold' or has sell_price/time
+      if (
+        statusData.status === 'sold' ||
+        statusData.status === 'won' ||
+        statusData.status === 'lost' ||
+        (statusData.sell_price != null && statusData.exit_tick_time != null)
+      ) {
         await this.handleCompletedTrade(contractData);
         this.removeContract(contractId);
       }
@@ -135,18 +140,19 @@ export class TradeMonitor {
    * Handle completed trade
    */
   private async handleCompletedTrade(contractData: any) {
-    const profit = contractData.sell_price - contractData.buy_price;
+    const monetarySellPrice = contractData.sell_price ?? 0;
+    const profit = monetarySellPrice - (contractData.buy_price ?? 0);
     const isWin = profit > 0;
-    
+
     const tradeCompletion: TradeCompletionData = {
-      contractId: contractData.contract_id,
-      instrument: contractData.underlying,
-      entryPrice: contractData.entry_spot,
-      exitPrice: contractData.exit_spot,
-      stake: contractData.buy_price,
+      contractId: String(contractData.contract_id),
+      instrument: contractData.underlying || '',
+      entryPrice: contractData.entry_spot ?? 0,
+      exitPrice: monetarySellPrice, // MONEY value for DB derivSellPrice
+      stake: contractData.buy_price ?? 0,
       profit: profit,
       status: isWin ? 'won' : 'lost',
-      closeTime: new Date(contractData.sell_time * 1000)
+      closeTime: new Date(((contractData.sell_time || contractData.exit_tick_time) ?? Math.floor(Date.now() / 1000)) * 1000)
     };
 
     // Update database

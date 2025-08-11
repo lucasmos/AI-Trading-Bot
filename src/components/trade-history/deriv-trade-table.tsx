@@ -36,7 +36,9 @@ export function DerivTradeTable({
   };
 
   const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
+    // Ensure numeric and handle cents normalization edge-cases
+    const value = Number.isFinite(amount) ? amount : 0;
+    return `$${value.toFixed(2)}`;
   };
 
   const formatProfitLoss = (profitLoss: number) => {
@@ -185,7 +187,8 @@ export function CompactDerivTradeTable({
   };
 
   const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
+    const value = Number.isFinite(amount) ? amount : 0;
+    return `$${value.toFixed(2)}`;
   };
 
   const formatProfitLoss = (profitLoss: number) => {

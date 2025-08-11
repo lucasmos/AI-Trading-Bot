@@ -107,25 +107,39 @@ export function formatTime(timestamp: number): string {
 export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   const metadata = trade.metadata || {};
   
-  // Extract Deriv API fields from metadata or trade object
+  // Extract Deriv API fields from metadata or trade object (prefer new Deriv fields first)
   const contractId = metadata.derivContractId || trade.derivContractId || trade.id;
-  const longcode = metadata.derivLongcode || generateLongcode(trade);
-  const shortcode = metadata.derivShortcode || generateShortcodeFromTrade(trade);
-  const buyPrice = metadata.derivBuyPrice || trade.buyPrice || trade.amount || 0;
-  const payout = metadata.derivPayout || calculatePayoutFromTrade(trade);
+
+  // Prefer longcode/shortcode from trade if present
+  const longcode = trade.derivLongcode || metadata.derivLongcode || generateLongcode(trade);
+  const shortcode = trade.derivShortcode || metadata.derivShortcode || generateShortcodeFromTrade(trade);
+
+  // Buy price: DB stores derivBuyPrice as integer cents; convert to dollars for display
+  const buyPriceRaw = trade.derivBuyPrice != null
+    ? Number(trade.derivBuyPrice) / 100
+    : (metadata.derivBuyPrice ?? trade.buyPrice ?? trade.amount ?? 0);
+  const buyPrice = Number(buyPriceRaw);
+
+  // Contract type and underlying: prefer new Deriv fields
+  const contractType = trade.derivContractType || metadata.contractType || deriveContractType(trade);
+  const underlyingSymbol = trade.derivUnderlyingSymbol || metadata.underlyingSymbol || deriveUnderlyingSymbol(trade);
+
   // Handle BigInt conversion for derivPurchaseTime and derivSellTime
   const purchaseTime = metadata.derivPurchaseTime ||
     (trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) :
      (trade.openTime ? Math.floor(new Date(trade.openTime).getTime() / 1000) : Math.floor(Date.now() / 1000)));
-  const sellPrice = metadata.derivSellPrice || trade.derivSellPrice || (trade.status === 'WON' ? payout : (trade.status === 'LOST' ? 0 : undefined));
+
+  // Payout: prefer stored derivPayout; fallback to calculation using resolved buyPrice and contractType
+  const payout = trade.derivPayout ?? metadata.derivPayout ?? calculatePayout(buyPrice, contractType);
+
+  const sellPrice = metadata.derivSellPrice ?? trade.derivSellPrice ?? (trade.status === 'WON' ? payout : (trade.status === 'LOST' ? 0 : undefined));
   const sellTime = trade.derivSellTime ? Number(trade.derivSellTime) :
     (trade.closeTime ? Math.floor(new Date(trade.closeTime).getTime() / 1000) : undefined);
-  const contractType = metadata.contractType || deriveContractType(trade);
-  const underlyingSymbol = metadata.underlyingSymbol || deriveUnderlyingSymbol(trade);
-  
-  const profitLoss = sellPrice !== undefined ? sellPrice - buyPrice : 0;
+
+  // Compute profit/loss and status based on normalized prices
+  const profitLoss = sellPrice !== undefined ? Number(sellPrice) - buyPrice : 0;
   const status = getTradeStatus(sellPrice, buyPrice);
-  
+
   return {
     contract_id: contractId.toString(),
     longcode,
@@ -137,17 +151,17 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     sell_time: sellTime,
     contract_type: contractType,
     underlying_symbol: underlyingSymbol,
-    duration_type: 'ticks',
-    app_id: 80447, // Our app ID
-    transaction_id: metadata.derivTransactionId || contractId,
-    
+    duration_type: trade.derivDurationType || 'ticks',
+    app_id: trade.derivAppId || 80447, // Our app ID
+    transaction_id: (trade.derivTransactionId ? trade.derivTransactionId.toString() : (metadata.derivTransactionId || contractId)),
+
     // Computed fields
     profit_loss: profitLoss,
     status,
     trade_type_display: getTradeTypeDisplay(contractType),
     instrument_display: getInstrumentDisplay(underlyingSymbol),
     duration_display: getDurationDisplay(longcode),
-    
+
     // Formatted timestamps
     purchase_date: formatDate(purchaseTime),
     purchase_time_display: formatTime(purchaseTime),
