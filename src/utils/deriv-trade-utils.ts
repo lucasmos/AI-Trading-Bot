@@ -113,9 +113,13 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   const shortcode = metadata.derivShortcode || generateShortcode(trade);
   const buyPrice = metadata.derivBuyPrice || trade.buyPrice || trade.amount || 0;
   const payout = metadata.derivPayout || calculatePayout(trade);
-  const purchaseTime = metadata.derivPurchaseTime || Math.floor(new Date(trade.openTime).getTime() / 1000);
-  const sellPrice = metadata.derivSellPrice || (trade.status === 'WON' ? payout : (trade.status === 'LOST' ? 0 : undefined));
-  const sellTime = trade.closeTime ? Math.floor(new Date(trade.closeTime).getTime() / 1000) : undefined;
+  // Handle BigInt conversion for derivPurchaseTime and derivSellTime
+  const purchaseTime = metadata.derivPurchaseTime ||
+    (trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) :
+     (trade.openTime ? Math.floor(new Date(trade.openTime).getTime() / 1000) : Math.floor(Date.now() / 1000)));
+  const sellPrice = metadata.derivSellPrice || trade.derivSellPrice || (trade.status === 'WON' ? payout : (trade.status === 'LOST' ? 0 : undefined));
+  const sellTime = trade.derivSellTime ? Number(trade.derivSellTime) :
+    (trade.closeTime ? Math.floor(new Date(trade.closeTime).getTime() / 1000) : undefined);
   const contractType = metadata.contractType || deriveContractType(trade);
   const underlyingSymbol = metadata.underlyingSymbol || deriveUnderlyingSymbol(trade);
   
@@ -199,7 +203,9 @@ function generateShortcodeFromTrade(trade: any): string {
   const contractType = metadata.contractType || trade.type || 'UNKNOWN';
   const underlyingSymbol = metadata.underlyingSymbol || deriveUnderlyingSymbol(trade);
   const payout = metadata.derivPayout || calculatePayout(trade);
-  const purchaseTime = metadata.derivPurchaseTime || Math.floor(new Date(trade.openTime).getTime() / 1000);
+  const purchaseTime = metadata.derivPurchaseTime ||
+    (trade.derivPurchaseTime ? Number(trade.derivPurchaseTime) :
+     (trade.openTime ? Math.floor(new Date(trade.openTime).getTime() / 1000) : Math.floor(Date.now() / 1000)));
   const duration = metadata.duration || 1;
   const barrier = metadata.predictionDigit || '';
   

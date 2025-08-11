@@ -8,7 +8,7 @@ interface TradeBasicInfo {
   userId: string;
   symbol: string;
   status: string;
-  openTime: Date;
+  derivPurchaseTime: bigint | null;
 }
 
 export async function GET(request: Request) {
@@ -42,13 +42,13 @@ export async function GET(request: Request) {
     const allTrades = await prisma.trade.findMany({
       take: 10, // Limit to 10 for safety
     });
-    console.log('[Trade History API] Sample of all trades in database:', 
-      allTrades.map((t: TradeBasicInfo) => ({ 
-        id: t.id, 
+    console.log('[Trade History API] Sample of all trades in database:',
+      allTrades.map((t: TradeBasicInfo) => ({
+        id: t.id,
         userId: t.userId,
         symbol: t.symbol,
         status: t.status,
-        openTime: t.openTime
+        derivPurchaseTime: t.derivPurchaseTime
       }))
     );
 
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         userId: userId,
       },
       orderBy: {
-        openTime: 'desc',
+        derivPurchaseTime: 'desc',
       },
     });
 
@@ -68,9 +68,10 @@ export async function GET(request: Request) {
         userId: trades[0].userId,
         symbol: trades[0].symbol,
         status: trades[0].status,
-        openTime: trades[0].openTime,
-        closeTime: trades[0].closeTime,
-        profit: trades[0].profit
+        derivPurchaseTime: trades[0].derivPurchaseTime,
+        derivSellTime: trades[0].derivSellTime,
+        derivBuyPrice: trades[0].derivBuyPrice,
+        derivSellPrice: trades[0].derivSellPrice
       });
     } else {
       console.log('[Trade History API] No trades found. Checking if user exists...');

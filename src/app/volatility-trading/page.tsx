@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { BalanceDisplay } from '@/components/dashboard/balance-display';
 import { TradingChart } from '@/components/dashboard/trading-chart';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ import { CompactDerivTradeTable } from '@/components/trade-history/deriv-trade-t
 import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
 
 import { getCandles, getContractStatus } from '@/services/deriv';
-import { getInstrumentDecimalPlaces, getDisplayTradeTypeDetails, getTradeTypeDisplayName } from '@/lib/utils';
+import { getInstrumentDecimalPlaces, getTradeTypeDisplayName } from '@/lib/utils';
 import {
   calculateRSI,
   calculateMACD,
@@ -209,7 +209,7 @@ export default function VolatilityTradingPage() {
   const [autoTradeTotalStake, setAutoTradeTotalStake] = useState<number>(10);
   const [isAutoTradingActive, setIsAutoTradingActive] = useState(false);
   const [activeAutomatedTrades, setActiveAutomatedTrades] = useState<ActiveAutomatedVolatilityTrade[]>([]);
-  const [useDerivFormat, setUseDerivFormat] = useState(true); // Use Deriv format by default
+
   const [profitsClaimable, setProfitsClaimable] = useState<ProfitsClaimable>({
     totalNetProfit: 0,
     tradeCount: 0,
@@ -2713,14 +2713,7 @@ export default function VolatilityTradingPage() {
                       {selectedUserTradeTypeForLoop ? "Monitoring real trade placements." : "Monitoring simulated trades. Stop-Loss is 5% of entry (simulated)."}
                     </CardDescription>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={useDerivFormat ? "default" : "outline"}
-                    onClick={() => setUseDerivFormat(!useDerivFormat)}
-                    className="ml-4"
-                  >
-                    {useDerivFormat ? "Deriv Format" : "Legacy Format"}
-                  </Button>
+
                 </div>
               </CardHeader>
               <CardContent>
@@ -2728,77 +2721,12 @@ export default function VolatilityTradingPage() {
                     <p className="text-muted-foreground text-center py-4">No active AI trades. Start a session to begin.</p>
                 ) : activeAutomatedTrades.length === 0 && isAutoTradingActive && isAiLoading ? (
                      <p className="text-muted-foreground text-center py-4">AI is analyzing markets...</p>
-                ) : activeAutomatedTrades.length > 0 && useDerivFormat ? (
+                ) : activeAutomatedTrades.length > 0 ? (
                   <CompactDerivTradeTable
                     trades={activeAutomatedTrades.map(trade => convertToDerivTradeRecord(trade))}
                     maxHeight="400px"
                     emptyMessage="No active AI trades. Start a session to begin."
                   />
-                ) : activeAutomatedTrades.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Trade Type</TableHead>
-                      <TableHead>Entry Point</TableHead>
-                      <TableHead>Exit Point</TableHead>
-                      <TableHead>Buy Price</TableHead>
-                      <TableHead>Profit/Loss</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Instrument</TableHead>
-                      <TableHead>Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {activeAutomatedTrades.map(trade => (
-                      <TableRow key={trade.id}>
-                        {/* Trade Type */}
-                        <TableCell>
-                          <Badge variant={trade.derivContractType === 'CALL' || trade.derivContractType === 'ONETOUCH' || trade.derivContractType === 'DIGITEVEN' || trade.derivContractType === 'DIGITOVER' ? 'default' : 'destructive'}
-                                 className={(trade.derivContractType === 'CALL' || trade.derivContractType === 'ONETOUCH' || trade.derivContractType === 'DIGITEVEN' || trade.derivContractType === 'DIGITOVER') ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-                            {trade.tradeType || getDisplayTradeTypeDetails(trade.derivContractType, trade.userSelectedTradeType, trade.barrier)}
-                          </Badge>
-                        </TableCell>
-
-                        {/* Entry Point */}
-                        <TableCell>{trade.entryPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || '-'}</TableCell>
-
-                        {/* Exit Point */}
-                        <TableCell>{trade.exitPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument)) || (trade.currentPrice?.toFixed(getInstrumentDecimalPlaces(trade.instrument))) || '-'}</TableCell>
-
-                        {/* Buy Price */}
-                        <TableCell>${trade.buyPrice?.toFixed(2) || trade.stake?.toFixed(2) || '0.00'}</TableCell>
-
-                        {/* Profit/Loss */}
-                        <TableCell className={trade.profitLoss && trade.profitLoss > 0 ? 'text-green-500' : trade.profitLoss && trade.profitLoss < 0 ? 'text-red-500' : trade.pnl && trade.pnl > 0 ? 'text-green-500' : trade.pnl && trade.pnl < 0 ? 'text-red-500' : ''}>
-                          {trade.profitLoss !== undefined ? `$${trade.profitLoss.toFixed(2)}` : (trade.pnl !== undefined ? `$${trade.pnl.toFixed(2)}` : '-')}
-                        </TableCell>
-
-                        {/* Status */}
-                        <TableCell>
-                          <Badge variant={trade.status === 'active' || trade.status === 'pending_execution' ? 'secondary' : (trade.status === 'won' ? 'default' : 'destructive')}
-                                 className={trade.status === 'active' || trade.status === 'pending_execution' ? 'bg-blue-500 text-white' : (trade.status === 'won' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600')}>
-                            {trade.status === 'active' ? 'Active' :
-                             trade.status === 'pending_execution' ? 'Pending' :
-                             trade.status === 'failed_placement' ? 'Failed' :
-                             trade.status === 'won' ? 'Won' :
-                             trade.status === 'lost_duration' ? 'Lost' :
-                             trade.status === 'lost_stoploss' ? 'Stop Loss' :
-                             trade.status === 'closed_manual' ? 'Closed' :
-                             trade.status}
-                          </Badge>
-                        </TableCell>
-
-                        {/* Instrument */}
-                        <TableCell>{trade.instrument}</TableCell>
-
-                        {/* Details */}
-                        <TableCell className="text-xs max-w-[150px] truncate" title={trade.reasoning || trade.error || "No details"}>
-                          {selectedUserTradeTypeForLoop ? (trade.error || "Placed") : (trade.reasoning || "AI Trade")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
                 ) : (
                      <p className="text-muted-foreground text-center py-4">No active AI trades. AI might not have found suitable opportunities.</p>
                 )}

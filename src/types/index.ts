@@ -156,7 +156,7 @@ export interface ActiveAutomatedVolatilityTrade { // Updated to match Deriv's tr
   exitPrice?: number; // Price when trade concluded (only for completed trades)
   buyPrice: number; // Price of the contract (stake amount)
   profitLoss?: number; // Profit/Loss after trade completion
-  status: 'active' | 'won' | 'lost' | 'pending' | 'cancelled'; // Simplified status matching Deriv
+  status: 'active' | 'won' | 'lost' | 'pending' | 'cancelled' | 'pending_execution' | 'closed_manual' | 'lost_duration' | 'failed_placement' | 'lost_stoploss'; // Extended status for volatility trading
   startTime: number; // When trade started
   endTime?: number; // When trade ended (for completed trades)
   duration?: number; // Trade duration in seconds
