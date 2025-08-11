@@ -205,20 +205,31 @@ async function executeManualTurboMode(
     try {
       const tradeResponse = await placeTrade(tradeDetails, targetAccountId);
 
+      // Validate required fields from Deriv API response
+      if (!tradeResponse.contract_id) {
+        throw new Error('Missing contract_id in Deriv API response');
+      }
+      if (!tradeResponse.buy_price) {
+        throw new Error('Missing buy_price in Deriv API response');
+      }
+      if (!tradeResponse.longcode) {
+        throw new Error('Missing longcode in Deriv API response');
+      }
+
       // Save to database with complete Deriv API fields
       const dbTrade = await prisma.trade.create({
         data: {
           userId: userId,
           symbol: instrumentToDerivSymbol(instrument),
           status: 'OPEN',
-          derivContractId: tradeResponse.contract_id.toString(),
+          derivContractId: BigInt(tradeResponse.contract_id),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
 
           // Complete Deriv API fields for database persistence
           derivLongcode: tradeResponse.longcode,
           derivShortcode: generateShortcode(contractType, instrumentToDerivSymbol(instrument), tradeResponse.buy_price, Math.floor(executionTimestamp / 1000), tickDuration),
-          derivBuyPrice: tradeResponse.buy_price,
+          derivBuyPrice: Math.round(tradeResponse.buy_price * 100), // Convert to integer (cents) as per user preference
           derivPayout: calculatePayout(tradeResponse.buy_price, contractType),
           derivPurchaseTime: BigInt(Math.floor(executionTimestamp / 1000)),
           derivSellPrice: null, // Will be updated when trade closes
@@ -227,7 +238,7 @@ async function executeManualTurboMode(
           derivUnderlyingSymbol: instrumentToDerivSymbol(instrument),
           derivDurationType: 'ticks',
           derivAppId: 80447, // Our app ID
-          derivTransactionId: `tx_${tradeResponse.contract_id}`, // Generate transaction ID
+          derivTransactionId: BigInt(tradeResponse.transaction_id || tradeResponse.contract_id), // Use actual transaction ID from Deriv API
 
           metadata: {
             instrument: instrument,
@@ -418,6 +429,14 @@ async function executeSafeModeTradesBatch(
     try {
       const tradeResponse = await placeTrade(tradeDetails, targetAccountId);
 
+      // Validate required fields from Deriv API response
+      if (!tradeResponse.contract_id) {
+        throw new Error(`Trade ${i + 1}: Missing contract_id in Deriv API response`);
+      }
+      if (!tradeResponse.longcode) {
+        throw new Error(`Trade ${i + 1}: Missing longcode in Deriv API response`);
+      }
+
       // Save to database with actual entry price
       const actualEntryPrice = tradeResponse.entry_spot || entryPrice;
 
@@ -428,12 +447,13 @@ async function executeSafeModeTradesBatch(
           status: 'OPEN',
 
           // Use Deriv-specific fields
-          derivContractId: tradeResponse.contract_id.toString(),
+          derivContractId: BigInt(tradeResponse.contract_id),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
           derivContractType: contractType,
-          derivBuyPrice: stakePerTrade,
+          derivBuyPrice: Math.round(stakePerTrade * 100), // Convert to integer (cents) as per user preference
           derivPurchaseTime: BigInt(Math.floor((batchTimestamp + (i * 100)) / 1000)),
+          derivTransactionId: BigInt(tradeResponse.transaction_id || tradeResponse.contract_id),
           derivLongcode: tradeResponse.longcode
         }
       });
@@ -542,12 +562,13 @@ export async function executeAiTradingStrategy(
           status: 'OPEN',
 
           // Use Deriv-specific fields
-          derivContractId: derivTradeResponse.contract_id.toString(),
+          derivContractId: BigInt(derivTradeResponse.contract_id),
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
           derivContractType: tradeProposal.action,
-          derivBuyPrice: tradeProposal.stake,
+          derivBuyPrice: Math.round(tradeProposal.stake * 100), // Convert to integer (cents) as per user preference
           derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
+          derivTransactionId: BigInt(derivTradeResponse.transaction_id || derivTradeResponse.contract_id),
           derivLongcode: derivTradeResponse.longcode
         },
       });
@@ -942,12 +963,13 @@ async function executeSingleTrade(
         status: 'OPEN',
 
         // Use Deriv-specific fields
-        derivContractId: derivTradeResponse.contract_id.toString(),
+        derivContractId: BigInt(derivTradeResponse.contract_id),
         derivAccountId: targetAccountId,
         accountType: selectedAccountType,
         derivContractType: finalContractType,
-        derivBuyPrice: tradeDetailsForApi.amount,
+        derivBuyPrice: Math.round(tradeDetailsForApi.amount * 100), // Convert to integer (cents) as per user preference
         derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
+        derivTransactionId: BigInt(derivTradeResponse.transaction_id || derivTradeResponse.contract_id),
         derivLongcode: derivTradeResponse.longcode
       }
     });

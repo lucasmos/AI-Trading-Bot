@@ -26,6 +26,25 @@ export async function POST(request: Request) {
       metadata: metadata ? 'provided' : 'not provided'
     });
 
+    // Validate required fields
+    if (!userId) {
+      return NextResponse.json({ error: 'Missing required field: userId' }, { status: 400 });
+    }
+    if (!symbol) {
+      return NextResponse.json({ error: 'Missing required field: symbol' }, { status: 400 });
+    }
+    if (!derivContractType) {
+      return NextResponse.json({ error: 'Missing required field: derivContractType' }, { status: 400 });
+    }
+
+    // Validate derivContractId and derivTransactionId are numeric strings if provided
+    if (derivContractId && !/^\d+$/.test(derivContractId.toString())) {
+      return NextResponse.json({ error: 'derivContractId must be a numeric string' }, { status: 400 });
+    }
+    if (derivTransactionId && !/^\d+$/.test(derivTransactionId.toString())) {
+      return NextResponse.json({ error: 'derivTransactionId must be a numeric string' }, { status: 400 });
+    }
+
     if (!userId || !symbol) {
       console.error('[Create Trade API] Missing required fields for trade creation.');
       return NextResponse.json(
@@ -107,7 +126,18 @@ export async function POST(request: Request) {
     const serializedTrade = serializeTradeForJSON(trade);
     return NextResponse.json(serializedTrade);
   } catch (error: any) {
-    console.error('[Create Trade API] Error during trade creation process:', error);
+    console.error('[Create Trade API] Error during trade creation process:', {
+      error: error.message,
+      stack: error.stack,
+      requestData: {
+        userId,
+        symbol,
+        derivContractType,
+        derivBuyPrice,
+        derivContractId,
+        derivTransactionId
+      }
+    });
     
     try {
       await prisma.$disconnect();
@@ -115,11 +145,22 @@ export async function POST(request: Request) {
       console.error('[Create Trade API] Error disconnecting Prisma after trade creation failure:', e);
     }
     
+    // Check for specific error types
+    if (error.message.includes('invalid digit found in string')) {
+      return NextResponse.json(
+        {
+          error: 'Invalid numeric format for derivContractId or derivTransactionId',
+          details: 'derivContractId and derivTransactionId must contain only numeric characters',
+        },
+        { status: 400 }
+      );
+    }
+
     // Check if it's a known Prisma error (like foreign key violation)
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2003') { // Foreign key constraint failed
         return NextResponse.json(
-          { 
+          {
             error: 'Failed to create trade due to a database integrity issue (likely user ID not found).',
             details: `Prisma error code: ${error.code}. This usually means the user ID provided for the trade does not exist in the User table. Ensure the user authentication and creation process via /api/auth/verify is working correctly. Provided userId: ${requestBody?.userId}`,
           },

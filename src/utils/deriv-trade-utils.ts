@@ -139,7 +139,7 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     underlying_symbol: underlyingSymbol,
     duration_type: 'ticks',
     app_id: 80447, // Our app ID
-    transaction_id: metadata.derivTransactionId || `tx_${contractId}`,
+    transaction_id: metadata.derivTransactionId || contractId,
     
     // Computed fields
     profit_loss: profitLoss,

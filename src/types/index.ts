@@ -328,21 +328,21 @@ export interface Trade {
   status: 'OPEN' | 'WON' | 'LOST' | 'CLOSED';
 
   // Deriv API fields (matching Prisma schema)
-  derivContractId?: number;
+  derivContractId?: bigint;
   derivAccountId?: string;
   accountType?: 'demo' | 'real';
   derivLongcode?: string;
   derivShortcode?: string;
-  derivBuyPrice?: number;
+  derivBuyPrice?: number; // Integer (cents) as per user preference
   derivPayout?: number;
-  derivPurchaseTime?: number;
+  derivPurchaseTime?: bigint;
   derivSellPrice?: number;
-  derivSellTime?: number;
+  derivSellTime?: bigint;
   derivContractType?: string;
   derivUnderlyingSymbol?: string;
   derivDurationType?: string;
   derivAppId?: number;
-  derivTransactionId?: number;
+  derivTransactionId?: bigint;
 
   metadata?: Record<string, any>; // For AI reasoning and other trade details
 }

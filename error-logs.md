@@ -1,400 +1,835 @@
-{
-  "description": 1,
-  "limit": 25,
-  "offset": 25,
-  "profit_table": 1,
-  "req_id": 4,
-  "sort": "ASC"
+2025-08-11T19:04:53.143Z [info] [DerivService Client-Side Check] Initial process.env.NEXT_PUBLIC_DERIV_WS_URL: wss://ws.derivws.com/websockets/v3
+2025-08-11T19:04:53.143Z [info] [DerivService Client-Side Check] Initial process.env.NEXT_PUBLIC_DERIV_APP_ID: 80447
+2025-08-11T19:04:53.143Z [info] [DerivService Client-Side Check] Constructed DERIV_API_URL at module scope: wss://ws.derivws.com/websockets/v3?app_id=80447
+2025-08-11T19:04:53.350Z [info] [TradeAction/MANUAL_SESSION] 🎯 MANUAL TRADING EXECUTION - Starting session for Volatility 75 (1s) Index
+2025-08-11T19:04:53.350Z [info] [TradeAction/MANUAL_SESSION] User Settings - Trade Type: DigitsEvenOdd, Total Stake: 13, Execution Mode: turbo, Bulk Trades: 7, Account: demo, Strategy: Odd
+2025-08-11T19:04:53.350Z [info] [TradeAction/MANUAL_SESSION] SETTINGS VALIDATION PASSED - All user parameters preserved and validated
+2025-08-11T19:04:53.350Z [info] [TradeAction/MANUAL_SESSION] 🎯 PATTERN BYPASS MODE: Using pre-validated pattern from WebSocket monitoring
+2025-08-11T19:04:53.350Z [info] [TradeAction/MANUAL_SESSION] Pre-validated Pattern: {
+  shouldExecute: true,
+  contractType: 'DIGITODD',
+  reasoning: 'Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9',
+  currentDigit: 9,
+  consecutiveCount: 3,
+  patternType: 'odd_after_evens'
 }
-{
-  "echo_req": {
-    "description": 1,
-    "limit": 25,
-    "offset": 25,
-    "profit_table": 1,
-    "req_id": 4,
-    "sort": "ASC"
-  },
-  "msg_type": "profit_table",
-  "profit_table": {
-    "count": 25,
-    "transactions": [
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319508848,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277401,
-        "sell_price": 4.04,
-        "sell_time": 1745277404,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277401_1T_2_0",
-        "transaction_id": 556773095768,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319514168,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277408,
-        "sell_price": 4.04,
-        "sell_time": 1745277410,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277408_1T_2_0",
-        "transaction_id": 556773106228,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319568088,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277471,
-        "sell_price": 4.04,
-        "sell_time": 1745277474,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277471_1T_2_0",
-        "transaction_id": 556773215588,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319573428,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277477,
-        "sell_price": 4.04,
-        "sell_time": 1745277480,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277477_1T_2_0",
-        "transaction_id": 556773225988,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319580108,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277484,
-        "sell_price": 4.04,
-        "sell_time": 1745277488,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277484_1T_2_0",
-        "transaction_id": 556773239748,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319587348,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277492,
-        "sell_price": 4.04,
-        "sell_time": 1745277496,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277492_1T_2_0",
-        "transaction_id": 556773253788,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319646508,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 50 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277561,
-        "sell_price": 4.04,
-        "sell_time": 1745277564,
-        "shortcode": "DIGITOVER_R_50_4.04_1745277561_1T_2_0",
-        "transaction_id": 556773371548,
-        "underlying_symbol": "R_50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319807608,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277757,
-        "sell_price": 4.04,
-        "sell_time": 1745277760,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277757_1T_2_0",
-        "transaction_id": 556773692848,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319811908,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277763,
-        "sell_price": 4.04,
-        "sell_time": 1745277766,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277763_1T_2_0",
-        "transaction_id": 556773701968,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319817188,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277769,
-        "sell_price": 0,
-        "sell_time": 1745277772,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277769_1T_2_0",
-        "transaction_id": 556773712268,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 15,
-        "contract_id": 279319823008,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 20.22,
-        "purchase_time": 1745277777,
-        "sell_price": 20.22,
-        "sell_time": 1745277780,
-        "shortcode": "DIGITOVER_R_10_20.22_1745277777_1T_2_0",
-        "transaction_id": 556773724068,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319832008,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277785,
-        "sell_price": 4.04,
-        "sell_time": 1745277788,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277785_1T_2_0",
-        "transaction_id": 556773741428,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319837888,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277791,
-        "sell_price": 4.04,
-        "sell_time": 1745277794,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277791_1T_2_0",
-        "transaction_id": 556773752928,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319843668,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277798,
-        "sell_price": 4.04,
-        "sell_time": 1745277800,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277798_1T_2_0",
-        "transaction_id": 556773764728,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319848788,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277803,
-        "sell_price": 0,
-        "sell_time": 1745277806,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277803_1T_2_0",
-        "transaction_id": 556773775308,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 15,
-        "contract_id": 279319853968,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 100 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 20.22,
-        "purchase_time": 1745277810,
-        "sell_price": 20.22,
-        "sell_time": 1745277814,
-        "shortcode": "DIGITOVER_R_100_20.22_1745277810_1T_2_0",
-        "transaction_id": 556773785748,
-        "underlying_symbol": "R_100"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319861288,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277819,
-        "sell_price": 4.04,
-        "sell_time": 1745277822,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277819_1T_2_0",
-        "transaction_id": 556773800128,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 3,
-        "contract_id": 279319866628,
-        "contract_type": "DIGITOVER",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is strictly higher than 2 after 1 ticks.",
-        "payout": 4.04,
-        "purchase_time": 1745277826,
-        "sell_price": 4.04,
-        "sell_time": 1745277828,
-        "shortcode": "DIGITOVER_R_10_4.04_1745277826_1T_2_0",
-        "transaction_id": 556773810648,
-        "underlying_symbol": "R_10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333405508,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Jump 10 Index is not 0 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296179,
-        "sell_price": 955.41,
-        "sell_time": 1745296181,
-        "shortcode": "DIGITDIFF_JD10_955.41_1745296179_1T_0_0",
-        "transaction_id": 556800739208,
-        "underlying_symbol": "JD10"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333415948,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Jump 100 Index is not 7 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296194,
-        "sell_price": 955.41,
-        "sell_time": 1745296196,
-        "shortcode": "DIGITDIFF_JD100_955.41_1745296194_1T_7_0",
-        "transaction_id": 556800759328,
-        "underlying_symbol": "JD100"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333490088,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 75 Index is not 1 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296290,
-        "sell_price": 955.41,
-        "sell_time": 1745296292,
-        "shortcode": "DIGITDIFF_R_75_955.41_1745296290_1T_1_0",
-        "transaction_id": 556800908088,
-        "underlying_symbol": "R_75"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333496568,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Jump 50 Index is not 7 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296299,
-        "sell_price": 0,
-        "sell_time": 1745296301,
-        "shortcode": "DIGITDIFF_JD50_955.41_1745296299_1T_7_0",
-        "transaction_id": 556800921348,
-        "underlying_symbol": "JD50"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333548028,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Jump 100 Index is not 1 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296367,
-        "sell_price": 955.41,
-        "sell_time": 1745296369,
-        "shortcode": "DIGITDIFF_JD100_955.41_1745296367_1T_1_0",
-        "transaction_id": 556801023248,
-        "underlying_symbol": "JD100"
-      },
-      {
-        "app_id": 52152,
-        "buy_price": 900,
-        "contract_id": 279333553808,
-        "contract_type": "DIGITDIFF",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 25 (1s) Index is not 8 after 1 tick.",
-        "payout": 955.41,
-        "purchase_time": 1745296376,
-        "sell_price": 0,
-        "sell_time": 1745296378,
-        "shortcode": "DIGITDIFF_1HZ25V_955.41_1745296376_1T_8_0",
-        "transaction_id": 556801034668,
-        "underlying_symbol": "1HZ25V"
-      },
-      {
-        "app_id": 68848,
-        "buy_price": 78,
-        "contract_id": 279335382628,
-        "contract_type": "DIGITEVEN",
-        "duration_type": "ticks",
-        "longcode": "Win payout if the last digit of Volatility 10 Index is even after 2 ticks.",
-        "payout": 143.91,
-        "purchase_time": 1745298644,
-        "sell_price": 0,
-        "sell_time": 1745298650,
-        "shortcode": "DIGITEVEN_R_10_143.91_1745298644_2T",
-        "transaction_id": 556804676208,
-        "underlying_symbol": "R_10"
-      }
-    ]
-  },
-  "req_id": 4
+2025-08-11T19:04:53.350Z [info] [TradeAction/ManualSession] Fetching data ONLY for selected instrument: Volatility 75 (1s) Index -> 1HZ75V
+2025-08-11T19:04:53.560Z [info] [DerivService/getTicks] Authorizing with provided token.
+2025-08-11T19:04:53.672Z [info] [DerivService/getTicks] Authorization successful/response received.
+2025-08-11T19:04:54.062Z [info] [DerivService/getTicks] Sending ticks_history request (style:ticks): {"ticks_history":"1HZ75V","adjust_start_time":1,"count":20,"end":"latest","style":"ticks"}
+2025-08-11T19:04:54.084Z [info] [DerivService/getTicks] Closing WebSocket for 1HZ75V. Ticks received successfully
+2025-08-11T19:04:54.085Z [info] [TradeAction/MANUAL_SESSION] Latest price for Volatility 75 (1s) Index: 3715.03
+2025-08-11T19:04:54.085Z [info] [TradeAction/MANUAL_SESSION] Fetched 20 ticks for pattern analysis
+2025-08-11T19:04:54.085Z [info] [TradeAction/MANUAL_SESSION] Recent digits: [8, 0, 3, 0, 3, 0, 0, 8, 9, 3]
+2025-08-11T19:04:54.085Z [info] [TradeAction/MANUAL_SESSION] 🎯 Using pre-validated pattern from WebSocket monitoring
+2025-08-11T19:04:54.085Z [info] [TradeAction/MANUAL_SESSION] Pattern Analysis Result: {
+  shouldExecute: true,
+  contractType: 'DIGITODD',
+  reasoning: 'Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9',
+  currentDigit: 9,
+  consecutiveCount: 3,
+  patternType: 'odd_after_evens'
 }
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] ✅ Pattern validation passed: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] PATTERN-BASED LOGIC - Strategy: Odd -> Contract Type: DIGITODD
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] Pattern Details - Type: odd_after_evens, Consecutive: 3, Current Digit: 9
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] EXECUTION PARAMETERS - Total Stake: 13, Bulk Trades: 7, Stake Per Trade: 1.86
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] 🚀 TURBO MODE: Executing ALL 7 trades simultaneously with identical entry/exit prices
+2025-08-11T19:04:54.086Z [info] [TradeAction/MANUAL_SESSION] TURBO MODE VALIDATION - User requested 7 trades, executing exactly 7 trades
+2025-08-11T19:04:54.086Z [info] [TradeAction/TurboMode] 🚀 Executing 7 trades simultaneously
+2025-08-11T19:04:54.086Z [info] [TradeAction/TurboMode] Shared Price Point: 3715.03 (Entry = Exit for all trades)
+2025-08-11T19:04:54.086Z [info] [TradeAction/TurboMode] Contract Type: DIGITODD, Pattern: odd_after_evens
+2025-08-11T19:04:54.086Z [info] [TradeAction/TurboMode] Trade 1/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.087Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.086Z
+2025-08-11T19:04:54.089Z [info] [TradeAction/TurboMode] Trade 2/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.089Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.089Z
+2025-08-11T19:04:54.091Z [info] [TradeAction/TurboMode] Trade 3/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.091Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.091Z
+2025-08-11T19:04:54.098Z [info] [TradeAction/TurboMode] Trade 4/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.098Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.092Z
+2025-08-11T19:04:54.098Z [info] [TradeAction/TurboMode] Trade 5/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.098Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.094Z
+2025-08-11T19:04:54.098Z [info] [TradeAction/TurboMode] Trade 6/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.098Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.095Z
+2025-08-11T19:04:54.098Z [info] [TradeAction/TurboMode] Trade 7/7 - Entry/Exit Price: 3715.03
+2025-08-11T19:04:54.098Z [info] [DerivService/placeTrade] Initiated for accountId: VRTC13200397, symbol: 1HZ75V at 2025-08-11T19:04:54.096Z
+2025-08-11T19:04:54.101Z [info] [DerivService/getTicks] WebSocket connection closed for 1HZ75V. Code: 1000, Reason: Ticks received successfully, Clean: true
+2025-08-11T19:04:54.220Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 125ms. Authorizing...
+2025-08-11T19:04:54.220Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.223Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 136ms. Authorizing...
+2025-08-11T19:04:54.223Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.249Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 153ms. Authorizing...
+2025-08-11T19:04:54.249Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.263Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 174ms. Authorizing...
+2025-08-11T19:04:54.264Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.280Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 188ms. Authorizing...
+2025-08-11T19:04:54.280Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.284Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 188ms. Authorizing...
+2025-08-11T19:04:54.284Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.292Z [info] [DerivService/placeTrade] WebSocket opened for accountId: VRTC13200397. Time to open: 199ms. Authorizing...
+2025-08-11T19:04:54.292Z [info] [DerivService/placeTrade] Sending authorize request: {"authorize":"TOKEN_PRESENT"}
+2025-08-11T19:04:54.334Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.334Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.334Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.337Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.337Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.337Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.372Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.372Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.372Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.398Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: ddced5a5-a303-5860-95c0-59d6c210d247, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.398Z [info] [DerivService/placeTrade] Stored proposal subscription ID: ddced5a5-a303-5860-95c0-59d6c210d247
+2025-08-11T19:04:54.398Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"ddced5a5-a303-5860-95c0-59d6c210d247","price":1.86}
+2025-08-11T19:04:54.401Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.401Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.401Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.418Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 996d14c5-0a1e-a5d8-01ad-f9909b362e73, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.418Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 996d14c5-0a1e-a5d8-01ad-f9909b362e73
+2025-08-11T19:04:54.418Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"996d14c5-0a1e-a5d8-01ad-f9909b362e73","price":1.86}
+2025-08-11T19:04:54.427Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 368fbe4a-9c47-8097-a549-d862f8e79395, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.427Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 368fbe4a-9c47-8097-a549-d862f8e79395
+2025-08-11T19:04:54.427Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"368fbe4a-9c47-8097-a549-d862f8e79395","price":1.86}
+2025-08-11T19:04:54.434Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.434Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.435Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.437Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.437Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.437Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.440Z [info] [DerivService/placeTrade] Authorization successful. Token's current active account: VRTC13200397. Target account for trade: VRTC13200397.
+2025-08-11T19:04:54.440Z [info] [DerivService/placeTrade] Session already active on target account VRTC13200397. Proceeding to proposal...
+2025-08-11T19:04:54.440Z [info] [DerivService/placeTrade] Sending proposal request: {"proposal":1,"subscribe":1,"amount":1.86,"basis":"stake","contract_type":"DIGITODD","currency":"USD","symbol":"1HZ75V","duration":1,"duration_unit":"t","product_type":"basic"}
+2025-08-11T19:04:54.477Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 7ef84d22-c7fc-d9e5-200c-f4dd1c139212, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.477Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 7ef84d22-c7fc-d9e5-200c-f4dd1c139212
+2025-08-11T19:04:54.477Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"7ef84d22-c7fc-d9e5-200c-f4dd1c139212","price":1.86}
+2025-08-11T19:04:54.485Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 7055f524-50d9-2219-9d05-0f0a1af267e6, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.485Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 7055f524-50d9-2219-9d05-0f0a1af267e6
+2025-08-11T19:04:54.485Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"7055f524-50d9-2219-9d05-0f0a1af267e6","price":1.86}
+2025-08-11T19:04:54.485Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 4f519916-e4c1-5940-17f4-7a250b16132c, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.486Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 4f519916-e4c1-5940-17f4-7a250b16132c
+2025-08-11T19:04:54.486Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"4f519916-e4c1-5940-17f4-7a250b16132c","price":1.86}
+2025-08-11T19:04:54.486Z [info] [DerivService/placeTrade] Proposal received for account VRTC13200397. ID: 806aa385-e175-adaf-1fa9-01f447f549c9, Proposal Spot: 3715.74. Buying contract...
+2025-08-11T19:04:54.486Z [info] [DerivService/placeTrade] Stored proposal subscription ID: 806aa385-e175-adaf-1fa9-01f447f549c9
+2025-08-11T19:04:54.486Z [info] [DerivService/placeTrade] Sending buy request for account VRTC13200397: {"buy":"806aa385-e175-adaf-1fa9-01f447f549c9","price":1.86}
+2025-08-11T19:04:54.518Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9731.68,"buy_price":1.86,"contract_id":290769704688,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930728}. Duration: 428ms.
+2025-08-11T19:04:54.518Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9731.68,"buy_price":1.86,"contract_id":290769704688,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930728}
+2025-08-11T19:04:54.518Z [info] [DerivService/placeTrade] Forgetting subscription 996d14c5-0a1e-a5d8-01ad-f9909b362e73 after buy message processed (Error: false).
+2025-08-11T19:04:54.531Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9731.68,"buy_price":1.86,"', WasClean: true. Duration: 441ms.
+2025-08-11T19:04:54.536Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9729.82,"buy_price":1.86,"contract_id":290769704728,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930808}. Duration: 442ms.
+2025-08-11T19:04:54.537Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9729.82,"buy_price":1.86,"contract_id":290769704728,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930808}
+2025-08-11T19:04:54.537Z [info] [DerivService/placeTrade] Forgetting subscription 368fbe4a-9c47-8097-a549-d862f8e79395 after buy message processed (Error: false).
+2025-08-11T19:04:54.538Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9733.54,"buy_price":1.86,"contract_id":290769704648,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930588}. Duration: 452ms.
+2025-08-11T19:04:54.539Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9733.54,"buy_price":1.86,"contract_id":290769704648,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315930588}
+2025-08-11T19:04:54.539Z [info] [DerivService/placeTrade] Forgetting subscription ddced5a5-a303-5860-95c0-59d6c210d247 after buy message processed (Error: false).
+2025-08-11T19:04:54.549Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9733.54,"buy_price":1.86,"', WasClean: true. Duration: 463ms.
+2025-08-11T19:04:54.573Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9729.82,"buy_price":1.86,"', WasClean: true. Duration: 479ms.
+2025-08-11T19:04:54.581Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9727.96,"buy_price":1.86,"contract_id":290769704908,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931148}. Duration: 485ms.
+2025-08-11T19:04:54.581Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9727.96,"buy_price":1.86,"contract_id":290769704908,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931148}
+2025-08-11T19:04:54.581Z [info] [DerivService/placeTrade] Forgetting subscription 7ef84d22-c7fc-d9e5-200c-f4dd1c139212 after buy message processed (Error: false).
+2025-08-11T19:04:54.594Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9727.96,"buy_price":1.86,"', WasClean: true. Duration: 497ms.
+2025-08-11T19:04:54.597Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9726.1,"buy_price":1.86,"contract_id":290769704868,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931228}. Duration: 505ms.
+2025-08-11T19:04:54.597Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9726.1,"buy_price":1.86,"contract_id":290769704868,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931228}
+2025-08-11T19:04:54.597Z [info] [DerivService/placeTrade] Forgetting subscription 7055f524-50d9-2219-9d05-0f0a1af267e6 after buy message processed (Error: false).
+2025-08-11T19:04:54.598Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9724.24,"buy_price":1.86,"contract_id":290769704928,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931268}. Duration: 507ms.
+2025-08-11T19:04:54.598Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9724.24,"buy_price":1.86,"contract_id":290769704928,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931268}
+2025-08-11T19:04:54.598Z [info] [DerivService/placeTrade] Forgetting subscription 4f519916-e4c1-5940-17f4-7a250b16132c after buy message processed (Error: false).
+2025-08-11T19:04:54.607Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9724.24,"buy_price":1.86,"', WasClean: true. Duration: 515ms.
+2025-08-11T19:04:54.608Z [info] [DerivService/placeTrade] AccountID: VRTC13200397. Contract purchased successfully on account VRTC13200397: {"balance_after":9722.38,"buy_price":1.86,"contract_id":290769704948,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931328}. Duration: 512ms.
+2025-08-11T19:04:54.608Z [info] [DerivService/placeTrade] Closing WebSocket for accountId: VRTC13200397. Original log: Contract purchased successfully on account VRTC13200397: {"balance_after":9722.38,"buy_price":1.86,"contract_id":290769704948,"longcode":"Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.","payout":3.6,"purchase_time":1754939094,"shortcode":"DIGITODD_1HZ75V_3.60_1754939094_1T","start_time":1754939094,"transaction_id":579315931328}
+2025-08-11T19:04:54.608Z [info] [DerivService/placeTrade] Forgetting subscription 806aa385-e175-adaf-1fa9-01f447f549c9 after buy message processed (Error: false).
+2025-08-11T19:04:54.617Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9726.1,"buy_price":1.86,"c', WasClean: true. Duration: 525ms.
+2025-08-11T19:04:54.623Z [info] [DerivService/placeTrade] WebSocket connection closed for accountId: VRTC13200397. Code: 1000, Reason: 'Contract purchased successfully on account VRTC13200397: {"balance_after":9722.38,"buy_price":1.86,"', WasClean: true. Duration: 527ms.
+2025-08-11T19:04:55.096Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704688",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704688",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704688",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.096Z [error] [TradeAction/TurboMode] ❌ Trade 2 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704688",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704688",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704688",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.097Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704928",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704928",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704928",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.097Z [error] [TradeAction/TurboMode] ❌ Trade 3 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704928",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704928",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704928",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.098Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704948",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704948",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704948",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.098Z [error] [TradeAction/TurboMode] ❌ Trade 6 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704948",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704948",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704948",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.150Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704648",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704648",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704648",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.150Z [error] [TradeAction/TurboMode] ❌ Trade 1 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704648",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704648",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704648",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.156Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704908",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704908",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704908",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.156Z [error] [TradeAction/TurboMode] ❌ Trade 7 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704908",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704908",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704908",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.162Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704868",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704868",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704868",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.162Z [error] [TradeAction/TurboMode] ❌ Trade 4 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704868",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704868",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704868",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.178Z [info] prisma:error 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704728",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704728",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704728",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.178Z [error] [TradeAction/TurboMode] ❌ Trade 5 failed: 
+Invalid `prisma.trade.create()` invocation:
+
+{
+  data: {
+    userId: "17315277",
+    symbol: "1HZ75V",
+    status: "OPEN",
+    derivContractId: "290769704728",
+    derivAccountId: "VRTC13200397",
+    accountType: "demo",
+    derivLongcode: "Win payout if the last digit of Volatility 75 (1s) Index is odd after 1 ticks.",
+    derivShortcode: "DIGITODD_1HZ75V_1.86_1754939094_1T",
+    derivBuyPrice: 1.86,
+    derivPayout: 3.63,
+    derivPurchaseTime: 1754939094n,
+    derivSellPrice: null,
+    derivSellTime: null,
+    derivContractType: "DIGITODD",
+    derivUnderlyingSymbol: "1HZ75V",
+    derivDurationType: "ticks",
+    derivAppId: 80447,
+    derivTransactionId: "tx_290769704728",
+                        ~~~~~~~~~~~~~~~~~
+    metadata: {
+      instrument: "Volatility 75 (1s) Index",
+      tradeType: "DigitsEvenOdd",
+      contractType: "DIGITODD",
+      derivContractId: "290769704728",
+      patternAnalysis: {
+        shouldExecute: true,
+        contractType: "DIGITODD",
+        reasoning: "Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+        currentDigit: 9,
+        consecutiveCount: 3,
+        patternType: "odd_after_evens"
+      },
+      executionMode: "turbo",
+      sharedPricePoint: 3715.03,
+      reasoning: "TURBO MANUAL: Manual pattern monitoring detected: 3 consecutive even digits followed by odd digit 9",
+      isPaperTrade: true,
+      entryPrice: 3715.03,
+      buyPrice: 1.86,
+      duration: 1
+    }
+  }
+}
+
+Invalid value for argument `derivTransactionId`: invalid digit found in string. Expected big integer String.
+2025-08-11T19:04:55.179Z [info] [TradeAction/TurboMode] 🎯 Turbo execution completed: 0/7 trades successful
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] 🎯 MANUAL EXECUTION SUMMARY:
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] ✅ Successful trades: 0/7
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] ❌ Failed trades: 7/7
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] 📊 Execution mode: TURBO
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] 🎲 Strategy: Odd
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] 📈 Pattern: odd_after_evens
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] 🔢 USER SETTINGS VALIDATION - Requested: 7 trades, Executed: 7 trades
+2025-08-11T19:04:55.179Z [info] [TradeAction/MANUAL_SESSION] ⚡ Manual session completed in ~2-3 seconds (vs ~15 seconds for AI mode)
