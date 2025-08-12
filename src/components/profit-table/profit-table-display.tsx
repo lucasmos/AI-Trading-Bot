@@ -119,18 +119,22 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
   };
 
   const getProfitBadge = (profit?: number, sellPrice?: number) => {
-    if (sellPrice === undefined || sellPrice === null) {
-      return <Badge variant="secondary">Open</Badge>;
-    }
-    
+    // For profit table entries, all trades are completed/settled
+    // Don't show "Open" status for any profit table entries
+
     if (profit === undefined || profit === null) {
+      // If no profit data but we have sell price, show settled
+      if (sellPrice !== undefined && sellPrice !== null) {
+        return <Badge variant="outline">Settled</Badge>;
+      }
+      // If no profit and no sell price, still show as settled since these are from profit table
       return <Badge variant="outline">Settled</Badge>;
     }
-    
+
     if (profit > 0) {
-      return <Badge className="bg-green-500 hover:bg-green-600">+${profit.toFixed(2)}</Badge>;
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white">+${profit.toFixed(2)}</Badge>;
     } else if (profit < 0) {
-      return <Badge className="bg-red-500 hover:bg-red-600">${profit.toFixed(2)}</Badge>;
+      return <Badge className="bg-red-500 hover:bg-red-600 text-white">${profit.toFixed(2)}</Badge>;
     } else {
       return <Badge variant="outline">$0.00</Badge>;
     }

@@ -40,7 +40,17 @@ export function DerivTradeTable({
       }
     }
 
-    // For open trades (no sell price), show as open
+    // For trades without sell price, check if they have profit/loss data
+    // If they have P/L data, they are completed trades, show based on P/L
+    if (profitLoss !== 0) {
+      if (profitLoss > 0) {
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white">Profit</Badge>;
+      } else if (profitLoss < 0) {
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white">Loss</Badge>;
+      }
+    }
+
+    // Only show "Open" for truly active trades (no sell price and no P/L)
     return <Badge variant="secondary">Open</Badge>;
   };
 
@@ -217,7 +227,17 @@ export function CompactDerivTradeTable({
       }
     }
 
-    // For open trades (no sell price), show as active
+    // For trades without sell price, check if they have profit/loss data
+    // If they have P/L data, they are completed trades, show based on P/L
+    if (profitLoss !== 0) {
+      if (profitLoss > 0) {
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">Profit</Badge>;
+      } else if (profitLoss < 0) {
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs">Loss</Badge>;
+      }
+    }
+
+    // Only show "Active" for truly active trades (no sell price and no P/L)
     return <Badge variant="secondary" className="text-xs">Active</Badge>;
   };
 

@@ -166,8 +166,7 @@ export class DerivProfitTableService {
       // Additional fields for better tracking
       symbol: tx.symbol || tx.underlying || this.extractSymbolFromLongcode(tx.longcode) || null,
       profit: tx.profit ? Math.round(tx.profit * 100) : null, // Convert to cents
-      durationType: tx.duration_type || null,
-      duration: tx.duration || null
+      durationType: tx.duration_type || null
     }));
 
     await prisma.profitTableEntry.createMany({
