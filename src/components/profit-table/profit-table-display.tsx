@@ -23,6 +23,8 @@ interface ProfitTableEntry {
   durationType?: string;
   duration?: number;
   accountType: string;
+  appId?: number;
+  transactionId?: string;
 }
 
 interface ProfitTableResponse {
@@ -133,13 +135,14 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
     if (!data?.entries.length) return;
 
     const headers = [
-      'Contract ID', 'Symbol', 'Longcode', 'Shortcode', 
+      'Contract ID', 'Transaction ID', 'Symbol', 'Longcode', 'Shortcode',
       'Buy Price', 'Sell Price', 'Payout', 'Profit/Loss',
-      'Purchase Time', 'Sell Time', 'Duration', 'Account Type'
+      'Purchase Time', 'Sell Time', 'Duration', 'App ID', 'Account Type'
     ];
     
     const rows = data.entries.map(entry => [
       entry.contractId,
+      entry.transactionId || '',
       entry.symbol || '',
       entry.longcode,
       entry.shortcode,
@@ -150,6 +153,7 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
       formatDateTime(entry.purchaseTime),
       entry.sellTime ? formatDateTime(entry.sellTime) : '',
       formatDuration(entry.durationType, entry.duration),
+      entry.appId || '',
       entry.accountType
     ].map(item => `"${String(item).replace(/"/g, '""')}"`));
 
@@ -234,7 +238,8 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Contract</TableHead>
+                    <TableHead>Contract ID</TableHead>
+                    <TableHead>Transaction ID</TableHead>
                     <TableHead>Symbol</TableHead>
                     <TableHead>Buy Price</TableHead>
                     <TableHead>Sell Price</TableHead>
@@ -242,40 +247,96 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
                     <TableHead>P/L</TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Purchase Time</TableHead>
+                    <TableHead>Sell Time</TableHead>
+                    <TableHead>App ID</TableHead>
+                    <TableHead className="max-w-[200px]">Description</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.entries.map((entry) => (
                     <TableRow key={entry.id}>
+                      {/* Contract ID */}
                       <TableCell className="font-mono text-xs">
-                        <div>
-                          <div className="font-medium">#{entry.contractId.slice(-8)}</div>
-                          <div className="text-muted-foreground truncate max-w-xs" title={entry.longcode}>
-                            {entry.shortcode}
-                          </div>
-                        </div>
+                        {String(entry.contractId).slice(-8)}...
                       </TableCell>
+
+                      {/* Transaction ID */}
+                      <TableCell className="font-mono text-xs">
+                        {entry.transactionId ? String(entry.transactionId).slice(-8) + '...' : 'N/A'}
+                      </TableCell>
+
+                      {/* Symbol */}
                       <TableCell>
                         <Badge variant="outline" className="font-mono">
                           {entry.symbol || 'N/A'}
                         </Badge>
                       </TableCell>
-                      <TableCell>${entry.buyPriceDisplay.toFixed(2)}</TableCell>
-                      <TableCell>
-                        {entry.sellPriceDisplay !== null && entry.sellPriceDisplay !== undefined 
-                          ? `$${entry.sellPriceDisplay.toFixed(2)}` 
+
+                      {/* Buy Price */}
+                      <TableCell className="text-right font-medium">
+                        ${entry.buyPriceDisplay.toFixed(2)}
+                      </TableCell>
+
+                      {/* Sell Price */}
+                      <TableCell className="text-right">
+                        {entry.sellPriceDisplay !== null && entry.sellPriceDisplay !== undefined
+                          ? `$${entry.sellPriceDisplay.toFixed(2)}`
                           : '-'
                         }
                       </TableCell>
-                      <TableCell>${entry.payoutDisplay.toFixed(2)}</TableCell>
-                      <TableCell>
+
+                      {/* Payout */}
+                      <TableCell className="text-right">
+                        ${entry.payoutDisplay.toFixed(2)}
+                      </TableCell>
+
+                      {/* Profit/Loss */}
+                      <TableCell className="text-right">
                         {getProfitBadge(entry.profitDisplay, entry.sellPriceDisplay)}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+
+                      {/* Duration */}
+                      <TableCell className="text-sm">
                         {formatDuration(entry.durationType, entry.duration)}
                       </TableCell>
+
+                      {/* Purchase Time */}
+                      <TableCell className="text-sm">
+                        <div className="flex flex-col">
+                          <span>{formatDateTime(entry.purchaseTime).split(' ')[0]}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDateTime(entry.purchaseTime).split(' ')[1]}
+                          </span>
+                        </div>
+                      </TableCell>
+
+                      {/* Sell Time */}
+                      <TableCell className="text-sm">
+                        {entry.sellTime ? (
+                          <div className="flex flex-col">
+                            <span>{formatDateTime(entry.sellTime).split(' ')[0]}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDateTime(entry.sellTime).split(' ')[1]}
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
+
+                      {/* App ID */}
                       <TableCell className="font-mono text-xs">
-                        {formatDateTime(entry.purchaseTime)}
+                        {entry.appId || 'N/A'}
+                      </TableCell>
+
+                      {/* Description */}
+                      <TableCell className="max-w-[200px]">
+                        <div className="text-xs">
+                          <div className="font-medium truncate" title={entry.longcode}>
+                            {entry.longcode}
+                          </div>
+                          <div className="text-muted-foreground truncate" title={entry.shortcode}>
+                            {entry.shortcode}
+                          </div>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

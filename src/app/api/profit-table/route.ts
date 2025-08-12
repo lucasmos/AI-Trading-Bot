@@ -91,7 +91,10 @@ export async function GET(request: Request) {
       buyPriceDisplay: entry.buyPrice / 100,
       sellPriceDisplay: entry.sellPrice ? entry.sellPrice / 100 : null,
       payoutDisplay: entry.payout / 100,
-      profitDisplay: entry.profit ? entry.profit / 100 : null
+      profitDisplay: entry.profit ? entry.profit / 100 : null,
+      // Include additional fields for consistency
+      appId: entry.appId,
+      symbol: entry.symbol
     }));
 
     return NextResponse.json({

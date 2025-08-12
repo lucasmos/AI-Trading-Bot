@@ -74,6 +74,7 @@ export function DerivTradeTable({
         <TableHeader>
           <TableRow>
             <TableHead>Contract ID</TableHead>
+            <TableHead>Transaction ID</TableHead>
             <TableHead>Trade Type</TableHead>
             <TableHead>Instrument</TableHead>
             <TableHead>Duration</TableHead>
@@ -83,6 +84,7 @@ export function DerivTradeTable({
             <TableHead className="text-center">Status</TableHead>
             <TableHead>Purchase Time</TableHead>
             <TableHead>Sell Time</TableHead>
+            <TableHead>App ID</TableHead>
             <TableHead className="max-w-[200px]">Description</TableHead>
           </TableRow>
         </TableHeader>
@@ -92,6 +94,11 @@ export function DerivTradeTable({
               {/* Contract ID */}
               <TableCell className="font-mono text-xs">
                 {String(trade.contract_id).slice(-8)}...
+              </TableCell>
+
+              {/* Transaction ID */}
+              <TableCell className="font-mono text-xs">
+                {trade.transaction_id ? String(trade.transaction_id).slice(-8) + '...' : 'N/A'}
               </TableCell>
 
               {/* Trade Type */}
@@ -161,10 +168,15 @@ export function DerivTradeTable({
                 )}
               </TableCell>
 
+              {/* App ID */}
+              <TableCell className="font-mono text-xs">
+                {trade.app_id || 'N/A'}
+              </TableCell>
+
               {/* Description (Longcode) */}
               <TableCell className="max-w-[200px]">
-                <div 
-                  className="text-xs text-muted-foreground truncate" 
+                <div
+                  className="text-xs text-muted-foreground truncate"
                   title={trade.longcode}
                 >
                   {trade.longcode || generateLongcode(trade)}

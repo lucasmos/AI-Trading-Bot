@@ -1813,6 +1813,16 @@ export interface DerivContractStatusData {
   is_expired?: 0 | 1;
   is_sold?: 0 | 1;
   longcode?: string;
+  shortcode?: string;
+  underlying_symbol?: string;
+  symbol?: string; // Some API responses may use 'symbol' instead of 'underlying_symbol'
+  contract_type?: string;
+  duration_type?: string;
+  payout?: number;
+  purchase_time?: number;
+  sell_time?: number;
+  transaction_id?: number;
+  app_id?: number;
   // Add any other fields from proposal_open_contract you need
 }
 

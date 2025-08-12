@@ -157,7 +157,7 @@ export class TradeMonitor {
         entry_spot: Number(statusData.entry_spot || 0),
         exit_spot: Number(statusData.exit_tick || 0),
         sell_time: statusData.exit_tick_time, // Use exit_tick_time as sell_time
-        underlying: statusData.symbol || '', // Use symbol field for underlying
+        underlying: statusData.underlying_symbol || statusData.symbol || '', // Use underlying_symbol or symbol field for underlying
       };
 
       // Completed if 'sold' or has sell_price/time
