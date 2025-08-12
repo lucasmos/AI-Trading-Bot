@@ -28,19 +28,20 @@ export function DerivTradeTable({
   emptyMessage = "No trades available"
 }: DerivTradeTableProps) {
   
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'won':
-        return <Badge variant="default" className="bg-green-500 text-white">Won</Badge>;
-      case 'lost':
-        return <Badge variant="destructive">Lost</Badge>;
-      case 'open':
-        return <Badge variant="secondary">Open</Badge>;
-      case 'cancelled':
-        return <Badge variant="outline">Cancelled</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+  const getStatusBadge = (profitLoss: number, sellPrice?: number) => {
+    // For completed trades (with sell price), base status on profit/loss
+    if (sellPrice !== undefined && sellPrice !== null) {
+      if (profitLoss > 0) {
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white">Profit</Badge>;
+      } else if (profitLoss < 0) {
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white">Loss</Badge>;
+      } else {
+        return <Badge variant="outline">Break Even</Badge>;
+      }
     }
+
+    // For open trades (no sell price), show as open
+    return <Badge variant="secondary">Open</Badge>;
   };
 
   const formatCurrency = (amount: number) => {
@@ -70,7 +71,8 @@ export function DerivTradeTable({
 
   return (
     <ScrollArea className={`w-full`} style={{ height: maxHeight }}>
-      <Table>
+      <div className="overflow-x-auto">
+        <Table className="min-w-full">
         <TableHeader>
           <TableRow>
             <TableHead>Contract ID</TableHead>
@@ -141,7 +143,12 @@ export function DerivTradeTable({
 
               {/* Status */}
               <TableCell className="text-center">
-                {getStatusBadge(trade.status.toLowerCase())}
+                {getStatusBadge(
+                  typeof trade.profit_loss === 'bigint'
+                    ? Number(trade.profit_loss) / 100
+                    : trade.profit_loss,
+                  trade.sell_price
+                )}
               </TableCell>
 
               {/* Purchase Time */}
@@ -185,7 +192,8 @@ export function DerivTradeTable({
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </ScrollArea>
   );
 }
@@ -197,19 +205,20 @@ export function CompactDerivTradeTable({
   emptyMessage = "No active trades"
 }: DerivTradeTableProps) {
   
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'won':
-        return <Badge variant="default" className="bg-green-500 text-white text-xs">Won</Badge>;
-      case 'lost':
-        return <Badge variant="destructive" className="text-xs">Lost</Badge>;
-      case 'open':
-        return <Badge variant="secondary" className="text-xs">Active</Badge>;
-      case 'cancelled':
-        return <Badge variant="outline" className="text-xs">Cancelled</Badge>;
-      default:
-        return <Badge variant="secondary" className="text-xs">{status}</Badge>;
+  const getStatusBadge = (profitLoss: number, sellPrice?: number) => {
+    // For completed trades (with sell price), base status on profit/loss
+    if (sellPrice !== undefined && sellPrice !== null) {
+      if (profitLoss > 0) {
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">Profit</Badge>;
+      } else if (profitLoss < 0) {
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs">Loss</Badge>;
+      } else {
+        return <Badge variant="outline" className="text-xs">Break Even</Badge>;
+      }
     }
+
+    // For open trades (no sell price), show as active
+    return <Badge variant="secondary" className="text-xs">Active</Badge>;
   };
 
   const formatCurrency = (amount: number) => {
@@ -238,7 +247,8 @@ export function CompactDerivTradeTable({
 
   return (
     <ScrollArea className={`w-full`} style={{ height: maxHeight }}>
-      <Table>
+      <div className="overflow-x-auto">
+        <Table className="min-w-full">
         <TableHeader>
           <TableRow>
             <TableHead className="text-xs">Trade Type</TableHead>
@@ -288,7 +298,7 @@ export function CompactDerivTradeTable({
 
               {/* Status */}
               <TableCell className="text-center">
-                {getStatusBadge(trade.status)}
+                {getStatusBadge(trade.profit_loss, trade.sell_price)}
               </TableCell>
 
               {/* Time */}
@@ -298,7 +308,8 @@ export function CompactDerivTradeTable({
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </ScrollArea>
   );
 }

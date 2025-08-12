@@ -113,6 +113,41 @@ export class DerivProfitTableService {
     });
   }
 
+  private extractSymbolFromLongcode(longcode: string): string | null {
+    // Extract symbol from longcode patterns
+    const patterns = [
+      /Volatility 10 \(1s\) Index/i,
+      /Volatility 25 \(1s\) Index/i,
+      /Volatility 50 \(1s\) Index/i,
+      /Volatility 75 \(1s\) Index/i,
+      /Volatility 100 \(1s\) Index/i,
+      /Volatility 10 Index/i,
+      /Volatility 25 Index/i,
+      /Volatility 50 Index/i,
+      /Volatility 75 Index/i,
+      /Volatility 100 Index/i,
+      /Jump 10 Index/i,
+      /Jump 25 Index/i,
+      /Jump 50 Index/i,
+      /Jump 75 Index/i,
+      /Jump 100 Index/i
+    ];
+
+    const symbolMap = [
+      '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V',
+      'R_10', 'R_25', 'R_50', 'R_75', 'R_100',
+      'JD10', 'JD25', 'JD50', 'JD75', 'JD100'
+    ];
+
+    for (let i = 0; i < patterns.length; i++) {
+      if (patterns[i].test(longcode)) {
+        return symbolMap[i];
+      }
+    }
+
+    return null;
+  }
+
   private async storeProfitTableEntries(transactions: ProfitTableTransaction[]): Promise<void> {
     const entries = transactions.map(tx => ({
       userId: this.userId,
@@ -129,7 +164,7 @@ export class DerivProfitTableService {
       shortcode: tx.shortcode,
       transactionId: BigInt(tx.transaction_id),
       // Additional fields for better tracking
-      symbol: tx.symbol || tx.underlying || null,
+      symbol: tx.symbol || tx.underlying || this.extractSymbolFromLongcode(tx.longcode) || null,
       profit: tx.profit ? Math.round(tx.profit * 100) : null, // Convert to cents
       durationType: tx.duration_type || null,
       duration: tx.duration || null

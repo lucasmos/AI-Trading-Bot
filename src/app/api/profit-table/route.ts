@@ -81,21 +81,36 @@ export async function GET(request: Request) {
     console.log(`[Profit Table API] Found ${entries.length} entries out of ${totalCount} total for user ${user.id}`);
 
     // Convert BigInt values to strings for JSON serialization
-    const serializedEntries = entries.map(entry => ({
-      ...entry,
-      contractId: entry.contractId.toString(),
-      purchaseTime: entry.purchaseTime.toString(),
-      sellTime: entry.sellTime?.toString() || null,
-      transactionId: entry.transactionId.toString(),
-      // Convert cents back to dollars for display
-      buyPriceDisplay: entry.buyPrice / 100,
-      sellPriceDisplay: entry.sellPrice ? entry.sellPrice / 100 : null,
-      payoutDisplay: entry.payout / 100,
-      profitDisplay: entry.profit ? entry.profit / 100 : null,
-      // Include additional fields for consistency
-      appId: entry.appId,
-      symbol: entry.symbol
-    }));
+    const serializedEntries = entries.map(entry => {
+      const buyPriceDisplay = entry.buyPrice / 100;
+      const sellPriceDisplay = entry.sellPrice ? entry.sellPrice / 100 : null;
+
+      // Calculate profit/loss: Sell Price - Buy Price (not Payout - Buy Price)
+      let profitDisplay = null;
+      if (entry.profit) {
+        // Use stored profit if available
+        profitDisplay = entry.profit / 100;
+      } else if (sellPriceDisplay !== null) {
+        // Calculate profit on-the-fly if sell price exists
+        profitDisplay = sellPriceDisplay - buyPriceDisplay;
+      }
+
+      return {
+        ...entry,
+        contractId: entry.contractId.toString(),
+        purchaseTime: entry.purchaseTime.toString(),
+        sellTime: entry.sellTime?.toString() || null,
+        transactionId: entry.transactionId.toString(),
+        // Convert cents back to dollars for display
+        buyPriceDisplay,
+        sellPriceDisplay,
+        payoutDisplay: entry.payout / 100,
+        profitDisplay,
+        // Include additional fields for consistency
+        appId: entry.appId,
+        symbol: entry.symbol
+      };
+    });
 
     return NextResponse.json({
       entries: serializedEntries,

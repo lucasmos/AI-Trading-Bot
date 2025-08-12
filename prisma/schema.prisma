@@ -200,7 +200,6 @@ model ProfitTableEntry {
   symbol         String?  // Underlying symbol
   profit         Int?     // Stored in cents
   durationType   String?  // Duration type (e.g., 't', 'm', 'h')
-  duration       Int?     // Duration value
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)

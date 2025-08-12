@@ -21,7 +21,6 @@ interface ProfitTableEntry {
   purchaseTime: string;
   sellTime?: string;
   durationType?: string;
-  duration?: number;
   accountType: string;
   appId?: number;
   transactionId?: string;
@@ -101,16 +100,22 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
   };
 
   const formatDuration = (durationType?: string, duration?: number) => {
-    if (!durationType || !duration) return 'N/A';
-    
+    if (!durationType) return 'N/A';
+
     const typeMap: Record<string, string> = {
-      't': 'tick',
-      'm': 'min',
-      'h': 'hour',
-      'd': 'day'
+      't': 'ticks',
+      'm': 'minutes',
+      'h': 'hours',
+      'd': 'days'
     };
-    
-    return `${duration} ${typeMap[durationType] || durationType}${duration !== 1 ? 's' : ''}`;
+
+    // If duration is available, show it with the type
+    if (duration) {
+      return `${duration} ${typeMap[durationType] || durationType}${duration !== 1 ? 's' : ''}`;
+    }
+
+    // Otherwise, just show the type indicator
+    return typeMap[durationType] || durationType;
   };
 
   const getProfitBadge = (profit?: number, sellPrice?: number) => {
@@ -152,7 +157,7 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
       entry.profitDisplay?.toFixed(2) || '',
       formatDateTime(entry.purchaseTime),
       entry.sellTime ? formatDateTime(entry.sellTime) : '',
-      formatDuration(entry.durationType, entry.duration),
+      formatDuration(entry.durationType),
       entry.appId || '',
       entry.accountType
     ].map(item => `"${String(item).replace(/"/g, '""')}"`));
@@ -235,7 +240,7 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
         ) : (
           <>
             <div className="rounded-md border overflow-x-auto">
-              <Table>
+              <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Contract ID</TableHead>
@@ -297,7 +302,7 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
 
                       {/* Duration */}
                       <TableCell className="text-sm">
-                        {formatDuration(entry.durationType, entry.duration)}
+                        {formatDuration(entry.durationType)}
                       </TableCell>
 
                       {/* Purchase Time */}
