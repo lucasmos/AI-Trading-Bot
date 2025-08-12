@@ -2,21 +2,28 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Download } from "lucide-react";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { DerivTradeTable } from '@/components/trade-history/deriv-trade-table';
 import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
+import { ProfitTableDisplay, ProfitTableDisplayRef } from '@/components/profit-table/profit-table-display';
+import { ProfitTableSync } from '@/components/profit-table/profit-table-sync';
 import type { DerivTradeRecord } from '@/types';
 
 
 
 export default function TradeHistoryPage() {
-  const { userInfo } = useAuth();
+  const { userInfo, selectedDerivAccountType } = useAuth();
   const [derivTradeHistory, setDerivTradeHistory] = useState<DerivTradeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [apiError, setApiError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('local-trades');
+  const [selectedProfitTableAccount, setSelectedProfitTableAccount] = useState<'demo' | 'real'>('demo');
+  const profitTableRef = useRef<ProfitTableDisplayRef | null>(null);
 
   const refreshHistory = async () => {
     setIsLoading(true);
@@ -103,66 +110,124 @@ export default function TradeHistoryPage() {
     );
   }
 
-  return (
-    <div className="container mx-auto py-2">
-      <Card className="shadow-lg">
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-2">
-          <div className="flex flex-col mb-4 sm:mb-0">
-            <CardTitle>Trade History</CardTitle>
-            <CardDescription className="mt-1">
-              Review your past trading activity.
-              {userInfo && <span className="ml-1">User ID: {userInfo.id}</span>}
-            </CardDescription>
-            <div className="text-xs text-muted-foreground mt-1">
-              Last refreshed: {lastRefresh.toLocaleString()}
-              {apiError && <span className="text-red-500 ml-2">Database Error: {apiError}</span>}
-            </div>
-          </div>
+  const handleProfitTableRefresh = () => {
+    // This will be called by the sync component to refresh the profit table display
+    if (profitTableRef.current) {
+      profitTableRef.current.refresh();
+    }
+  };
 
-          <div className="flex flex-wrap items-center gap-2 mb-4 sm:mb-0">
-            {/* Action Buttons */}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => refreshHistory()}
-              disabled={isLoading}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={exportToCsv}
-              disabled={derivTradeHistory.length === 0}
-            >
-              <Download className="h-4 w-4 mr-1" />
-              Export CSV
-            </Button>
+  return (
+    <div className="container mx-auto py-2 space-y-6">
+      {/* Main card with tabs */}
+      <Card className="shadow-lg">
+        <CardHeader className="pb-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
+            <div className="flex flex-col mb-4 sm:mb-0">
+              <CardTitle>Trade History</CardTitle>
+              <CardDescription className="mt-1">
+                Review your trading activity from multiple sources.
+                {userInfo && <span className="ml-1">User ID: {userInfo.id}</span>}
+              </CardDescription>
+            </div>
+
+            {activeTab === 'local-trades' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => refreshHistory()}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={exportToCsv}
+                  disabled={derivTradeHistory.length === 0}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Export CSV
+                </Button>
+              </div>
+            )}
           </div>
         </CardHeader>
+        
         <CardContent>
-          {derivTradeHistory.length === 0 && !apiError ? (
-            <div className="text-center py-6">
-              <p className="text-muted-foreground mb-4">No trade history available in the database.</p>
-              <p className="text-sm text-muted-foreground">
-                Execute trades on the dashboard to see them here.
-              </p>
-            </div>
-          ) : apiError && derivTradeHistory.length === 0 ? (
-            <div className="text-center py-6">
-              <p className="text-red-500 mb-4">Error loading trade history: {apiError}</p>
-              <p className="text-sm text-muted-foreground">
-                Please try refreshing or check your connection.
-              </p>
-            </div>
-          ) : (
-            <DerivTradeTable
-              trades={derivTradeHistory}
-              maxHeight="600px"
-              emptyMessage="No trade history available in the database."
-            />
-          )}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="local-trades">Local Trades</TabsTrigger>
+              <TabsTrigger value="profit-table">Profit Table</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="local-trades" className="space-y-4">
+              <div className="text-xs text-muted-foreground">
+                Last refreshed: {lastRefresh.toLocaleString()}
+                {apiError && <span className="text-red-500 ml-2">Error: {apiError}</span>}
+              </div>
+              
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                  Loading local trade history...
+                </div>
+              ) : derivTradeHistory.length === 0 && !apiError ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground mb-4">No local trade history available.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Execute trades on the dashboard to see them here, or use the Profit Table tab for Deriv API data.
+                  </p>
+                </div>
+              ) : apiError && derivTradeHistory.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-red-500 mb-4">Error loading trade history: {apiError}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Please try refreshing or check your connection.
+                  </p>
+                </div>
+              ) : (
+                <DerivTradeTable
+                  trades={derivTradeHistory}
+                  maxHeight="600px"
+                  emptyMessage="No trade history available in the database."
+                />
+              )}
+            </TabsContent>
+            
+            <TabsContent value="profit-table" className="space-y-6">
+              {/* Account selector for profit table */}
+              <div className="flex items-center gap-4 mb-4">
+                <label className="text-sm font-medium">Account Type:</label>
+                <Select 
+                  value={selectedProfitTableAccount} 
+                  onValueChange={(value: 'demo' | 'real') => setSelectedProfitTableAccount(value)}
+                >
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="demo">Demo</SelectItem>
+                    <SelectItem value="real">Real</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Sync component */}
+              <ProfitTableSync 
+                accountType={selectedProfitTableAccount} 
+                onSyncComplete={handleProfitTableRefresh}
+              />
+              
+              {/* Profit table display */}
+              <ProfitTableDisplay 
+                accountType={selectedProfitTableAccount}
+                ref={profitTableRef}
+              />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

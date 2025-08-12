@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import { PrismaClient } from '@prisma/client';
-import { toast } from '@/hooks/use-toast';
 
 const prisma = new PrismaClient();
 
@@ -25,6 +24,11 @@ interface ProfitTableTransaction {
   sell_time?: number;
   shortcode: string;
   transaction_id: number;
+  underlying?: string;
+  symbol?: string;
+  profit?: number;
+  duration_type?: string;
+  duration?: number;
 }
 
 interface ProfitTableResponse {
@@ -123,7 +127,12 @@ export class DerivProfitTableService {
       sellPrice: tx.sell_price ? Math.round(tx.sell_price * 100) : null, // Convert to cents
       sellTime: tx.sell_time ? BigInt(tx.sell_time) : null,
       shortcode: tx.shortcode,
-      transactionId: BigInt(tx.transaction_id)
+      transactionId: BigInt(tx.transaction_id),
+      // Additional fields for better tracking
+      symbol: tx.symbol || tx.underlying || null,
+      profit: tx.profit ? Math.round(tx.profit * 100) : null, // Convert to cents
+      durationType: tx.duration_type || null,
+      duration: tx.duration || null
     }));
 
     await prisma.profitTableEntry.createMany({
@@ -157,33 +166,20 @@ export class DerivProfitTableService {
         totalSynced += transactions.length;
         offset += limit;
 
-        // Show progress toast every 500 entries
+        // Log progress every 500 entries
         if (totalSynced % 500 === 0) {
-          toast({
-            title: "Syncing Profit Table",
-            description: `${totalSynced} entries synced...`,
-            duration: 3000
-          });
+          console.log(`[ProfitTable] Synced ${totalSynced} entries so far...`);
         }
 
         // Break if we've fetched all entries
         if (totalSynced >= count) break;
       }
 
-      toast({
-        title: "Profit Table Sync Complete",
-        description: `Successfully synced ${totalSynced} profit table entries.`,
-        duration: 5000
-      });
+      console.log(`[ProfitTable] Sync completed successfully. Total synced: ${totalSynced} entries`);
 
     } catch (error) {
       console.error('[ProfitTable] Error syncing profit table:', error);
-      toast({
-        title: "Sync Error",
-        description: error instanceof Error ? error.message : "Failed to sync profit table",
-        variant: "destructive",
-        duration: 5000
-      });
+      throw error; // Let the calling component handle the error display
     } finally {
       if (this.ws) {
         this.ws.close();
