@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
-    const { contractId, exitPrice, profit, status, closeTime } = await request.json();
+    const { contractId, exitPrice, profit, status, closeTime, tickDuration } = await request.json();
 
     if (!contractId) {
       return NextResponse.json(
@@ -40,7 +40,8 @@ export async function POST(request: NextRequest) {
           finalProfit: profit,
           exitPrice: exitPrice,
           finalStatus: status, // Add final status to metadata
-          profit: profit // Store profit in metadata for backward compatibility
+          profit: profit, // Store profit in metadata for backward compatibility
+          tickDuration: tickDuration || 1 // Store the number of ticks used for the trade
         }
       }
     });

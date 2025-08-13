@@ -228,7 +228,8 @@ export class TradeMonitor {
           exitPrice: trade.exitPrice,
           profit: trade.profit,
           status: trade.status,
-          closeTime: trade.closeTime
+          closeTime: trade.closeTime,
+          tickDuration: (trade as any).tickDuration || 1 // Include tick duration, default to 1
         })
       });
     } catch (error) {

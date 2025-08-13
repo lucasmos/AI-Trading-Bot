@@ -1163,7 +1163,11 @@ export default function VolatilityTradingPage() {
                 currentPrice: result.tradeResponse?.entry_spot || 0,
                 pnl: 0,
                 barrier: result.tradeParams?.barrier,
-                error: result.error
+                error: result.error,
+                
+                // CRITICAL FIX: Include tickDuration from user selection
+                tickDuration: tickDuration,
+                duration: tickDuration // Include both for compatibility
             }));
             setActiveAutomatedTrades(newUiTrades);
 

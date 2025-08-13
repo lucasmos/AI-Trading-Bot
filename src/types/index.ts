@@ -161,6 +161,7 @@ export interface ActiveAutomatedVolatilityTrade { // Updated to match Deriv's tr
   endTime?: number; // When trade ended (for completed trades)
   duration?: number; // Trade duration in seconds
   reasoning?: string; // AI reasoning for the trade
+  tickDuration?: number; // Number of ticks for the trade (1-10), defaults to 1
 
   // Legacy fields for backward compatibility (will be removed gradually)
   stake?: number; // Use buyPrice instead
@@ -365,6 +366,7 @@ export interface DerivTradeRecord {
   duration_type: string; // e.g., "ticks"
   app_id: number; // e.g., 52152
   transaction_id: string; // e.g., "556773095768"
+  tick_duration?: number; // Number of ticks for the trade (1-10), defaults to 1
 
   // Computed fields for UI display
   profit_loss: number; // sell_price - buy_price (computed)

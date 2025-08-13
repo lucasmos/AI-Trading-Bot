@@ -278,8 +278,22 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   }
   // For open trades, sellTime remains undefined
 
-  // Compute profit/loss: (sell_price ?? payout) - buy_price, rounded to 2 decimal places
-  const profitLoss = roundToDecimalPlaces((sellPrice ?? payout) - buyPrice, 2);
+  // CRITICAL FIX: Compute profit/loss correctly as sell_price - buy_price
+  // For winning trades: profit/loss = sell_price (payout received) - buy_price (stake paid)
+  // For losing trades: profit/loss = 0 (no payout) - buy_price (stake lost) = -buy_price
+  let profitLoss: number;
+  if (sellPrice !== undefined && sellPrice !== null) {
+    // Trade has been settled
+    profitLoss = roundToDecimalPlaces(sellPrice - buyPrice, 2);
+  } else {
+    // For open trades, show potential profit (payout - buy_price) or 0
+    profitLoss = 0;
+  }
+  
+  // Ensure loss trades show negative values correctly
+  if (sellPrice === 0) {
+    profitLoss = -buyPrice; // Complete loss
+  }
 
   // Determine status: prefer database status if available, otherwise derive from sell_price
   let status: 'won' | 'lost' | 'open' | 'cancelled';
@@ -316,6 +330,20 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     transactionId = finalContractId; // Use contract_id as fallback
   }
 
+  // Extract tick duration with fallback to 1
+  let tickDuration = 1; // Default fallback
+  if (trade.tickDuration) {
+    tickDuration = safeNumberConversion(trade.tickDuration);
+  } else if (metadata.tickDuration) {
+    tickDuration = safeNumberConversion(metadata.tickDuration);
+  } else if (trade.duration) {
+    tickDuration = safeNumberConversion(trade.duration);
+  } else if (metadata.duration) {
+    tickDuration = safeNumberConversion(metadata.duration);
+  }
+  // Ensure valid tick count (1-10 range, fallback to 1)
+  tickDuration = Math.max(1, Math.min(10, Math.floor(tickDuration)));
+
   // Generate display fields for UI
   const sellPriceDisplay = sellPrice !== undefined ? roundToDecimalPlaces(sellPrice, 2) : undefined;
   const profitLossDisplay = roundToDecimalPlaces(profitLoss, 2);
@@ -324,7 +352,7 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     // Core required fields (guaranteed populated)
     contract_id: finalContractId,
     longcode: longcode || `Trade on ${getInstrumentDisplay(underlyingSymbol)}`,
-    shortcode: shortcode || `${contractType}_${underlyingSymbol}_${buyPrice}_${purchaseTime}_1T`,
+    shortcode: shortcode || `${contractType}_${underlyingSymbol}_${buyPrice}_${purchaseTime}_${tickDuration}T`,
     buy_price: roundToDecimalPlaces(buyPrice, 2),
     payout: roundToDecimalPlaces(payout, 2),
     purchase_time: purchaseTime,
@@ -335,13 +363,14 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     duration_type: trade.derivDurationType || 'ticks',
     app_id: safeNumberConversion(trade.derivAppId) || 80447, // Our app ID
     transaction_id: transactionId,
+    tick_duration: tickDuration, // Store the number of ticks for display
 
     // Computed fields (guaranteed populated)
     profit_loss: profitLossDisplay,
     status,
     trade_type_display: getTradeTypeDisplay(contractType),
     instrument_display: getInstrumentDisplay(underlyingSymbol),
-    duration_display: getDurationDisplay(longcode || ''),
+    duration_display: `${tickDuration} tick${tickDuration > 1 ? 's' : ''}`, // Override with tick count
 
     // Formatted timestamps (guaranteed populated)
     purchase_date: formatDate(purchaseTime),

@@ -208,11 +208,11 @@ export function CompactDerivTradeTable({
     // For completed trades (with sell price), base status on profit/loss
     if (sellPrice !== undefined && sellPrice !== null) {
       if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">Profit</Badge>;
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Won</Badge>;
       } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs">Loss</Badge>;
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Lost</Badge>;
       } else {
-        return <Badge variant="outline" className="text-xs">Break Even</Badge>;
+        return <Badge variant="outline" className="text-xs px-3 py-1 rounded-full">Break Even</Badge>;
       }
     }
 
@@ -220,14 +220,14 @@ export function CompactDerivTradeTable({
     // If they have P/L data, they are completed trades, show based on P/L
     if (profitLoss !== 0) {
       if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">Profit</Badge>;
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Won</Badge>;
       } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs">Loss</Badge>;
+        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Lost</Badge>;
       }
     }
 
     // Only show "Active" for truly active trades (no sell price and no P/L)
-    return <Badge variant="secondary" className="text-xs">Active</Badge>;
+    return <Badge variant="secondary" className="text-xs px-3 py-1 rounded-full">Active</Badge>;
   };
 
   const formatCurrency = (amount: number) => {
@@ -260,19 +260,26 @@ export function CompactDerivTradeTable({
         <Table className="min-w-full">
         <TableHeader>
           <TableRow>
+            <TableHead className="text-xs">Contract ID</TableHead>
             <TableHead className="text-xs">Trade Type</TableHead>
             <TableHead className="text-xs">Instrument</TableHead>
-            <TableHead className="text-xs">Duration</TableHead>
+            <TableHead className="text-xs">Ticks</TableHead>
             <TableHead className="text-right text-xs">Buy Price</TableHead>
             <TableHead className="text-right text-xs">Payout</TableHead>
             <TableHead className="text-right text-xs">P&L</TableHead>
             <TableHead className="text-center text-xs">Status</TableHead>
-            <TableHead className="text-xs">Time</TableHead>
+            <TableHead className="text-xs">Purchase Time</TableHead>
+            <TableHead className="text-xs">Sell Time</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {trades.map((trade) => (
             <TableRow key={trade.contract_id} className="text-sm">
+              {/* Contract ID */}
+              <TableCell className="font-mono text-xs">
+                {String(trade.contract_id).slice(-6)}...
+              </TableCell>
+
               {/* Trade Type */}
               <TableCell>
                 <Badge variant="outline" className="text-xs font-medium">
@@ -282,12 +289,12 @@ export function CompactDerivTradeTable({
 
               {/* Instrument */}
               <TableCell className="text-xs">
-                {trade.underlying_symbol}
+                {trade.instrument_display || getInstrumentDisplay(trade.underlying_symbol)}
               </TableCell>
 
-              {/* Duration */}
-              <TableCell className="text-xs">
-                {trade.duration_display}
+              {/* Number of Ticks */}
+              <TableCell className="text-xs font-medium">
+                {trade.tick_duration || 1}
               </TableCell>
 
               {/* Buy Price */}
@@ -310,9 +317,28 @@ export function CompactDerivTradeTable({
                 {getStatusBadge(trade.profit_loss, trade.sell_price)}
               </TableCell>
 
-              {/* Time */}
+              {/* Purchase Time */}
               <TableCell className="text-xs">
-                {trade.purchase_time_display}
+                <div className="flex flex-col">
+                  <span>{trade.purchase_date || formatDate(Number(trade.purchase_time))}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {trade.purchase_time_display || formatTime(Number(trade.purchase_time))}
+                  </span>
+                </div>
+              </TableCell>
+
+              {/* Sell Time */}
+              <TableCell className="text-xs">
+                {trade.sell_time ? (
+                  <div className="flex flex-col">
+                    <span>{trade.sell_date || formatDate(Number(trade.sell_time))}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {trade.sell_time_display || formatTime(Number(trade.sell_time))}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
               </TableCell>
             </TableRow>
           ))}
