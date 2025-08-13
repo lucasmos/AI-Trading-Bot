@@ -8,9 +8,10 @@ import { RefreshCw, Download } from "lucide-react";
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/auth-context';
 import { DerivTradeTable } from '@/components/trade-history/deriv-trade-table';
-import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
+import { convertToDerivTradeRecord, formatDate, formatTime } from '@/utils/deriv-trade-utils';
 import { ProfitTableDisplay, ProfitTableDisplayRef } from '@/components/profit-table/profit-table-display';
 import { ProfitTableSync } from '@/components/profit-table/profit-table-sync';
+import { COMMON_COLUMNS, formatCurrency } from '@/utils/trade-table-columns';
 import type { DerivTradeRecord } from '@/types';
 
 
@@ -66,21 +67,31 @@ export default function TradeHistoryPage() {
   }, [userInfo]);
 
 
-  // Function to export Deriv trades to CSV
+  // Function to export Deriv trades to CSV using shared header list
   const exportToCsv = () => {
     if (derivTradeHistory.length === 0) return;
 
-    const headers = ["Contract ID", "Longcode", "Shortcode", "Buy Price", "Payout", "Purchase Time", "Sell Price", "Sell Time", "Status"];
+    // Use shared header list from COMMON_COLUMNS
+    const headers = COMMON_COLUMNS.map(col => col.header);
+    
     const rows = derivTradeHistory.map(trade => [
+      // Map each DerivTradeRecord to the full field set with proper formatting
       trade.contract_id,
-      trade.longcode,
-      trade.shortcode,
-      trade.buy_price,
-      trade.payout,
-      new Date(trade.purchase_time * 1000).toLocaleString(),
-      trade.sell_price || '',
-      trade.sell_time ? new Date(trade.sell_time * 1000).toLocaleString() : '',
-      trade.status,
+      trade.transaction_id,
+      `${trade.underlying_symbol} (${trade.instrument_display})`,
+      formatCurrency(trade.buy_price),
+      // For open trades, output empty string for Sell Price
+      trade.status === 'open' ? '' : (trade.sell_price !== undefined ? formatCurrency(trade.sell_price) : ''),
+      formatCurrency(trade.payout),
+      // For open trades, output empty string for P/L
+      trade.status === 'open' ? '' : formatCurrency(trade.profit_loss),
+      `${trade.duration_display} (${trade.trade_type_display})`,
+      // Use formatDate and formatTime helpers for Purchase Time
+      `${formatDate(trade.purchase_time)} ${formatTime(trade.purchase_time)}`,
+      // For open trades, output empty string for Sell Time
+      trade.status === 'open' ? '' : (trade.sell_time !== undefined ? `${formatDate(trade.sell_time)} ${formatTime(trade.sell_time)}` : ''),
+      trade.app_id.toString(),
+      `${trade.longcode} (${trade.shortcode})`
     ].map(item => `"${String(item).replace(/"/g, '""')}"`)); // Basic CSV escaping
 
     const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');

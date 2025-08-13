@@ -1,0 +1,96 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`CSV Generation with Sample Trade Data Regression Tests - CSV Row Snapshots should match snapshot for cancelled trade CSV row 1`] = `
+[
+  "279319508851",
+  "556773095771",
+  "Under",
+  "Volatility 75 Index",
+  "1 tick",
+  7.5,
+  "",
+  10.12,
+  2.62,
+  "cancelled",
+  1745277550,
+  "",
+  80447,
+  "Win payout if the last digit of Volatility 75 Index is strictly lower than 3 after 1 tick.",
+]
+`;
+
+exports[`CSV Generation with Sample Trade Data Regression Tests - CSV Row Snapshots should match snapshot for complete CSV headers 1`] = `
+[
+  "Contract ID",
+  "Transaction ID",
+  "Trade Type",
+  "Instrument",
+  "Duration",
+  "Buy Price",
+  "Sell Price",
+  "Payout",
+  "Profit/Loss",
+  "Status",
+  "Purchase Time",
+  "Sell Time",
+  "App ID",
+  "Description",
+]
+`;
+
+exports[`CSV Generation with Sample Trade Data Regression Tests - CSV Row Snapshots should match snapshot for lost trade CSV row 1`] = `
+[
+  "279319508849",
+  "556773095769",
+  "Odd",
+  "Volatility 25 Index",
+  "2 ticks",
+  5,
+  0,
+  9.5,
+  -5,
+  "lost",
+  1745277450,
+  1745277453,
+  80447,
+  "Win payout if the last digit of Volatility 25 Index is odd after 2 ticks.",
+]
+`;
+
+exports[`CSV Generation with Sample Trade Data Regression Tests - CSV Row Snapshots should match snapshot for open trade CSV row 1`] = `
+[
+  "279319508850",
+  "556773095770",
+  "Over",
+  "Volatility 50 Index",
+  "1 tick",
+  10,
+  "",
+  13.5,
+  3.5,
+  "open",
+  1745277500,
+  "",
+  80447,
+  "Win payout if the last digit of Volatility 50 Index is strictly higher than 5 after 1 tick.",
+]
+`;
+
+exports[`CSV Generation with Sample Trade Data Regression Tests - CSV Row Snapshots should match snapshot for won trade CSV row 1`] = `
+[
+  "279319508848",
+  "556773095768",
+  "Even",
+  "Volatility 10 Index",
+  "1 tick",
+  3,
+  4.04,
+  4.04,
+  1.04,
+  "won",
+  1745277401,
+  1745277404,
+  80447,
+  "Win payout if the last digit of Volatility 10 Index is even after 1 tick.",
+]
+`;

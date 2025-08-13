@@ -99,34 +99,26 @@ export function getTradeStatus(sellPrice?: number, buyPrice?: number, dbStatus?:
 
 /**
  * Format Unix timestamp to date string (YYYY-MM-DD)
+ * Returns empty string for falsy inputs
  */
 export function formatDate(timestamp: number): string {
+  if (timestamp === null || timestamp === undefined || isNaN(timestamp)) {
+    return '';
+  }
   const dateObj = new Date(timestamp * 1000);
-  const formatted = dateObj.toISOString().slice(0, 10);
-  console.log('[formatDate] Debug:', {
-    originalTimestamp: timestamp,
-    timestampMs: timestamp * 1000,
-    dateObj: dateObj,
-    formatted: formatted,
-    isValidDate: !isNaN(dateObj.getTime())
-  });
-  return formatted;
+  return dateObj.toISOString().slice(0, 10);
 }
 
 /**
  * Format Unix timestamp to time string (HH:MM:SS)
+ * Returns empty string for falsy inputs
  */
 export function formatTime(timestamp: number): string {
+  if (timestamp === null || timestamp === undefined || isNaN(timestamp)) {
+    return '';
+  }
   const dateObj = new Date(timestamp * 1000);
-  const formatted = dateObj.toISOString().slice(11, 19);
-  console.log('[formatTime] Debug:', {
-    originalTimestamp: timestamp,
-    timestampMs: timestamp * 1000,
-    dateObj: dateObj,
-    formatted: formatted,
-    isValidDate: !isNaN(dateObj.getTime())
-  });
-  return formatted;
+  return dateObj.toISOString().slice(11, 19);
 }
 
 /**
@@ -183,17 +175,17 @@ function safeNumberConversion(value: any): number {
 }
 
 /**
- * Safely convert BigInt or number to number for timestamps, returning undefined for null
+ * Safely convert BigInt or number to number for timestamps, returning null for null
  */
-function safeTimestampConversion(value: any): number | undefined {
+function safeTimestampConversion(value: any): number | null {
   if (value === null || value === undefined) {
-    return undefined; // Return undefined instead of 0 for null timestamps
+    return null; // Return null instead of undefined for null timestamps
   }
   if (typeof value === 'bigint') {
     return Number(value);
   }
   const num = Number(value);
-  return isNaN(num) ? undefined : num;
+  return isNaN(num) ? null : num;
 }
 
 /**
@@ -274,50 +266,14 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   // Sell time with BigInt support
   let sellTime: number | undefined;
   
-  // Enhanced debugging for timestamp conversion
-  console.log('[convertToDerivTradeRecord] Timestamp conversion debug:', {
-    tradeId: trade.id,
-    derivSellTime: {
-      value: trade.derivSellTime,
-      type: typeof trade.derivSellTime,
-      isNull: trade.derivSellTime === null,
-      isUndefined: trade.derivSellTime === undefined,
-    },
-    closeTime: {
-      value: trade.closeTime,
-      type: typeof trade.closeTime,
-      isNull: trade.closeTime === null,
-      isUndefined: trade.closeTime === undefined,
-    },
-    sellTime: {
-      value: trade.sellTime,
-      type: typeof trade.sellTime,
-      isNull: trade.sellTime === null,
-      isUndefined: trade.sellTime === undefined,
-    }
-  });
-  
-  // Use the new safeTimestampConversion which returns undefined for null values
+  // Use the new safeTimestampConversion which returns null for null values
   const derivSellTimeConverted = safeTimestampConversion(trade.derivSellTime);
   
-  if (derivSellTimeConverted !== undefined) {
-    console.log('[convertToDerivTradeRecord] derivSellTime conversion:', {
-      original: trade.derivSellTime,
-      originalType: typeof trade.derivSellTime,
-      converted: derivSellTimeConverted,
-      convertedType: typeof derivSellTimeConverted,
-      isValidTimestamp: derivSellTimeConverted > 0 && derivSellTimeConverted < 9999999999 // Valid Unix timestamp range
-    });
+  if (derivSellTimeConverted !== null) {
     sellTime = derivSellTimeConverted;
   } else if (trade.closeTime) {
     const closeTimeMs = new Date(trade.closeTime).getTime();
     const converted = Math.floor(closeTimeMs / 1000);
-    console.log('[convertToDerivTradeRecord] closeTime conversion:', {
-      original: trade.closeTime,
-      closeTimeMs: closeTimeMs,
-      converted: converted,
-      isValidTimestamp: converted > 0 && converted < 9999999999
-    });
     sellTime = converted;
   }
   // For open trades, sellTime remains undefined
@@ -390,8 +346,8 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     // Formatted timestamps (guaranteed populated)
     purchase_date: formatDate(purchaseTime),
     purchase_time_display: formatTime(purchaseTime),
-    sell_date: sellTime ? formatDate(sellTime) : undefined,
-    sell_time_display: sellTime ? formatTime(sellTime) : undefined,
+    sell_date: sellTime !== undefined ? formatDate(sellTime) : undefined,
+    sell_time_display: sellTime !== undefined ? formatTime(sellTime) : undefined,
 
     // Additional display fields for UI
     sell_price_display: sellPriceDisplay,
