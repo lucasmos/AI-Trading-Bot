@@ -99,16 +99,26 @@ export function getTradeStatus(sellPrice?: number, buyPrice?: number, dbStatus?:
 
 /**
  * Format Unix timestamp to date string (YYYY-MM-DD)
+ * Returns empty string for falsy inputs
  */
 export function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toISOString().slice(0, 10);
+  if (timestamp === null || timestamp === undefined || isNaN(timestamp)) {
+    return '';
+  }
+  const dateObj = new Date(timestamp * 1000);
+  return dateObj.toISOString().slice(0, 10);
 }
 
 /**
  * Format Unix timestamp to time string (HH:MM:SS)
+ * Returns empty string for falsy inputs
  */
 export function formatTime(timestamp: number): string {
-  return new Date(timestamp * 1000).toISOString().slice(11, 19);
+  if (timestamp === null || timestamp === undefined || isNaN(timestamp)) {
+    return '';
+  }
+  const dateObj = new Date(timestamp * 1000);
+  return dateObj.toISOString().slice(11, 19);
 }
 
 /**
@@ -162,6 +172,20 @@ function safeNumberConversion(value: any): number {
   }
   const num = Number(value);
   return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Safely convert BigInt or number to number for timestamps, returning null for null
+ */
+function safeTimestampConversion(value: any): number | null {
+  if (value === null || value === undefined) {
+    return null; // Return null instead of undefined for null timestamps
+  }
+  if (typeof value === 'bigint') {
+    return Number(value);
+  }
+  const num = Number(value);
+  return isNaN(num) ? null : num;
 }
 
 /**
@@ -241,10 +265,16 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
 
   // Sell time with BigInt support
   let sellTime: number | undefined;
-  if (trade.derivSellTime) {
-    sellTime = safeNumberConversion(trade.derivSellTime);
+  
+  // Use the new safeTimestampConversion which returns null for null values
+  const derivSellTimeConverted = safeTimestampConversion(trade.derivSellTime);
+  
+  if (derivSellTimeConverted !== null) {
+    sellTime = derivSellTimeConverted;
   } else if (trade.closeTime) {
-    sellTime = Math.floor(new Date(trade.closeTime).getTime() / 1000);
+    const closeTimeMs = new Date(trade.closeTime).getTime();
+    const converted = Math.floor(closeTimeMs / 1000);
+    sellTime = converted;
   }
   // For open trades, sellTime remains undefined
 
@@ -316,8 +346,8 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
     // Formatted timestamps (guaranteed populated)
     purchase_date: formatDate(purchaseTime),
     purchase_time_display: formatTime(purchaseTime),
-    sell_date: sellTime ? formatDate(sellTime) : undefined,
-    sell_time_display: sellTime ? formatTime(sellTime) : undefined,
+    sell_date: sellTime !== undefined ? formatDate(sellTime) : undefined,
+    sell_time_display: sellTime !== undefined ? formatTime(sellTime) : undefined,
 
     // Additional display fields for UI
     sell_price_display: sellPriceDisplay,

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RefreshCw, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { COMMON_COLUMNS, formatCurrency } from '@/utils/trade-table-columns';
 
 interface ProfitTableEntry {
   id: string;
@@ -143,28 +144,28 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
   const exportToCsv = () => {
     if (!data?.entries.length) return;
 
-    const headers = [
-      'Contract ID', 'Transaction ID', 'Symbol', 'Longcode', 'Shortcode',
-      'Buy Price', 'Sell Price', 'Payout', 'Profit/Loss',
-      'Purchase Time', 'Sell Time', 'Duration', 'App ID', 'Account Type'
-    ];
+    // Use shared header list from COMMON_COLUMNS to maintain parity with trade-history
+    const headers = COMMON_COLUMNS.map(col => col.header);
     
     const rows = data.entries.map(entry => [
+      // Map ProfitTableEntry to the standardized field set with proper formatting
       entry.contractId,
       entry.transactionId || '',
-      entry.symbol || '',
-      entry.longcode,
-      entry.shortcode,
-      entry.buyPriceDisplay.toFixed(2),
-      entry.sellPriceDisplay?.toFixed(2) || '',
-      entry.payoutDisplay.toFixed(2),
-      entry.profitDisplay?.toFixed(2) || '',
+      `${entry.symbol || 'N/A'}`, // Symbol only (instrument display not available in profit table)
+      formatCurrency(entry.buyPriceDisplay),
+      entry.sellPriceDisplay !== null && entry.sellPriceDisplay !== undefined 
+        ? formatCurrency(entry.sellPriceDisplay) 
+        : '',
+      formatCurrency(entry.payoutDisplay),
+      entry.profitDisplay !== null && entry.profitDisplay !== undefined 
+        ? formatCurrency(entry.profitDisplay) 
+        : '',
+      formatDuration(entry.durationType), // Duration only (trade type not available)
       formatDateTime(entry.purchaseTime),
       entry.sellTime ? formatDateTime(entry.sellTime) : '',
-      formatDuration(entry.durationType),
-      entry.appId || '',
-      entry.accountType
-    ].map(item => `"${String(item).replace(/"/g, '""')}"`));
+      entry.appId?.toString() || '',
+      `${entry.longcode} (${entry.shortcode})` // Combined description format
+    ].map(item => `"${String(item).replace(/"/g, '\"\"')}"`)); // CSV escaping
 
     const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
