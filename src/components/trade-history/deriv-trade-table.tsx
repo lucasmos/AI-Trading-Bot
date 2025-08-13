@@ -29,29 +29,19 @@ export function DerivTradeTable({
 }: DerivTradeTableProps) {
   
   const getStatusBadge = (profitLoss: number, sellPrice?: number) => {
-    // For completed trades (with sell price), base status on profit/loss
-    if (sellPrice !== undefined && sellPrice !== null) {
-      if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white">Profit</Badge>;
-      } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white">Loss</Badge>;
-      } else {
-        return <Badge variant="outline">Break Even</Badge>;
+    // For all trades, only show Profit or Loss based on P/L value
+    if (profitLoss > 0) {
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-full">Profit</Badge>;
+    } else if (profitLoss < 0) {
+      return <Badge className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full">Loss</Badge>;
+    } else {
+      // For zero P/L or open trades, don't show a badge or show a neutral one
+      if (sellPrice !== undefined && sellPrice !== null) {
+        return <Badge variant="outline" className="px-3 py-1 rounded-full">Break Even</Badge>;
       }
+      // For open trades (no sell price), don't show status badge
+      return null;
     }
-
-    // For trades without sell price, check if they have profit/loss data
-    // If they have P/L data, they are completed trades, show based on P/L
-    if (profitLoss !== 0) {
-      if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white">Profit</Badge>;
-      } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white">Loss</Badge>;
-      }
-    }
-
-    // Only show "Open" for truly active trades (no sell price and no P/L)
-    return <Badge variant="secondary">Open</Badge>;
   };
 
   const formatCurrency = (amount: number) => {
@@ -205,29 +195,19 @@ export function CompactDerivTradeTable({
 }: DerivTradeTableProps) {
   
   const getStatusBadge = (profitLoss: number, sellPrice?: number) => {
-    // For completed trades (with sell price), base status on profit/loss
-    if (sellPrice !== undefined && sellPrice !== null) {
-      if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Won</Badge>;
-      } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Lost</Badge>;
-      } else {
+    // For all trades, only show Profit or Loss based on P/L value
+    if (profitLoss > 0) {
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Profit</Badge>;
+    } else if (profitLoss < 0) {
+      return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Loss</Badge>;
+    } else {
+      // For zero P/L or open trades
+      if (sellPrice !== undefined && sellPrice !== null) {
         return <Badge variant="outline" className="text-xs px-3 py-1 rounded-full">Break Even</Badge>;
       }
+      // For open trades (no sell price), show Active status
+      return <Badge variant="secondary" className="text-xs px-3 py-1 rounded-full">Active</Badge>;
     }
-
-    // For trades without sell price, check if they have profit/loss data
-    // If they have P/L data, they are completed trades, show based on P/L
-    if (profitLoss !== 0) {
-      if (profitLoss > 0) {
-        return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Won</Badge>;
-      } else if (profitLoss < 0) {
-        return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Lost</Badge>;
-      }
-    }
-
-    // Only show "Active" for truly active trades (no sell price and no P/L)
-    return <Badge variant="secondary" className="text-xs px-3 py-1 rounded-full">Active</Badge>;
   };
 
   const formatCurrency = (amount: number) => {
