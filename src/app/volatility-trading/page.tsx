@@ -398,7 +398,8 @@ export default function VolatilityTradingPage() {
           numberOfBulkTrades: 1, // Single trade for pattern trigger
           selectedInstrument: currentVolatilityInstrument,
           selectedStrategy: selectedStrategy,
-          patternTrigger: trigger // Pass the trigger info
+          patternTrigger: trigger, // Pass the trigger info
+          tickDuration: tickDuration // CRITICAL FIX: Pass user-selected tick duration
         }
       );
 
@@ -439,7 +440,7 @@ export default function VolatilityTradingPage() {
         variant: "destructive"
       });
     }
-  }, [userInfo, selectedDerivAccountType, autoTradeTotalStake, numberOfBulkTrades, executionMode, currentVolatilityInstrument, selectedStrategy, currentStreamingPrice, toast]);
+  }, [userInfo, selectedDerivAccountType, autoTradeTotalStake, numberOfBulkTrades, executionMode, currentVolatilityInstrument, selectedStrategy, currentStreamingPrice, toast, tickDuration]);
 
   // Enhanced Manual Mode: Pattern Monitoring Functions
   const startPatternMonitoring = useCallback(() => {
