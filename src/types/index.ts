@@ -378,6 +378,10 @@ export interface DerivTradeRecord {
   purchase_time_display: string; // HH:MM:SS format
   sell_date?: string; // YYYY-MM-DD format
   sell_time_display?: string; // HH:MM:SS format
+
+  // Additional display fields for UI
+  sell_price_display?: number; // Rounded sell price for display
+  profit_loss_display: number; // Rounded profit/loss for display
 }
 
 export interface TradeHistoryData {
@@ -410,6 +414,10 @@ export interface TradeHistoryData {
   purchase_time_display: string; // HH:MM:SS format
   sell_date?: string; // YYYY-MM-DD format
   sell_time_display?: string; // HH:MM:SS format
+
+  // Additional display fields for UI
+  sell_price_display?: number; // Rounded sell price for display
+  profit_loss_display: number; // Rounded profit/loss for display
 }
 
 export interface AiRecommendation {

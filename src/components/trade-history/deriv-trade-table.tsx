@@ -132,33 +132,22 @@ export function DerivTradeTable({
 
               {/* Buy Price */}
               <TableCell className="text-right font-medium">
-                {formatCurrency(typeof trade.buy_price === 'bigint' 
-                  ? Number(trade.buy_price) / 100 
-                  : trade.buy_price)}
+                {formatCurrency(trade.buy_price)}
               </TableCell>
 
               {/* Payout */}
               <TableCell className="text-right">
-                {formatCurrency(typeof trade.payout === 'bigint'
-                  ? Number(trade.payout) / 100
-                  : trade.payout)}
+                {formatCurrency(trade.payout)}
               </TableCell>
 
               {/* Profit/Loss */}
               <TableCell className="text-right">
-                {formatProfitLoss(typeof trade.profit_loss === 'bigint'
-                  ? Number(trade.profit_loss) / 100
-                  : trade.profit_loss)}
+                {formatProfitLoss(trade.profit_loss)}
               </TableCell>
 
               {/* Status */}
               <TableCell className="text-center">
-                {getStatusBadge(
-                  typeof trade.profit_loss === 'bigint'
-                    ? Number(trade.profit_loss) / 100
-                    : trade.profit_loss,
-                  trade.sell_price
-                )}
+                {getStatusBadge(trade.profit_loss, trade.sell_price)}
               </TableCell>
 
               {/* Purchase Time */}
