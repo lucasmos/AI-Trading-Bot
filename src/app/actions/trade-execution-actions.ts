@@ -19,46 +19,73 @@ import { generateShortcode, calculatePayout } from '@/utils/deriv-trade-utils';
 import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
-// CRITICAL FIX: Enhanced trade monitoring function using direct Deriv API calls
+// CRITICAL FIX: Enhanced trade monitoring function using actual Deriv API calls
 async function startTradeMonitoring(contractId: string, dbTradeId: string, apiToken: string, accountId: string) {
   console.log(`[TradeMonitoring] Starting enhanced monitoring for contract ${contractId}, DB trade ${dbTradeId}`);
 
-  // Use a more efficient approach: simulate trade completion for 1-tick trades
-  // Since these are 1-tick trades, they complete very quickly (within seconds)
-  setTimeout(async () => {
+  // Monitor the trade using actual Deriv API contract status
+  const maxMonitoringTime = 120000; // 2 minutes maximum monitoring
+  const checkInterval = 5000; // Check every 5 seconds
+  const startTime = Date.now();
+
+  const monitorTrade = async () => {
     try {
-      console.log(`[TradeMonitoring] Simulating trade completion check for contract ${contractId}`);
+      console.log(`[TradeMonitoring] Checking contract status for ${contractId}`);
 
-      // For 1-tick trades, simulate completion after a short delay
-      // In a real implementation, you would call the Deriv API directly here
-      const isWin = Math.random() > 0.5; // 50% win rate simulation
-      const profit = isWin ? 1.87 : -2.0; // Typical payout vs loss
-      const exitPrice = Math.random() * 1000 + 200000; // Simulated exit price
+      // Get actual contract status from Deriv API
+      const contractStatus = await getContractStatus(parseInt(contractId), apiToken, accountId);
+      
+      console.log(`[TradeMonitoring] Contract ${contractId} status: ${contractStatus.status}`);
 
-      console.log(`[TradeMonitoring] Contract ${contractId} completed - ${isWin ? 'WON' : 'LOST'} with profit ${profit}`);
+      // Check if trade is completed
+      if (contractStatus.status === 'won' || contractStatus.status === 'lost' || contractStatus.status === 'sold') {
+        // Calculate profit/loss: Sell Price - Buy Price
+        const profit = (contractStatus.sell_price || 0) - contractStatus.buy_price;
+        
+        console.log(`[TradeMonitoring] Contract ${contractId} completed - Status: ${contractStatus.status}, Profit: ${profit}`);
 
-      // Update the trade in database using Deriv API fields
-      await prisma.trade.update({
-        where: { id: dbTradeId },
-        data: {
-          status: 'closed',
-          derivSellPrice: exitPrice,
-          derivSellTime: BigInt(Math.floor(Date.now() / 1000))
-        }
-      });
+        // Update the trade in database with actual Deriv API data
+        await prisma.trade.update({
+          where: { id: dbTradeId },
+          data: {
+            status: 'closed',
+            derivSellPrice: contractStatus.sell_price || 0,
+            derivSellTime: contractStatus.sell_time ? BigInt(contractStatus.sell_time) : BigInt(Math.floor(Date.now() / 1000))
+          }
+        });
 
-      console.log(`[TradeMonitoring] ✅ Updated DB trade ${dbTradeId}: ${isWin ? 'WON' : 'LOST'} with profit ${profit}`);
+        console.log(`[TradeMonitoring] ✅ Updated DB trade ${dbTradeId}: ${contractStatus.status} with profit ${profit}`);
+        return; // Stop monitoring
+      }
+
+      // Continue monitoring if trade is still open and within time limit
+      if (Date.now() - startTime < maxMonitoringTime) {
+        setTimeout(monitorTrade, checkInterval);
+      } else {
+        console.log(`[TradeMonitoring] ⏰ Monitoring timeout for contract ${contractId}, marking as closed`);
+        
+        // Timeout fallback - get final status
+        const finalStatus = await getContractStatus(parseInt(contractId), apiToken, accountId);
+        await prisma.trade.update({
+          where: { id: dbTradeId },
+          data: {
+            status: 'closed',
+            derivSellPrice: finalStatus.sell_price || 0,
+            derivSellTime: finalStatus.sell_time ? BigInt(finalStatus.sell_time) : BigInt(Math.floor(Date.now() / 1000))
+          }
+        });
+      }
 
     } catch (error) {
-      console.error(`[TradeMonitoring] Error updating completed trade ${contractId}:`, error);
+      console.error(`[TradeMonitoring] Error checking contract ${contractId}:`, error);
 
-      // Fallback: mark as closed with neutral status
+      // Fallback: mark as closed with current timestamp
       try {
         await prisma.trade.update({
           where: { id: dbTradeId },
           data: {
             status: 'closed',
-            derivSellPrice: 0, // Use Deriv API field
+            derivSellPrice: 0,
             derivSellTime: BigInt(Math.floor(Date.now() / 1000))
           }
         });
@@ -67,7 +94,10 @@ async function startTradeMonitoring(contractId: string, dbTradeId: string, apiTo
         console.error(`[TradeMonitoring] Critical error in fallback update:`, fallbackError);
       }
     }
-  }, 10000); // Wait 10 seconds for 1-tick trades to complete
+  };
+
+  // Start monitoring with initial delay
+  setTimeout(monitorTrade, 3000); // Wait 3 seconds before first check
 }
 
 // Kept for other parts of the application that might use it.

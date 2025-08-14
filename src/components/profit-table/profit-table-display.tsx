@@ -121,23 +121,25 @@ export const ProfitTableDisplay = forwardRef<ProfitTableDisplayRef, ProfitTableD
 
   const getProfitBadge = (profit?: number, sellPrice?: number) => {
     // For profit table entries, all trades are completed/settled
-    // Don't show "Open" status for any profit table entries
+    // Show Profit/Loss status based on profit/loss calculation (Sell Price - Buy Price)
+    // CRITICAL FIX: If no selling price or sellPrice = 0, treat as loss and display red badge
+
+    // If no selling price or sellPrice = 0, treat as loss
+    if (sellPrice === undefined || sellPrice === null || sellPrice === 0) {
+      return <Badge className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full">Loss</Badge>;
+    }
 
     if (profit === undefined || profit === null) {
-      // If no profit data but we have sell price, show settled
-      if (sellPrice !== undefined && sellPrice !== null) {
-        return <Badge variant="outline">Settled</Badge>;
-      }
-      // If no profit and no sell price, still show as settled since these are from profit table
-      return <Badge variant="outline">Settled</Badge>;
+      // If no profit data, don't show any badge
+      return null;
     }
 
     if (profit > 0) {
-      return <Badge className="bg-green-500 hover:bg-green-600 text-white">+${profit.toFixed(2)}</Badge>;
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-full">Profit</Badge>;
     } else if (profit < 0) {
-      return <Badge className="bg-red-500 hover:bg-red-600 text-white">${profit.toFixed(2)}</Badge>;
+      return <Badge className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full">Loss</Badge>;
     } else {
-      return <Badge variant="outline">$0.00</Badge>;
+      return <Badge variant="outline" className="px-3 py-1 rounded-full">Break Even</Badge>;
     }
   };
 
