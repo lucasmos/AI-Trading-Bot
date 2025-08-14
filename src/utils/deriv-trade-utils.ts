@@ -283,16 +283,11 @@ export function convertToDerivTradeRecord(trade: any): DerivTradeRecord {
   // For losing trades: profit/loss = 0 (no payout) - buy_price (stake lost) = -buy_price
   let profitLoss: number;
   if (sellPrice !== undefined && sellPrice !== null) {
-    // Trade has been settled
+    // Trade has been settled - always calculate as sell_price - buy_price
     profitLoss = roundToDecimalPlaces(sellPrice - buyPrice, 2);
   } else {
-    // For open trades, show potential profit (payout - buy_price) or 0
+    // For open trades, show 0 (no profit/loss yet)
     profitLoss = 0;
-  }
-  
-  // Ensure loss trades show negative values correctly
-  if (sellPrice === 0) {
-    profitLoss = -buyPrice; // Complete loss
   }
 
   // Determine status: prefer database status if available, otherwise derive from sell_price
