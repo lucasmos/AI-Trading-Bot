@@ -84,6 +84,7 @@ export function DerivTradeTable({
             <TableHead>Instrument</TableHead>
             <TableHead>Duration</TableHead>
             <TableHead className="text-right">Buy Price</TableHead>
+            <TableHead className="text-right">Sell Price</TableHead>
             <TableHead className="text-right">Payout</TableHead>
             <TableHead className="text-right">Profit/Loss</TableHead>
             <TableHead className="text-center">Status</TableHead>
@@ -126,6 +127,11 @@ export function DerivTradeTable({
               {/* Buy Price */}
               <TableCell className="text-right font-medium">
                 {formatCurrency(trade.buy_price)}
+              </TableCell>
+
+              {/* Sell Price */}
+              <TableCell className="text-right">
+                {trade.sell_price !== undefined ? formatCurrency(trade.sell_price) : <span className="text-muted-foreground">-</span>}
               </TableCell>
 
               {/* Payout */}

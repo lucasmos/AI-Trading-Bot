@@ -1047,7 +1047,7 @@ export async function executeVolatilityManualTradeLoop(
   const selectedStrategy = options.selectedStrategy || '';
   const bypassPatternValidation = options.bypassPatternValidation || false;
   const preValidatedPattern = options.preValidatedPattern;
-  const tickDuration = options.tickDuration || 1; // Default to 1 tick if not specified
+  const tickDuration = options.tickDuration ?? 1; // Default to 1 tick only if not specified (preserves user selection)
 
   // CRITICAL FIX: Validate required parameters to prevent defaults
   if (!executionMode) {
@@ -1275,7 +1275,7 @@ export async function executeVolatilityAiTradeLoop(
   const predictionDigit = options.predictionDigit || null;
   const selectedStrategy = options.selectedStrategy || '';
   const patternTrigger = options.patternTrigger || null;
-  const tickDuration = options.tickDuration || 1; // Default to 1 tick if not specified
+  const tickDuration = options.tickDuration ?? 1; // Default to 1 tick only if not specified (preserves user selection)
 
   // CRITICAL FIX: Validate required parameters
   if (!executionMode) {
