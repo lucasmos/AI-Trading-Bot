@@ -410,25 +410,27 @@ export default function VolatilityTradingPage() {
           duration: 5000
         });
 
-        // Add to active trades for monitoring
-        const newTrades = results.map(result => ({
-          id: uuidv4(),
-          instrument: currentVolatilityInstrument,
-          tradeType: trigger.contractType === 'DIGITEVEN' ? 'Even' : 'Odd',
-          entryPrice: result.tradeResponse?.entry_spot || currentStreamingPrice,
-          buyPrice: stakePerTrade,
-          profitLoss: undefined,
-          derivContractType: trigger.contractType,
-          userSelectedTradeType: 'DigitsEvenOdd' as UserTradeTypeValue,
-          stake: stakePerTrade,
-          durationSeconds: 5, // 5 ticks
-          reasoning: trigger.reasoning,
-          startTime: Date.now(),
-          status: result.success ? 'active' : 'failed_placement',
-          currentPrice: currentStreamingPrice,
-          pnl: 0,
-          error: result.error
-        }));
+          // Add to active trades for monitoring
+          const newTrades = results.map(result => ({
+            id: uuidv4(),
+            instrument: currentVolatilityInstrument,
+            tradeType: trigger.contractType === 'DIGITEVEN' ? 'Even' : 'Odd',
+            entryPrice: result.tradeResponse?.entry_spot || currentStreamingPrice,
+            buyPrice: stakePerTrade,
+            profitLoss: undefined,
+            derivContractType: trigger.contractType,
+            userSelectedTradeType: 'DigitsEvenOdd' as UserTradeTypeValue,
+            stake: stakePerTrade,
+            durationSeconds: tickDuration, // Use user-selected tick duration
+            reasoning: trigger.reasoning,
+            startTime: Date.now(),
+            status: result.success ? 'active' : 'failed_placement',
+            currentPrice: currentStreamingPrice,
+            pnl: 0,
+            error: result.error,
+            tickDuration: tickDuration, // Include tick duration for pattern trades
+            duration: tickDuration // Include both for compatibility
+          }));
 
         setActiveAutomatedTrades(prev => [...prev, ...newTrades]);
       }
@@ -1272,6 +1274,8 @@ export default function VolatilityTradingPage() {
                 startTime: Date.now(),
                 status: 'active',
                 currentPrice: entryPrice,
+                tickDuration: tickDuration, // Include tick duration for simulated trades
+                duration: tickDuration // Include both for compatibility
               });
             }
             if (newTrades.length === 0) {
