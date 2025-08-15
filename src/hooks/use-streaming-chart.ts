@@ -41,7 +41,7 @@ export function useStreamingChart({
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   
-  const tickStreamRef = useRef(getTickStream());
+  const tickStreamRef = useRef<ReturnType<typeof getTickStream> | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastIndicatorUpdateRef = useRef<number>(0);
   const candleDataRef = useRef<CandleData[]>([]);
@@ -176,7 +176,15 @@ export function useStreamingChart({
     
     try {
       console.log('[useStreamingChart] Loading initial data for', instrument);
-      const candles = await getCandles(instrument, 120, 60);
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 15000);
+      });
+      
+      const candles = await Promise.race([
+        getCandles(instrument, 120, 60),
+        timeoutPromise
+      ]);
       
       if (candles && candles.length > 0) {
         console.log('[useStreamingChart] Loaded', candles.length, 'candles');
@@ -215,37 +223,60 @@ export function useStreamingChart({
 
   // Subscribe to real-time tick updates
   useEffect(() => {
+    // Initialize tick stream lazily
+    if (!tickStreamRef.current) {
+      try {
+        tickStreamRef.current = getTickStream();
+      } catch (error) {
+        console.error('[useStreamingChart] Failed to initialize tick stream:', error);
+        setError('Failed to initialize WebSocket connection');
+        setConnectionStatus('disconnected');
+        return;
+      }
+    }
+    
     const tickStream = tickStreamRef.current;
     
     const updateConnectionStatus = () => {
-      setConnectionStatus(tickStream.getConnectionStatus());
+      if (tickStream) {
+        setConnectionStatus(tickStream.getConnectionStatus());
+      }
     };
     
     updateConnectionStatus();
     const statusInterval = setInterval(updateConnectionStatus, 1000);
     
-    const unsubscribe = tickStream.subscribe(instrument, {
-      onTick: handleTick,
-      onError: (error) => {
-        console.error('[useStreamingChart] Tick stream error:', error);
-        setError(error.message);
-      },
-      onConnect: () => {
-        console.log(`[useStreamingChart] Connected to tick stream for ${instrument}`);
-        setConnectionStatus('connected');
-        setError(null);
-      },
-      onDisconnect: () => {
-        console.log(`[useStreamingChart] Disconnected from tick stream for ${instrument}`);
-        setConnectionStatus('disconnected');
-      }
-    });
+    let unsubscribe: (() => void) | null = null;
     
-    unsubscribeRef.current = unsubscribe;
+    try {
+      unsubscribe = tickStream.subscribe(instrument, {
+        onTick: handleTick,
+        onError: (error) => {
+          console.error('[useStreamingChart] Tick stream error:', error);
+          setError(error.message);
+        },
+        onConnect: () => {
+          console.log(`[useStreamingChart] Connected to tick stream for ${instrument}`);
+          setConnectionStatus('connected');
+          setError(null);
+        },
+        onDisconnect: () => {
+          console.log(`[useStreamingChart] Disconnected from tick stream for ${instrument}`);
+          setConnectionStatus('disconnected');
+        }
+      });
+      
+      unsubscribeRef.current = unsubscribe;
+    } catch (error) {
+      console.error('[useStreamingChart] Failed to subscribe to tick stream:', error);
+      setError('Failed to subscribe to price updates');
+    }
     
     return () => {
       clearInterval(statusInterval);
-      unsubscribe();
+      if (unsubscribe) {
+        unsubscribe();
+      }
       unsubscribeRef.current = null;
     };
   }, [instrument, handleTick]);

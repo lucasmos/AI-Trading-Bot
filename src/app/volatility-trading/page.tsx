@@ -1725,26 +1725,28 @@ export default function VolatilityTradingPage() {
       return;
     }
 
-    // CRITICAL FIX: Prevent multiple subscriptions to the same instrument
-    const subscriptionKey = `ws_${currentVolatilityInstrument}_${selectedUserTradeTypeForLoop}`;
-    if (sessionStorage.getItem(subscriptionKey)) {
-      console.log('[VolatilityPage] WebSocket subscription already active for', currentVolatilityInstrument);
-      return;
-    }
-
-    sessionStorage.setItem(subscriptionKey, 'active');
     console.log('[VolatilityPage] Setting up WebSocket streaming for', currentVolatilityInstrument);
 
     let unsubscribe: (() => void) | null = null;
+    let isSubscribed = false;
 
     // Import the tick stream service and set up subscription
     const setupWebSocketStreaming = async () => {
       try {
         const { getTickStream } = await import('@/services/deriv-tick-stream');
-        const tickStream = getTickStream();
+        let tickStream;
+        
+        // Safely get tick stream instance
+        try {
+          tickStream = getTickStream();
+        } catch (error) {
+          console.error('[VolatilityPage] Failed to get tick stream instance:', error);
+          return;
+        }
 
         const handleTick = (tick: PriceTick) => {
-          console.log('[VolatilityPage] Received tick:', tick);
+          // Reduce console logging to prevent performance issues
+          // console.log('[VolatilityPage] Received tick:', tick);
 
           const decimalPlaces = getInstrumentDecimalPlaces(currentVolatilityInstrument);
           const priceStr = tick.price.toFixed(decimalPlaces);
@@ -1783,13 +1785,14 @@ export default function VolatilityTradingPage() {
 
             // Manual Mode: Real-time Pattern Monitoring (only if manual pattern monitoring is active)
             if (isManualPatternMonitoring && isManualMode && selectedUserTradeTypeForLoop === 'DigitsEvenOdd' && selectedStrategy) {
-              console.log('[VolatilityPage] Pattern monitoring active - analyzing tick:', {
-                currentDigit: lastDigit,
-                strategy: selectedStrategy,
-                sequenceLength: finalSequence.length,
-                isPatternMonitoring,
-                monitoringTimeoutId: !!monitoringTimeoutId
-              });
+              // Reduce console logging to prevent performance issues
+              // console.log('[VolatilityPage] Pattern monitoring active - analyzing tick:', {
+              //   currentDigit: lastDigit,
+              //   strategy: selectedStrategy,
+              //   sequenceLength: finalSequence.length,
+              //   isPatternMonitoring,
+              //   monitoringTimeoutId: !!monitoringTimeoutId
+              // });
 
               // Analyze current sequence for pattern detection
               if (finalSequence.length >= 4) {
@@ -1967,6 +1970,7 @@ export default function VolatilityTradingPage() {
           onDisconnect: handleDisconnect
         });
 
+        isSubscribed = true;
         console.log('[VolatilityPage] WebSocket streaming setup complete for', currentVolatilityInstrument);
       } catch (error) {
         console.error('[VolatilityPage] Error setting up WebSocket streaming:', error);
@@ -2003,13 +2007,10 @@ export default function VolatilityTradingPage() {
 
     // Cleanup function
     return () => {
-      // CRITICAL FIX: Clean up subscription tracking
-      const subscriptionKey = `ws_${currentVolatilityInstrument}_${selectedUserTradeTypeForLoop}`;
-      sessionStorage.removeItem(subscriptionKey);
-
-      if (unsubscribe) {
+      if (unsubscribe && isSubscribed) {
         console.log('[VolatilityPage] Unsubscribing from WebSocket tick stream for', currentVolatilityInstrument);
         unsubscribe();
+        isSubscribed = false;
       }
     };
   }, [selectedUserTradeTypeForLoop, currentVolatilityInstrument, isPatternMonitoring, selectedStrategy, monitoringTimeoutId, executePatternDetectedTrade]);
