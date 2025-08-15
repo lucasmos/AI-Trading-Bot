@@ -202,6 +202,9 @@ export function TickBasedTradesDisplay({
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [expandedContracts, setExpandedContracts] = useState<Set<number>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttempts = useRef(0);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   const sessionStatsRef = useRef({ total: 0, won: 0, lost: 0, profit: 0 });
 
@@ -303,42 +306,89 @@ export function TickBasedTradesDisplay({
 
   // Connect to WebSocket for real-time updates
   const connectWebSocket = useCallback(() => {
-    if (!apiToken || wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Prevent multiple connection attempts
+    if (wsRef.current?.readyState === WebSocket.CONNECTING || 
+        wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[TickBasedDisplay] WebSocket already connected or connecting');
+      return;
+    }
+
+    // Ensure we have a valid API token
+    if (!apiToken) {
+      console.warn('[TickBasedDisplay] No API token available');
+      setConnectionStatus('disconnected');
+      return;
+    }
 
     setConnectionStatus('connecting');
-    const ws = new WebSocket('wss://ws.binaryws.com/websockets/v3?app_id=80447');
     
-    ws.onopen = () => {
-      console.log('[TickBasedDisplay] WebSocket connected');
-      setConnectionStatus('connected');
+    try {
+      // Use correct WebSocket URL - Deriv moved from binaryws.com to derivws.com
+      const wsUrl = process.env.NEXT_PUBLIC_DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3';
+      const appId = process.env.NEXT_PUBLIC_DERIV_APP_ID || '80447';
+      const fullUrl = `${wsUrl}?app_id=${appId}`;
       
-      // Authorize
-      ws.send(JSON.stringify({
-        authorize: apiToken
-      }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+      console.log('[TickBasedDisplay] Connecting to WebSocket:', fullUrl);
+      const ws = new WebSocket(fullUrl);
+      
+      // Set connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.error('[TickBasedDisplay] Connection timeout');
+          ws.close();
+          setConnectionStatus('error');
+        }
+      }, 10000); // 10 second timeout
+      
+      ws.onopen = () => {
+        clearTimeout(connectionTimeout);
+        console.log('[TickBasedDisplay] WebSocket connected');
+        setConnectionStatus('connected');
         
-        if (data.error) {
-          console.error('[TickBasedDisplay] WebSocket error:', data.error);
-          if (data.error.code === 'AuthorizationRequired') {
-            setConnectionStatus('error');
-          }
-          return;
-        }
+        // Authorize with token
+        console.log('[TickBasedDisplay] Sending authorization');
+        ws.send(JSON.stringify({
+          authorize: apiToken
+        }));
+      };
 
-        // Handle authorization response
-        if (data.msg_type === 'authorize' && data.authorize) {
-          console.log('[TickBasedDisplay] Authorized, subscribing to contracts');
-          // Subscribe to open contracts
-          ws.send(JSON.stringify({
-            proposal_open_contract: 1,
-            subscribe: 1
-          }));
-        }
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.error) {
+            console.error('[TickBasedDisplay] API error:', data.error);
+            
+            // Handle specific error codes
+            if (data.error.code === 'AuthorizationRequired' || 
+                data.error.code === 'InvalidToken') {
+              setConnectionStatus('error');
+              toast({
+                title: 'Authentication Error',
+                description: data.error.message || 'Invalid or expired API token',
+                variant: 'destructive',
+              });
+            } else if (data.error.code === 'RateLimit') {
+              console.warn('[TickBasedDisplay] Rate limit hit, will retry later');
+            }
+            return;
+          }
+
+          // Handle authorization response
+          if (data.msg_type === 'authorize' && data.authorize) {
+            console.log('[TickBasedDisplay] Authorized successfully');
+            
+            // Add small delay before subscribing to avoid rate limits
+            setTimeout(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                console.log('[TickBasedDisplay] Subscribing to open contracts');
+                ws.send(JSON.stringify({
+                  proposal_open_contract: 1,
+                  subscribe: 1
+                }));
+              }
+            }, 500);
+          }
 
         // Handle contract updates
         if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
@@ -385,40 +435,100 @@ export function TickBasedTradesDisplay({
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('[TickBasedDisplay] WebSocket error:', error);
-      setConnectionStatus('error');
-    };
+      ws.onerror = (error) => {
+        clearTimeout(connectionTimeout);
+        console.error('[TickBasedDisplay] WebSocket error event');
+        setConnectionStatus('error');
+        
+        // Don't log the error object directly as it may not have useful info
+        // The actual error details will come through onclose or onmessage
+      };
 
-    ws.onclose = () => {
-      console.log('[TickBasedDisplay] WebSocket disconnected');
-      setConnectionStatus('disconnected');
-      wsRef.current = null;
-      
-      // Attempt to reconnect after 3 seconds
-      setTimeout(() => {
-        if (apiToken) {
-          connectWebSocket();
+      ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        console.log(`[TickBasedDisplay] WebSocket closed: Code ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
+        setConnectionStatus('disconnected');
+        wsRef.current = null;
+        
+        // Determine if we should reconnect based on close code
+        const shouldReconnect = event.code !== 1000 && // Not a normal closure
+                               event.code !== 1001 && // Not going away
+                               event.code !== 1008 && // Not policy violation
+                               apiToken; // Still have token
+        
+        if (shouldReconnect) {
+          // Exponential backoff for reconnection
+          const delay = Math.min(3000 * Math.pow(2, reconnectAttempts.current), 30000);
+          console.log(`[TickBasedDisplay] Will reconnect in ${delay}ms (attempt ${reconnectAttempts.current + 1})`);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (apiToken && reconnectAttempts.current < 5) {
+              reconnectAttempts.current++;
+              connectWebSocket();
+            } else {
+              console.error('[TickBasedDisplay] Max reconnection attempts reached');
+              toast({
+                title: 'Connection Failed',
+                description: 'Unable to establish WebSocket connection. Please refresh the page.',
+                variant: 'destructive',
+              });
+            }
+          }, delay);
         }
-      }, 3000);
-    };
+      };
 
-    wsRef.current = ws;
+      wsRef.current = ws;
+      
+    } catch (error) {
+      console.error('[TickBasedDisplay] Failed to create WebSocket:', error);
+      setConnectionStatus('error');
+      
+      if (error instanceof Error) {
+        toast({
+          title: 'Connection Error',
+          description: error.message,
+          variant: 'destructive',
+        });
+      }
+    }
   }, [apiToken, filterTradeTypes, toast]);
+
+  // Set up ping interval to keep connection alive
+  const setupPing = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+    }
+    
+    pingIntervalRef.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ ping: 1 }));
+      }
+    }, 30000); // Ping every 30 seconds
+  }, []);
 
   // Connect WebSocket on mount
   useEffect(() => {
-    if (apiToken) {
+    // Only connect if we have a token and are in browser environment
+    if (apiToken && typeof window !== 'undefined') {
+      // Reset reconnection attempts on new token
+      reconnectAttempts.current = 0;
       connectWebSocket();
     }
 
     return () => {
+      // Cleanup on unmount
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
       if (wsRef.current) {
-        wsRef.current.close();
+        wsRef.current.close(1000, 'Component unmounting');
         wsRef.current = null;
       }
     };
-  }, [apiToken, connectWebSocket]);
+  }, [apiToken, connectWebSocket, setupPing]);
 
   // Toggle contract expansion
   const toggleContractExpansion = (contractId: number) => {
