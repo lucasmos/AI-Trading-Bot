@@ -6,7 +6,8 @@ import {
   PlaceTradeResponse,
   instrumentToDerivSymbol,
   getCandles,
-  getTicks
+  getTicks,
+  getContractStatus  // CRITICAL FIX: Import missing function for trade monitoring
 } from '@/services/deriv';
 import { prisma } from '@/lib/db';
 import {
