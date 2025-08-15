@@ -204,20 +204,20 @@ export function CompactDerivTradeTable({
 }: DerivTradeTableProps) {
   
   const getStatusBadge = (profitLoss: number, sellPrice?: number) => {
-    // For all trades, only show Profit or Loss based on P/L value
-    // CRITICAL FIX: If no selling price or sellPrice = 0, treat as loss and display red badge
+    // CRITICAL FIX: Proper status badge logic based on sell_price and profit/loss
     
-    // If no selling price or sellPrice = 0, treat as loss
-    if (sellPrice === undefined || sellPrice === null || sellPrice === 0) {
-      return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Loss</Badge>;
+    // If trade is not settled (no sell price), show "Open" status
+    if (sellPrice === undefined || sellPrice === null) {
+      return <Badge variant="secondary" className="bg-gray-500 hover:bg-gray-600 text-white text-xs px-3 py-1 rounded-full">Open</Badge>;
     }
 
+    // Trade is settled, show status based on profit/loss
     if (profitLoss > 0) {
       return <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded-full">Profit</Badge>;
     } else if (profitLoss < 0) {
       return <Badge className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded-full">Loss</Badge>;
     } else {
-      // For zero P/L with valid sell price, show Break Even
+      // For zero P/L, show Break Even
       return <Badge variant="outline" className="text-xs px-3 py-1 rounded-full">Break Even</Badge>;
     }
   };
@@ -227,7 +227,12 @@ export function CompactDerivTradeTable({
     return `$${value.toFixed(2)}`;
   };
 
-  const formatProfitLoss = (profitLoss: number) => {
+  const formatProfitLoss = (profitLoss: number | undefined, sellPrice?: number) => {
+    // If trade is not settled (no sell price), show dash
+    if (sellPrice === undefined || sellPrice === null || profitLoss === undefined) {
+      return <span className="text-gray-500 text-sm">–</span>;
+    }
+    
     const formatted = formatCurrency(Math.abs(profitLoss));
     if (profitLoss > 0) {
       return <span className="text-green-600 font-medium text-sm">+{formatted}</span>;
@@ -301,7 +306,7 @@ export function CompactDerivTradeTable({
 
               {/* Profit/Loss */}
               <TableCell className="text-right">
-                {formatProfitLoss(trade.profit_loss)}
+                {formatProfitLoss(trade.profit_loss, trade.sell_price)}
               </TableCell>
 
               {/* Status */}

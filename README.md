@@ -28,6 +28,38 @@ AI-Trading-Bot is an advanced algorithmic trading platform that leverages artifi
 - **Customizable Settings**: Personalize your trading experience
 - **Payment Processing**: Integrated payment solutions for account funding
 
+## Recent Fixes and Improvements (August 2025)
+
+### Volatility Trading Page Fixes
+
+#### Issue 1: Profit/Loss Calculation Accuracy ✅
+- **Problem**: Profit/loss values were inaccurate due to manual calculations instead of using Deriv API response data
+- **Solution**: Updated trade monitoring to use `contractStatusData.profit` and `sell_price` directly from Deriv API
+- **Impact**: Accurate P/L display, proper green/red badge colors based on actual profit/loss
+
+#### Issue 2: Tick Data Recording and Multi-tick Support ✅ 
+- **Problem**: Tick duration wasn't properly passed from UI to execution layer, causing incorrect trade durations
+- **Solution**: 
+  - Fixed `tickDuration` parameter passing in manual execution calls
+  - Ensured tick duration is preserved through entire execution chain
+  - Added proper tracking of entry/exit prices for multi-tick trades
+- **Impact**: Correct handling of 1-10 tick duration trades with proper entry/exit price tracking
+
+#### Issue 3: Badge Display Logic in Trade Tables ✅
+- **Problem**: Inconsistent badge colors and states for open/profitable/losing trades
+- **Solution**: 
+  - Updated `CompactDerivTradeTable` to show "Open" (gray) for unsettled trades
+  - Green badges for profits > 0
+  - Red badges for losses < 0
+  - "Break Even" for zero P/L trades
+- **Impact**: Clear visual distinction between trade states, consistent UX across the platform
+
+#### Additional Improvements
+- **Database**: Ensured `derivSellPrice` field properly stores sell prices when trades settle
+- **Testing**: Added comprehensive Jest tests for tick duration regression testing
+- **Type Safety**: Improved TypeScript interfaces for trade execution options
+- **Error Handling**: Better WebSocket error handling and pattern monitoring timeout management
+
 ## Technology Stack
 
 ### Frontend

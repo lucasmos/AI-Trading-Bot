@@ -729,6 +729,7 @@ export default function VolatilityTradingPage() {
               selectedStrategy: strategy,
               bypassPatternValidation: true, // CRITICAL: Skip pattern validation since we already detected it
               isManualMode: true, // CRITICAL: Flag to prevent AI execution during manual mode
+              tickDuration: tickDuration, // CRITICAL FIX: Pass user-selected tick duration
               preValidatedPattern: {
                 shouldExecute: true,
                 contractType: strategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD',
@@ -787,12 +788,14 @@ export default function VolatilityTradingPage() {
           derivContractType: strategy === 'Even' ? 'DIGITEVEN' : 'DIGITODD',
           userSelectedTradeType: 'DigitsEvenOdd' as UserTradeTypeValue,
           stake: stakePerTrade,
-          durationSeconds: executionMode === 'turbo' ? 1 : 5,
+          durationSeconds: tickDuration, // CRITICAL FIX: Use actual tick duration instead of hardcoded value
           reasoning: `Manual pattern detection: ${consecutiveCount} consecutive → ${triggerDigit}`,
           startTime: Date.now(),
           status: 'active' as const,
           currentPrice: currentStreamingPrice,
           pnl: 0,
+          tickDuration: tickDuration, // Add tick duration property
+          duration: tickDuration, // Add both for compatibility
           error: undefined
         }));
 
@@ -1430,18 +1433,19 @@ export default function VolatilityTradingPage() {
             const newLocalStatus = mapDerivStatusToLocal(contractStatusData.status);
             const isSettled = newLocalStatus === 'won' || newLocalStatus === 'lost_duration' || newLocalStatus === 'closed_manual';
 
+            // CRITICAL FIX: Use sell_price and profit from Deriv API for accurate P/L calculation
             const updatedTrade: ActiveAutomatedVolatilityTrade = {
               ...trade,
               status: newLocalStatus,
               currentPrice: contractStatusData.current_spot ?? trade.currentPrice,
 
-              // Update new Deriv-style fields
-              exitPrice: isSettled ? contractStatusData.current_spot : undefined,
-              profitLoss: isSettled ? contractStatusData.profit : undefined,
+              // Update new Deriv-style fields with correct sell_price and profit
+              exitPrice: isSettled ? (contractStatusData.sell_price ?? contractStatusData.current_spot) : undefined,
+              profitLoss: isSettled ? (contractStatusData.profit ?? (contractStatusData.sell_price ? contractStatusData.sell_price - trade.buyPrice : undefined)) : undefined,
               endTime: isSettled ? Date.now() : undefined,
 
               // Legacy field for backward compatibility
-              pnl: isSettled ? contractStatusData.profit : undefined,
+              pnl: isSettled ? (contractStatusData.profit ?? (contractStatusData.sell_price ? contractStatusData.sell_price - trade.buyPrice : undefined)) : undefined,
             };
 
             if (isSettled) {
