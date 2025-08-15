@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CompactDerivTradeTable } from '@/components/trade-history/deriv-trade-table';
+import { CompactEnhancedActiveTradesTable } from '@/components/trade-history/enhanced-active-trades-table';
 import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
 
 import { getCandles, getContractStatus } from '@/services/deriv';
@@ -2735,8 +2735,23 @@ export default function VolatilityTradingPage() {
                 ) : activeAutomatedTrades.length === 0 && isAutoTradingActive && isAiLoading ? (
                      <p className="text-muted-foreground text-center py-4">AI is analyzing markets...</p>
                 ) : activeAutomatedTrades.length > 0 ? (
-                  <CompactDerivTradeTable
+                  <CompactEnhancedActiveTradesTable
                     trades={activeAutomatedTrades.map(trade => convertToDerivTradeRecord(trade))}
+                    accountType={selectedDerivAccountType || 'demo'}
+                    apiToken={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken}
+                    accountId={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId}
+                    executionMode={isManualMode ? 'Manual' : 'AI'}
+                    onTradeComplete={(summary) => {
+                      console.log('[VolatilityTrading] Session complete:', summary);
+                      // Update profits claimable if needed
+                      setProfitsClaimable(prev => ({
+                        ...prev,
+                        totalNetProfit: prev.totalNetProfit + summary.totalProfitLoss,
+                        tradeCount: prev.tradeCount + summary.totalTrades,
+                        winningTrades: prev.winningTrades + summary.wonTrades,
+                        losingTrades: prev.losingTrades + summary.lostTrades
+                      }));
+                    }}
                     maxHeight="400px"
                     emptyMessage="No active AI trades. Start a session to begin."
                   />
