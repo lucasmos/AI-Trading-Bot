@@ -45,13 +45,41 @@ async function startTradeMonitoring(contractId: string, dbTradeId: string, apiTo
         
         console.log(`[TradeMonitoring] Contract ${contractId} completed - Status: ${contractStatus.status}, Profit: ${profit}`);
 
-        // Update the trade in database with actual Deriv API data
+        // Prepare tick data for storage if available
+        const tickData: any = {};
+        if (contractStatus.entry_tick !== undefined) {
+          tickData.entryTick = contractStatus.entry_tick;
+          tickData.entryTickDisplay = contractStatus.entry_tick_display_value;
+          tickData.entryTickTime = contractStatus.entry_tick_time ? BigInt(contractStatus.entry_tick_time) : undefined;
+        }
+        if (contractStatus.exit_tick !== undefined) {
+          tickData.exitTick = contractStatus.exit_tick;
+          tickData.exitTickDisplay = contractStatus.exit_tick_display_value;
+          tickData.exitTickTime = contractStatus.exit_tick_time ? BigInt(contractStatus.exit_tick_time) : undefined;
+        }
+        if (contractStatus.current_spot !== undefined) {
+          tickData.currentSpot = contractStatus.current_spot;
+          tickData.currentSpotDisplay = contractStatus.current_spot_display_value;
+          tickData.currentSpotTime = contractStatus.current_spot_time ? BigInt(contractStatus.current_spot_time) : undefined;
+        }
+        if (contractStatus.bid_price !== undefined) {
+          tickData.bidPrice = contractStatus.bid_price;
+        }
+
+        // Update the trade in database with actual Deriv API data including tick information
         await prisma.trade.update({
           where: { id: dbTradeId },
           data: {
             status: 'closed',
             derivSellPrice: contractStatus.sell_price || 0,
-            derivSellTime: contractStatus.sell_time ? BigInt(contractStatus.sell_time) : BigInt(Math.floor(Date.now() / 1000))
+            derivSellTime: contractStatus.sell_time ? BigInt(contractStatus.sell_time) : BigInt(Math.floor(Date.now() / 1000)),
+            ...tickData,
+            // Store audit and tick stream data in metadata
+            metadata: contractStatus.audit_details || contractStatus.tick_stream ? {
+              ...(await prisma.trade.findUnique({ where: { id: dbTradeId }, select: { metadata: true } }))?.metadata as any,
+              audit_details: contractStatus.audit_details,
+              tick_stream: contractStatus.tick_stream
+            } : undefined
           }
         });
 

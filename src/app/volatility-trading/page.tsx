@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CompactEnhancedActiveTradesTable } from '@/components/trade-history/enhanced-active-trades-table';
+import { ComprehensiveActiveTradesDisplay } from '@/components/trade-history/comprehensive-active-trades-display';
+import { TickBasedTradesDisplay } from '@/components/trade-history/tick-based-trades-display';
 import { convertToDerivTradeRecord } from '@/utils/deriv-trade-utils';
 
 import { getCandles, getContractStatus } from '@/services/deriv';
@@ -2730,33 +2732,55 @@ export default function VolatilityTradingPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                {activeAutomatedTrades.length === 0 && !isAutoTradingActive && !isAiLoading ? (
-                    <p className="text-muted-foreground text-center py-4">No active AI trades. Start a session to begin.</p>
-                ) : activeAutomatedTrades.length === 0 && isAutoTradingActive && isAiLoading ? (
-                     <p className="text-muted-foreground text-center py-4">AI is analyzing markets...</p>
-                ) : activeAutomatedTrades.length > 0 ? (
-                  <CompactEnhancedActiveTradesTable
-                    trades={activeAutomatedTrades.map(trade => convertToDerivTradeRecord(trade))}
-                    accountType={selectedDerivAccountType || 'demo'}
+                {/* Use tick-based display for Even/Odd, Over/Under, Rise/Fall trades */}
+                {(selectedUserTradeTypeForLoop === 'DigitsEvenOdd' || 
+                  selectedUserTradeTypeForLoop === 'DigitsOverUnder' || 
+                  selectedUserTradeTypeForLoop === 'RiseFall') ? (
+                  <TickBasedTradesDisplay
                     apiToken={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken}
                     accountId={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId}
+                    accountType={selectedDerivAccountType || 'demo'}
                     executionMode={isManualMode ? 'Manual' : 'AI'}
-                    onTradeComplete={(summary) => {
+                    filterTradeTypes={
+                      selectedUserTradeTypeForLoop === 'DigitsEvenOdd' ? ['DIGITEVEN', 'DIGITODD'] :
+                      selectedUserTradeTypeForLoop === 'DigitsOverUnder' ? ['DIGITOVER', 'DIGITUNDER'] :
+                      ['CALL', 'PUT', 'CALLE', 'PUTE']
+                    }
+                    onSessionComplete={(summary) => {
                       console.log('[VolatilityTrading] Session complete:', summary);
                       // Update profits claimable if needed
-                      setProfitsClaimable(prev => ({
-                        ...prev,
-                        totalNetProfit: prev.totalNetProfit + summary.totalProfitLoss,
-                        tradeCount: prev.tradeCount + summary.totalTrades,
-                        winningTrades: prev.winningTrades + summary.wonTrades,
-                        losingTrades: prev.losingTrades + summary.lostTrades
-                      }));
+                      if (summary?.totalProfitLoss !== undefined) {
+                        setProfitsClaimable(prev => ({
+                          ...prev,
+                          totalNetProfit: prev.totalNetProfit + (summary.totalProfitLoss || 0),
+                          tradeCount: prev.tradeCount + (summary.totalTrades || 0),
+                          winningTrades: prev.winningTrades + (summary.wonTrades || 0),
+                          losingTrades: prev.losingTrades + (summary.lostTrades || 0)
+                        }));
+                      }
                     }}
-                    maxHeight="400px"
-                    emptyMessage="No active AI trades. Start a session to begin."
                   />
                 ) : (
-                     <p className="text-muted-foreground text-center py-4">No active AI trades. AI might not have found suitable opportunities.</p>
+                  /* Use comprehensive display for other trade types */
+                  <ComprehensiveActiveTradesDisplay
+                    apiToken={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoApiToken : userInfo?.derivRealApiToken}
+                    accountId={selectedDerivAccountType === 'demo' ? userInfo?.derivDemoAccountId : userInfo?.derivRealAccountId}
+                    accountType={selectedDerivAccountType || 'demo'}
+                    executionMode={isManualMode ? 'Manual' : 'AI'}
+                    onSessionComplete={(summary) => {
+                      console.log('[VolatilityTrading] Session complete:', summary);
+                      // Update profits claimable if needed
+                      if (summary?.totalProfitLoss !== undefined) {
+                        setProfitsClaimable(prev => ({
+                          ...prev,
+                          totalNetProfit: prev.totalNetProfit + (summary.totalProfitLoss || 0),
+                          tradeCount: prev.tradeCount + (summary.totalTrades || 0),
+                          winningTrades: prev.winningTrades + (summary.wonTrades || 0),
+                          losingTrades: prev.losingTrades + (summary.lostTrades || 0)
+                        }));
+                      }
+                    }}
+                  />
                 )}
               </CardContent>
             </Card>

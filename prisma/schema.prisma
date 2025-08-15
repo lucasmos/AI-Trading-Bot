@@ -158,6 +158,30 @@ model Trade {
   metadata              Json?
   derivContractId       BigInt?
   derivTransactionId    BigInt?
+  // New fields for tick-based contracts (Even/Odd, Over/Under, Rise/Fall)
+  entrySpot             Float?
+  entrySpotDisplay      String?
+  entryTick             Float?
+  entryTickDisplay      String?
+  entryTickTime         BigInt?
+  exitTick              Float?
+  exitTickDisplay       String?
+  exitTickTime          BigInt?
+  barrier               String?
+  highBarrier           String?
+  lowBarrier            String?
+  tickCount             Int?
+  ticksPassed           Int?
+  selectedTick          Int?
+  selectedSpot          Float?
+  currentSpot           Float?
+  currentSpotDisplay    String?
+  currentSpotTime       BigInt?
+  bidPrice              Float?
+  auditDetails          Json?   // Store tick history and audit trail
+  tickStream            Json?   // Store complete tick stream for analysis
+  validationParams      Json?   // Store validation parameters
+  isTickTrade           Boolean @default(false) // Flag for tick-based trades
   user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
