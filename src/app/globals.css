@@ -56,7 +56,7 @@ body {
   }
 
   .dark {
-    /* Define dark theme if needed, for now keep light theme focus based on prompt */
+    /* Standard dark theme */
     --background: 225 20% 15%; /* Dark Blue */
     --foreground: 210 20% 96%; /* Light Gray */
 
@@ -95,6 +95,54 @@ body {
     --sidebar-border: 225 20% 22%;
     --sidebar-ring: 174 45% 58%;
   }
+
+  .amoled {
+    /* AMOLED Black theme - true black #000000 */
+    --background: 0 0% 0%; /* True Black #000000 */
+    --foreground: 210 20% 98%; /* Slightly brighter for better contrast on pure black */
+
+    --card: 0 0% 0%; /* True Black */
+    --card-foreground: 210 20% 98%; /* Bright text */
+
+    --popover: 0 0% 0%; /* True Black */
+    --popover-foreground: 210 20% 98%; /* Bright text */
+
+    --primary: 174 50% 58%; /* Brighter Teal for better visibility */
+    --primary-foreground: 0 0% 0%; /* Black text on Teal */
+
+    --secondary: 0 0% 15%; /* Very dark gray for subtle distinction */
+    --secondary-foreground: 210 20% 98%; /* Bright text */
+
+    --muted: 0 0% 10%; /* Subtle dark gray */
+    --muted-foreground: 210 20% 70%; /* Brighter muted text for contrast */
+
+    --accent: 174 55% 65%; /* Even brighter Teal for accent */
+    --accent-foreground: 0 0% 0%; /* Black text on accent */
+
+    --destructive: 0 70% 45%; /* Brighter red for visibility */
+    --destructive-foreground: 0 0% 100%; /* White text */
+
+    --border: 0 0% 20%; /* Lighter border for visibility */
+    --input: 0 0% 8%; /* Slightly elevated from pure black */
+    --ring: 174 55% 65%; /* Bright Teal for focus rings */
+
+    /* AMOLED Sidebar specific theme variables */
+    --sidebar-background: 0 0% 0%; /* True Black */
+    --sidebar-foreground: 210 20% 95%; /* Bright text */
+    --sidebar-primary: 174 55% 65%; /* Bright Teal */
+    --sidebar-primary-foreground: 0 0% 0%; /* Black text on Teal */
+    --sidebar-accent: 0 0% 10%; /* Subtle hover background */
+    --sidebar-accent-foreground: 210 20% 100%; /* Pure white on hover */
+    --sidebar-border: 0 0% 15%; /* Visible border */
+    --sidebar-ring: 174 55% 65%; /* Bright Teal for focus */
+
+    /* Chart colors optimized for AMOLED */
+    --chart-1: 12 80% 65%; /* Brighter colors for visibility */
+    --chart-2: 173 60% 50%;
+    --chart-3: 197 45% 40%;
+    --chart-4: 43 80% 70%;
+    --chart-5: 27 90% 70%;
+  }
 }
 
 @layer base {
@@ -103,5 +151,18 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  
+  /* Smooth transitions for theme switching */
+  html {
+    transition: background-color 0.25s ease;
+  }
+  
+  /* Apply transitions to common elements */
+  .transition-colors {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
