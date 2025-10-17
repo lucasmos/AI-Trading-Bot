@@ -2197,20 +2197,20 @@ export default function VolatilityTradingPage() {
                   id="bulk-trades"
                   type="number"
                   min="1"
-                  max="20"
+                  max="100"
                   value={numberOfBulkTrades}
                   onChange={(e) => {
                     const value = parseInt(e.target.value);
-                    if (!isNaN(value) && value >= 1 && value <= 20) {
+                    if (!isNaN(value) && value >= 1 && value <= 100) {
                       setNumberOfBulkTrades(value);
                     }
                   }}
                   disabled={isAutoTradingActive || isAiLoading}
                   className="text-center"
-                  placeholder="Enter number (1-20)"
+                  placeholder="Enter number (1-100)"
                 />
                 <div className="text-xs text-muted-foreground">
-                  Enter a number between 1 and 20 trades per session
+                  Enter a number between 1 and 100 trades per session (1-4: 2-tick split, 5-100: optimized distribution)
                 </div>
               </div>
                <div>

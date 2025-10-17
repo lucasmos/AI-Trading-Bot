@@ -17,6 +17,7 @@ import {
 import { UserTradeType } from '@/types/ai-shared-types';
 import { calculateAllIndicators } from '@/lib/technical-analysis';
 import { generateShortcode, calculatePayout } from '@/utils/deriv-trade-utils';
+import { getTradeDistribution, validateDistribution, isValidTradeCount } from '@/utils/trade-distribution';
 import { VolatilityInstrumentType, PriceTick, CandleData, InstrumentIndicatorData, ForexCommodityInstrumentType, AutomatedTradingStrategyOutput } from '@/types';
 import { getInstrumentDecimalPlaces } from '@/lib/utils';
 
@@ -236,6 +237,17 @@ async function executeManualTurboMode(
   sharedPricePoint: number,
   tickDuration: number = 1
 ): Promise<VolatilityTradeExecutionResult[]> {
+  // VALIDATION: Check if trade count is valid (1-100 for Turbo mode)
+  if (numberOfTrades < 1 || numberOfTrades > 100) {
+    console.error(`[TradeAction/TurboMode] ❌ Invalid trade count: ${numberOfTrades}. Must be between 1 and 100.`);
+    return [{
+      success: false,
+      instrument: instrument,
+      tradeParams: {} as TradeDetails,
+      error: `Invalid trade count: ${numberOfTrades}. Turbo mode supports 1-100 trades.`,
+      aiReasoning: 'TURBO MANUAL: Validation failed - invalid trade count'
+    }];
+  }
 
   console.log(`[TradeAction/TurboMode] 🚀 Executing ${numberOfTrades} trades simultaneously`);
   console.log(`[TradeAction/TurboMode] Shared Price Point: ${sharedPricePoint} (Entry = Exit for all trades)`);
@@ -243,6 +255,23 @@ async function executeManualTurboMode(
 
   const results: VolatilityTradeExecutionResult[] = [];
   const executionTimestamp = Date.now();
+
+  // CRITICAL FIX: Handle distribution for 5-100 trades (for 1-4 trades, no distribution needed)
+  if (numberOfTrades >= 5) {
+    try {
+      const distribution = getTradeDistribution(numberOfTrades);
+      if (!validateDistribution(numberOfTrades, distribution)) {
+        console.error(`[TradeAction/TurboMode] ⚠️ Distribution validation warning for ${numberOfTrades} trades, but proceeding with execution`);
+      } else {
+        console.log(`[TradeAction/TurboMode] Distribution retrieved for ${numberOfTrades} trades: ${distribution.join(', ')} (for reference only - all trades execute simultaneously)`);
+      }
+    } catch (error: any) {
+      console.warn(`[TradeAction/TurboMode] ⚠️ Warning getting distribution for ${numberOfTrades} trades:`, error.message);
+      // Continue execution even if distribution retrieval fails
+    }
+  } else {
+    console.log(`[TradeAction/TurboMode] Using direct 1-4 trade execution (${numberOfTrades} trades - no distribution table needed)`);
+  }
 
   // CRITICAL FIX: Execute all trades in parallel with identical parameters
   const tradePromises = Array.from({ length: numberOfTrades }, async (_, index) => {
@@ -297,7 +326,7 @@ async function executeManualTurboMode(
           derivUnderlyingSymbol: instrumentToDerivSymbol(instrument),
           derivDurationType: 'ticks',
           derivAppId: 80447, // Our app ID
-          derivTransactionId: BigInt(tradeResponse.transaction_id || tradeResponse.contract_id), // Use actual transaction ID from Deriv API
+          derivTransactionId: BigInt(String(tradeResponse.contract_id)), // Use contract_id as fallback for transaction_id
 
           metadata: {
             instrument: instrument,
@@ -362,7 +391,7 @@ async function executeManualTurboMode(
   return results;
 }
 
-// CRITICAL FIX: Safe Mode execution - Two-tick strategy with different entry/exit prices
+// CRITICAL FIX: Safe Mode execution - Distribution-based strategy with different entry/exit prices
 async function executeManualSafeMode(
   instrument: VolatilityInstrumentType,
   contractType: 'DIGITEVEN' | 'DIGITODD',
@@ -376,69 +405,169 @@ async function executeManualSafeMode(
   initialPricePoint: number,
   tickDuration: number = 1
 ): Promise<VolatilityTradeExecutionResult[]> {
+  // VALIDATION: Check if trade count is valid (1-100 for Safe mode)
+  if (numberOfTrades < 1 || numberOfTrades > 100) {
+    console.error(`[TradeAction/SafeMode] ❌ Invalid trade count: ${numberOfTrades}. Must be between 1 and 100.`);
+    return [{
+      success: false,
+      instrument: instrument,
+      tradeParams: {} as TradeDetails,
+      error: `Invalid trade count: ${numberOfTrades}. Safe mode supports 1-100 trades.`,
+      aiReasoning: 'SAFE MANUAL: Validation failed - invalid trade count'
+    }];
+  }
 
-  console.log(`[TradeAction/SafeMode] 🛡️ Implementing two-tick execution strategy for ${numberOfTrades} trades`);
+  console.log(`[TradeAction/SafeMode] 🛡️ Implementing execution strategy for ${numberOfTrades} trades`);
   console.log(`[TradeAction/SafeMode] Initial Price Point: ${initialPricePoint}, Contract Type: ${contractType}`);
 
   const results: VolatilityTradeExecutionResult[] = [];
 
-  // CRITICAL FIX: Two-tick execution strategy
-  const firstBatchCount = Math.floor(numberOfTrades * 0.8); // 80% on first tick
-  const secondBatchCount = numberOfTrades - firstBatchCount; // 20% on second tick
+  // NEW: Handle 1-4 trades with 2-tick split strategy
+  if (numberOfTrades <= 4) {
+    console.log(`[TradeAction/SafeMode] Using 2-tick split strategy for ${numberOfTrades} trades`);
+    
+    const firstBatchCount = Math.ceil(numberOfTrades / 2);
+    const secondBatchCount = Math.floor(numberOfTrades / 2);
+    
+    console.log(`[TradeAction/SafeMode] Batch distribution: ${firstBatchCount} trades on tick 1, ${secondBatchCount} trades on tick 2`);
 
-  console.log(`[TradeAction/SafeMode] Batch distribution: ${firstBatchCount} trades on first tick, ${secondBatchCount} trades on second tick`);
+    // Execute first batch on current favorable tick
+    if (firstBatchCount > 0) {
+      console.log(`[TradeAction/SafeMode] 📊 Executing first batch (${firstBatchCount} trades) on current favorable tick`);
 
-  // Execute first batch (80%) on current favorable tick
-  if (firstBatchCount > 0) {
-    console.log(`[TradeAction/SafeMode] 📊 Executing first batch (${firstBatchCount} trades) on current favorable tick`);
+      const firstBatchResults = await executeSafeModeTradesBatch(
+        instrument,
+        contractType,
+        firstBatchCount,
+        stakePerTrade,
+        userDerivApiToken,
+        targetAccountId,
+        selectedAccountType,
+        userId,
+        patternAnalysis,
+        initialPricePoint,
+        1, // First batch number
+        tickDuration
+      );
 
-    const firstBatchResults = await executeSafeModeTradesBatch(
-      instrument,
-      contractType,
-      firstBatchCount,
-      stakePerTrade,
-      userDerivApiToken,
-      targetAccountId,
-      selectedAccountType,
-      userId,
-      patternAnalysis,
-      initialPricePoint,
-      1, // First batch
-      tickDuration // User-selected tick duration
-    );
+      results.push(...firstBatchResults);
+    }
 
-    results.push(...firstBatchResults);
-  }
+    // Execute second batch on next tick (if there are remaining trades)
+    if (secondBatchCount > 0) {
+      console.log(`[TradeAction/SafeMode] ⏳ Waiting for second tick for remaining ${secondBatchCount} trades`);
+      
+      // Use waitForNextTick instead of setTimeout for proper tick synchronization
+      try {
+        await waitForNextTick(instrument, userDerivApiToken);
+      } catch (error) {
+        console.error(`[TradeAction/SafeMode] Error waiting for next tick:`, error);
+        // Continue with execution even if tick timing fails
+      }
 
-  // Wait for next favorable tick and execute second batch (20%)
-  if (secondBatchCount > 0) {
-    console.log(`[TradeAction/SafeMode] ⏳ Waiting for second favorable tick for remaining ${secondBatchCount} trades`);
+      // Get fresh tick data for second batch
+      let secondTickPrice = initialPricePoint;
+      try {
+        const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
+        if (freshTicks.length > 0) {
+          secondTickPrice = freshTicks[0].price;
+          console.log(`[TradeAction/SafeMode] Captured fresh tick price for second batch: ${secondTickPrice}`);
+        }
+      } catch (error) {
+        console.warn(`[TradeAction/SafeMode] Failed to fetch fresh tick for second batch, using previous price:`, error);
+      }
 
-    // Wait 2 seconds to get next tick data
-    await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`[TradeAction/SafeMode] 📊 Executing second batch (${secondBatchCount} trades) on tick 2 - Price: ${secondTickPrice}`);
 
-    // Get fresh tick data for second batch
-    const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
-    const secondTickPrice = freshTicks.length > 0 ? freshTicks[0].price : initialPricePoint;
+      const secondBatchResults = await executeSafeModeTradesBatch(
+        instrument,
+        contractType,
+        secondBatchCount,
+        stakePerTrade,
+        userDerivApiToken,
+        targetAccountId,
+        selectedAccountType,
+        userId,
+        patternAnalysis,
+        secondTickPrice,
+        2, // Second batch number
+        tickDuration
+      );
 
-    console.log(`[TradeAction/SafeMode] 📊 Executing second batch (${secondBatchCount} trades) on second tick - Price: ${secondTickPrice}`);
+      results.push(...secondBatchResults);
+    }
+  } else {
+    // EXISTING: Handle 5-100 trades with distribution-based strategy
+    console.log(`[TradeAction/SafeMode] Using distribution-based execution strategy for ${numberOfTrades} trades`);
 
-    const secondBatchResults = await executeSafeModeTradesBatch(
-      instrument,
-      contractType,
-      secondBatchCount,
-      stakePerTrade,
-      userDerivApiToken,
-      targetAccountId,
-      selectedAccountType,
-      userId,
-      patternAnalysis,
-      secondTickPrice,
-      2, // Second batch
-      tickDuration // User-selected tick duration
-    );
+    // CRITICAL FIX: Get optimized trade distribution from table
+    const distribution = getTradeDistribution(numberOfTrades);
+    console.log(`[TradeAction/SafeMode] Trade distribution across ${distribution.length} ticks: ${distribution.join(', ')}`);
+    
+    // VALIDATION: Verify distribution integrity
+    if (!validateDistribution(numberOfTrades, distribution)) {
+      console.error(`[TradeAction/SafeMode] ❌ Distribution validation failed for ${numberOfTrades} trades`);
+      return [{
+        success: false,
+        instrument: instrument,
+        tradeParams: {} as TradeDetails,
+        error: `Invalid trade distribution calculated for ${numberOfTrades} trades.`,
+        aiReasoning: 'SAFE MANUAL: Distribution validation failed'
+      }];
+    }
 
-    results.push(...secondBatchResults);
+    // Execute trades based on distribution across multiple ticks
+    let tradeIndex = 0;
+    for (let tickIndex = 0; tickIndex < distribution.length; tickIndex++) {
+      const tradesForThisTick = distribution[tickIndex];
+      
+      if (tradesForThisTick > 0) {
+        // Get fresh tick data for this batch
+        let tickPrice = initialPricePoint;
+        if (tickIndex > 0) {
+          console.log(`[TradeAction/SafeMode] ⏳ Waiting for tick ${tickIndex + 1}/${distribution.length}`);
+          
+          // Use waitForNextTick instead of setTimeout
+          try {
+            await waitForNextTick(instrument, userDerivApiToken);
+          } catch (error) {
+            console.error(`[TradeAction/SafeMode] Error waiting for tick ${tickIndex + 1}:`, error);
+            // Continue with execution even if tick timing fails
+          }
+          
+          // Fetch fresh tick price for this batch
+          try {
+            const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
+            if (freshTicks.length > 0) {
+              tickPrice = freshTicks[0].price;
+              console.log(`[TradeAction/SafeMode] Captured fresh tick price for batch ${tickIndex + 1}: ${tickPrice}`);
+            }
+          } catch (error) {
+            console.warn(`[TradeAction/SafeMode] Failed to fetch fresh tick for batch ${tickIndex + 1}, using previous price:`, error);
+          }
+        }
+        
+        console.log(`[TradeAction/SafeMode] 📊 Executing batch ${tickIndex + 1}/${distribution.length} (${tradesForThisTick} trades) at price: ${tickPrice}`);
+
+        const batchResults = await executeSafeModeTradesBatch(
+          instrument,
+          contractType,
+          tradesForThisTick,
+          stakePerTrade,
+          userDerivApiToken,
+          targetAccountId,
+          selectedAccountType,
+          userId,
+          patternAnalysis,
+          tickPrice,
+          tickIndex + 1, // Batch number
+          tickDuration // User-selected tick duration
+        );
+
+        results.push(...batchResults);
+        tradeIndex += tradesForThisTick;
+      }
+    }
   }
 
   const successCount = results.filter(r => r.success).length;
@@ -495,8 +624,11 @@ async function executeSafeModeTradesBatch(
       if (!tradeResponse.longcode) {
         throw new Error(`Trade ${i + 1}: Missing longcode in Deriv API response`);
       }
+      if (!tradeResponse.buy_price) {
+        throw new Error(`Trade ${i + 1}: Missing buy_price in Deriv API response`);
+      }
 
-      // Save to database with actual entry price
+      // Save to database with actual API buy_price (not stake amount)
       const actualEntryPrice = tradeResponse.entry_spot || entryPrice;
 
       const dbTrade = await prisma.trade.create({
@@ -510,9 +642,9 @@ async function executeSafeModeTradesBatch(
           derivAccountId: targetAccountId,
           accountType: selectedAccountType,
           derivContractType: contractType,
-          derivBuyPrice: Math.round(stakePerTrade * 100), // Convert to integer (cents) as per user preference
+          derivBuyPrice: Math.round(tradeResponse.buy_price * 100), // Use actual API buy_price, rounded to cents
           derivPurchaseTime: BigInt(Math.floor((batchTimestamp + (i * 100)) / 1000)),
-          derivTransactionId: BigInt(tradeResponse.transaction_id || tradeResponse.contract_id),
+          derivTransactionId: BigInt(String(tradeResponse.contract_id)), // Use contract_id as fallback for transaction_id
           derivLongcode: tradeResponse.longcode
         }
       });
@@ -627,7 +759,7 @@ export async function executeAiTradingStrategy(
           derivContractType: tradeProposal.action,
           derivBuyPrice: Math.round(tradeProposal.stake * 100), // Convert to integer (cents) as per user preference
           derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
-          derivTransactionId: BigInt(derivTradeResponse.transaction_id || derivTradeResponse.contract_id),
+          derivTransactionId: BigInt(String(derivTradeResponse.contract_id)), // Use contract_id as fallback for transaction_id
           derivLongcode: derivTradeResponse.longcode
         },
       });
@@ -674,21 +806,49 @@ export interface VolatilityTradeOptions {
 
 // Helper function to wait for next tick using WebSocket
 async function waitForNextTick(instrument: VolatilityInstrumentType, userDerivApiToken: string): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error('Timeout waiting for next tick'));
     }, 10000); // 10 second timeout
 
-    // Use the existing getTicks function to get a single new tick
-    getTicks(instrument, 1, userDerivApiToken)
-      .then(() => {
+    try {
+      // Get initial tick to establish baseline epoch
+      const initialTicks = await getTicks(instrument, 1, userDerivApiToken);
+      if (initialTicks.length === 0) {
         clearTimeout(timeoutId);
-        resolve();
-      })
-      .catch((error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
+        reject(new Error('No initial ticks available'));
+        return;
+      }
+      
+      const initialEpoch = initialTicks[0].epoch;
+      console.log(`[waitForNextTick] Initial epoch for ${instrument}: ${initialEpoch}`);
+      
+      // Poll for a new tick with a greater epoch
+      const pollInterval = setInterval(async () => {
+        try {
+          const latestTicks = await getTicks(instrument, 2, userDerivApiToken);
+          if (latestTicks.length >= 2) {
+            const latestEpoch = latestTicks[0].epoch;
+            
+            // Check if we have a new tick (epoch increased)
+            if (latestEpoch > initialEpoch) {
+              clearTimeout(timeoutId);
+              clearInterval(pollInterval);
+              console.log(`[waitForNextTick] New tick detected for ${instrument}. Previous epoch: ${initialEpoch}, New epoch: ${latestEpoch}`);
+              resolve();
+              return;
+            }
+          }
+        } catch (pollError) {
+          // Continue polling on error
+          console.debug(`[waitForNextTick] Polling error for ${instrument}:`, pollError);
+        }
+      }, 100); // Poll every 100ms for tick updates
+      
+    } catch (error) {
+      clearTimeout(timeoutId);
+      reject(error);
+    }
   });
 }
 
@@ -715,35 +875,59 @@ async function executeTradesWithTickTiming(
     // Turbo mode: Execute all trades immediately on same tick with same price
     console.log(`[TradeAction/TickTiming] Turbo mode: Executing all ${tradesToExecute.length} trades immediately with same entry/exit price`);
 
+    // NEW: Handle distribution retrieval for 5-100 trades (for informational/consistency purposes)
+    if (numberOfBulkTrades >= 5) {
+      try {
+        const distribution = getTradeDistribution(numberOfBulkTrades);
+        if (validateDistribution(numberOfBulkTrades, distribution)) {
+          console.log(`[TradeAction/TickTiming] Turbo mode: Distribution for ${numberOfBulkTrades} trades retrieved for reference: ${distribution.join(', ')} (all trades execute simultaneously)`);
+        }
+      } catch (error: any) {
+        console.warn(`[TradeAction/TickTiming] Turbo mode: Warning getting distribution for ${numberOfBulkTrades} trades:`, error.message);
+        // Continue execution even if distribution retrieval fails
+      }
+    } else {
+      console.log(`[TradeAction/TickTiming] Turbo mode: Direct execution for ${numberOfBulkTrades} trades (no distribution needed)`);
+    }
+
     // Capture the current price point for all Turbo trades to use the same entry/exit price
     let sharedPricePoint: Record<string, number> = {};
 
-    // CRITICAL FIX: Get fresh price data for the first trade to establish the shared price point
+    // CRITICAL FIX: Get fresh price data for ALL instruments used in trades
     if (tradesToExecute.length > 0) {
-      const firstInstrument = tradesToExecute[0].instrument as VolatilityInstrumentType;
-      try {
-        const freshTicks = await getTicks(firstInstrument, 1, userDerivApiToken);
-        if (freshTicks.length > 0) {
-          sharedPricePoint[firstInstrument] = freshTicks[0].price;
-          console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${firstInstrument}: ${sharedPricePoint[firstInstrument]}`);
-        } else {
-          throw new Error('No fresh ticks received');
-        }
-      } catch (error) {
-        console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${firstInstrument}:`, error);
-        // Fallback to existing instrumentLatestSpot
-        const fallbackPrice = instrumentLatestSpot[firstInstrument];
-        if (fallbackPrice && fallbackPrice > 0) {
-          sharedPricePoint[firstInstrument] = fallbackPrice;
-          console.log(`[TradeAction/TickTiming] Turbo mode: Using fallback price for ${firstInstrument}: ${sharedPricePoint[firstInstrument]}`);
-        } else {
-          throw new Error(`No valid price available for Turbo mode execution on ${firstInstrument}`);
-        }
+      // Group trades by instrument
+      const instrumentSet = new Set<string>();
+      for (const trade of tradesToExecute) {
+        instrumentSet.add((trade.instrument as VolatilityInstrumentType).toString());
       }
 
-      // CRITICAL FIX: Validate shared price point before proceeding
-      if (!sharedPricePoint[firstInstrument] || sharedPricePoint[firstInstrument] <= 0) {
-        throw new Error(`Invalid shared price point for Turbo mode: ${sharedPricePoint[firstInstrument]} on ${firstInstrument}`);
+      // Fetch shared price for each instrument
+      for (const instrumentStr of instrumentSet) {
+        const instrument = instrumentStr as VolatilityInstrumentType;
+        try {
+          const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
+          if (freshTicks.length > 0) {
+            sharedPricePoint[instrument] = freshTicks[0].price;
+            console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${instrument}: ${sharedPricePoint[instrument]}`);
+          } else {
+            throw new Error('No fresh ticks received');
+          }
+        } catch (error) {
+          console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${instrument}:`, error);
+          // Fallback to existing instrumentLatestSpot
+          const fallbackPrice = instrumentLatestSpot[instrument];
+          if (fallbackPrice && fallbackPrice > 0) {
+            sharedPricePoint[instrument] = fallbackPrice;
+            console.log(`[TradeAction/TickTiming] Turbo mode: Using fallback price for ${instrument}: ${sharedPricePoint[instrument]}`);
+          } else {
+            console.warn(`[TradeAction/TickTiming] Warning: No valid price available for Turbo mode execution on ${instrument}, proceeding with caution`);
+          }
+        }
+
+        // CRITICAL FIX: Validate shared price point before proceeding
+        if (!sharedPricePoint[instrument] || sharedPricePoint[instrument] <= 0) {
+          console.warn(`[TradeAction/TickTiming] Warning: Invalid shared price point for Turbo mode: ${sharedPricePoint[instrument]} on ${instrument}`);
+        }
       }
     }
 
@@ -756,7 +940,7 @@ async function executeTradesWithTickTiming(
         userId,
         userSelectedTradeType,
         totalStakeFromUser,
-        sharedPricePoint, // Use shared price point instead of instrumentLatestSpot
+        sharedPricePoint, // Use shared price point for all instruments instead of instrumentLatestSpot
         instrumentATR,
         predictionDigit,
         selectedStrategy,
@@ -767,51 +951,19 @@ async function executeTradesWithTickTiming(
     }
   } else {
     // Safe mode: Implement split-tick execution strategy
-    console.log(`[TradeAction/TickTiming] Safe mode: Implementing split-tick execution for ${numberOfBulkTrades} bulk trades`);
+    console.log(`[TradeAction/TickTiming] Safe mode: Implementing execution strategy for ${numberOfBulkTrades} bulk trades`);
 
-    if (numberOfBulkTrades <= 5) {
-      // Execute all trades on consecutive ticks (per-tick basis)
-      console.log(`[TradeAction/TickTiming] Safe mode: ≤5 trades - executing per-tick on consecutive ticks`);
+    if (numberOfBulkTrades <= 4) {
+      // NEW: Execute 1-4 trades with 2-tick split strategy
+      console.log(`[TradeAction/TickTiming] Safe mode: Using 2-tick split strategy for ${numberOfBulkTrades} trades`);
+      
+      const firstBatchCount = Math.ceil(numberOfBulkTrades / 2);
+      const secondBatchCount = Math.floor(numberOfBulkTrades / 2);
+      
+      console.log(`[TradeAction/TickTiming] Safe mode: Batch distribution: ${firstBatchCount} trades on tick 1, ${secondBatchCount} trades on tick 2`);
 
-      for (let i = 0; i < tradesToExecute.length; i++) {
-        if (i > 0) {
-          // Wait for next tick before executing subsequent trades
-          const instrumentFromAI = tradesToExecute[i].instrument as VolatilityInstrumentType;
-          try {
-            await waitForNextTick(instrumentFromAI, userDerivApiToken);
-            console.log(`[TradeAction/TickTiming] Waited for tick ${i + 1}, executing trade ${i + 1}/${tradesToExecute.length}`);
-          } catch (error) {
-            console.error(`[TradeAction/TickTiming] Error waiting for tick ${i + 1}:`, error);
-            // Continue with execution even if tick timing fails
-          }
-        }
-
-        const result = await executeSingleTrade(
-          tradesToExecute[i],
-          userDerivApiToken,
-          targetAccountId,
-          selectedAccountType,
-          userId,
-          userSelectedTradeType,
-          totalStakeFromUser,
-          instrumentLatestSpot,
-          instrumentATR,
-          predictionDigit,
-          selectedStrategy,
-          patternTrigger,
-          false // Safe mode
-        );
-        results.push(result);
-      }
-    } else {
-      // Execute 80% on first tick, 20% on second tick
-      const firstTickCount = Math.floor(numberOfBulkTrades * 0.8);
-      const secondTickCount = numberOfBulkTrades - firstTickCount;
-
-      console.log(`[TradeAction/TickTiming] Safe mode: >5 trades - executing ${firstTickCount} trades on first tick, ${secondTickCount} trades on second tick`);
-
-      // Execute first batch (80%) on first tick
-      for (let i = 0; i < Math.min(firstTickCount, tradesToExecute.length); i++) {
+      // Execute first batch on current tick
+      for (let i = 0; i < firstBatchCount && i < tradesToExecute.length; i++) {
         const result = await executeSingleTrade(
           tradesToExecute[i],
           userDerivApiToken,
@@ -830,28 +982,45 @@ async function executeTradesWithTickTiming(
         results.push(result);
       }
 
-      // Wait for next tick before executing second batch
-      if (secondTickCount > 0 && tradesToExecute.length > firstTickCount) {
-        const instrumentFromAI = tradesToExecute[firstTickCount].instrument as VolatilityInstrumentType;
+      // Execute second batch on next tick (if there are remaining trades)
+      if (secondBatchCount > 0) {
+        let secondBatchSpot = { ...instrumentLatestSpot }; // Clone price map for second batch
+        
         try {
-          await waitForNextTick(instrumentFromAI, userDerivApiToken);
-          console.log(`[TradeAction/TickTiming] Waited for second tick, executing remaining ${secondTickCount} trades`);
+          if (firstBatchCount < tradesToExecute.length) {
+            const instrumentFromAI = tradesToExecute[firstBatchCount].instrument as VolatilityInstrumentType;
+            await waitForNextTick(instrumentFromAI, userDerivApiToken);
+            console.log(`[TradeAction/TickTiming] Waited for tick 2, executing remaining ${secondBatchCount} trades`);
+            
+            // Fetch fresh tick price for second batch
+            try {
+              const freshTicks = await getTicks(instrumentFromAI, 1, userDerivApiToken);
+              if (freshTicks.length > 0) {
+                secondBatchSpot[instrumentFromAI] = freshTicks[0].price;
+                console.log(`[TradeAction/TickTiming] Captured fresh price for tick 2: ${instrumentFromAI} = ${freshTicks[0].price}`);
+              } else {
+                console.warn(`[TradeAction/TickTiming] No fresh ticks for ${instrumentFromAI}, falling back to previous price`);
+              }
+            } catch (tickError) {
+              console.warn(`[TradeAction/TickTiming] Failed to fetch fresh tick for ${instrumentFromAI}:`, tickError);
+              // Use existing price as fallback
+            }
+          }
         } catch (error) {
-          console.error(`[TradeAction/TickTiming] Error waiting for second tick:`, error);
+          console.error(`[TradeAction/TickTiming] Error waiting for tick 2:`, error);
           // Continue with execution even if tick timing fails
         }
 
-        // Execute second batch (20%) on second tick
-        for (let i = firstTickCount; i < tradesToExecute.length; i++) {
+        for (let i = 0; i < secondBatchCount && (firstBatchCount + i) < tradesToExecute.length; i++) {
           const result = await executeSingleTrade(
-            tradesToExecute[i],
+            tradesToExecute[firstBatchCount + i],
             userDerivApiToken,
             targetAccountId,
             selectedAccountType,
             userId,
             userSelectedTradeType,
             totalStakeFromUser,
-            instrumentLatestSpot,
+            secondBatchSpot, // Use updated price map with fresh tick price
             instrumentATR,
             predictionDigit,
             selectedStrategy,
@@ -859,6 +1028,92 @@ async function executeTradesWithTickTiming(
             false // Safe mode
           );
           results.push(result);
+        }
+      }
+    } else {
+      // EXISTING: Handle 5-100 trades with distribution-based strategy
+      console.log(`[TradeAction/TickTiming] Safe mode: Using distribution-based execution strategy for ${numberOfBulkTrades} trades`);
+
+      if (!isValidTradeCount(numberOfBulkTrades)) {
+        console.error(`[TradeAction/TickTiming] ❌ Invalid trade count: ${numberOfBulkTrades}. Must be between 5 and 100.`);
+        return [{
+          success: false,
+          instrument: tradesToExecute[0]?.instrument || 'UNKNOWN',
+          tradeParams: {} as TradeDetails,
+          error: `Invalid trade count: ${numberOfBulkTrades}. Safe mode supports 5-100 trades.`,
+          aiReasoning: 'TICK TIMING: Validation failed - invalid trade count'
+        }];
+      }
+
+      const distribution = getTradeDistribution(numberOfBulkTrades);
+      if (!validateDistribution(numberOfBulkTrades, distribution)) {
+        console.error(`[TradeAction/TickTiming] ❌ Distribution validation failed for ${numberOfBulkTrades} trades`);
+        return [{
+          success: false,
+          instrument: tradesToExecute[0]?.instrument || 'UNKNOWN',
+          tradeParams: {} as TradeDetails,
+          error: `Invalid trade distribution calculated for ${numberOfBulkTrades} trades.`,
+          aiReasoning: 'TICK TIMING: Distribution validation failed'
+        }];
+      }
+
+      console.log(`[TradeAction/TickTiming] Safe mode: Executing ${numberOfBulkTrades} trades across ${distribution.length} ticks: ${distribution.join(', ')}`);
+
+      let tradeIndex = 0;
+      for (let tickIndex = 0; tickIndex < distribution.length; tickIndex++) {
+        const tradesForThisTick = distribution[tickIndex];
+        
+        if (tradesForThisTick > 0) {
+          let batchSpot = { ...instrumentLatestSpot }; // Clone price map for this batch
+          
+          // Wait for next tick before executing subsequent batches
+          if (tickIndex > 0) {
+            try {
+              const instrumentFromAI = tradesToExecute[Math.min(tradeIndex, tradesToExecute.length - 1)].instrument as VolatilityInstrumentType;
+              await waitForNextTick(instrumentFromAI, userDerivApiToken);
+              console.log(`[TradeAction/TickTiming] Waited for tick ${tickIndex + 1}/${distribution.length}, executing ${tradesForThisTick} trades`);
+              
+              // Fetch fresh tick price for this batch
+              try {
+                const freshTicks = await getTicks(instrumentFromAI, 1, userDerivApiToken);
+                if (freshTicks.length > 0) {
+                  batchSpot[instrumentFromAI] = freshTicks[0].price;
+                  console.log(`[TradeAction/TickTiming] Captured fresh price for tick ${tickIndex + 1}: ${instrumentFromAI} = ${freshTicks[0].price}`);
+                } else {
+                  console.warn(`[TradeAction/TickTiming] No fresh ticks for ${instrumentFromAI}, falling back to previous price`);
+                }
+              } catch (tickError) {
+                console.warn(`[TradeAction/TickTiming] Failed to fetch fresh tick for ${instrumentFromAI}:`, tickError);
+                // Use existing price as fallback
+              }
+            } catch (error) {
+              console.error(`[TradeAction/TickTiming] Error waiting for tick ${tickIndex + 1}:`, error);
+              // Continue with execution even if tick timing fails
+            }
+          } else {
+            console.log(`[TradeAction/TickTiming] Executing initial batch of ${tradesForThisTick} trades on tick 1`);
+          }
+
+          // Execute trades for this tick
+          for (let i = 0; i < tradesForThisTick && tradeIndex < tradesToExecute.length; i++) {
+            const result = await executeSingleTrade(
+              tradesToExecute[tradeIndex],
+              userDerivApiToken,
+              targetAccountId,
+              selectedAccountType,
+              userId,
+              userSelectedTradeType,
+              totalStakeFromUser,
+              batchSpot, // Use updated price map with fresh tick price for this batch
+              instrumentATR,
+              predictionDigit,
+              selectedStrategy,
+              patternTrigger,
+              false // Safe mode
+            );
+            results.push(result);
+            tradeIndex++;
+          }
         }
       }
     }
@@ -1028,7 +1283,7 @@ async function executeSingleTrade(
         derivContractType: finalContractType,
         derivBuyPrice: Math.round(tradeDetailsForApi.amount * 100), // Convert to integer (cents) as per user preference
         derivPurchaseTime: BigInt(Math.floor(Date.now() / 1000)),
-        derivTransactionId: BigInt(derivTradeResponse.transaction_id || derivTradeResponse.contract_id),
+        derivTransactionId: BigInt(String(derivTradeResponse.contract_id)), // Use contract_id as fallback for transaction_id
         derivLongcode: derivTradeResponse.longcode
       }
     });
@@ -1082,8 +1337,9 @@ export async function executeVolatilityManualTradeLoop(
   if (!executionMode) {
     throw new Error('Manual trading requires explicit execution mode setting');
   }
-  if (!numberOfBulkTrades || numberOfBulkTrades < 1 || numberOfBulkTrades > 20) {
-    throw new Error(`Manual trading requires valid numberOfBulkTrades (1-20), received: ${numberOfBulkTrades}`);
+  // VALIDATION: Allow 1-100 trades for manual mode (1-4 use 2-tick strategy, 5-100 use distribution)
+  if (numberOfBulkTrades < 1 || numberOfBulkTrades > 100) {
+    throw new Error(`Manual trading requires numberOfBulkTrades between 1 and 100, received: ${numberOfBulkTrades}`);
   }
   if (!selectedInstrument) {
     throw new Error('Manual trading requires explicit instrument selection');
@@ -1310,8 +1566,9 @@ export async function executeVolatilityAiTradeLoop(
   if (!executionMode) {
     throw new Error('AI trading requires explicit execution mode setting');
   }
-  if (!numberOfBulkTrades || numberOfBulkTrades < 1 || numberOfBulkTrades > 20) {
-    throw new Error(`AI trading requires valid numberOfBulkTrades (1-20), received: ${numberOfBulkTrades}`);
+  // VALIDATION: Allow 1-100 trades for AI mode (1-4 use 2-tick strategy, 5-100 use distribution)
+  if (numberOfBulkTrades < 1 || numberOfBulkTrades > 100) {
+    throw new Error(`AI trading requires numberOfBulkTrades between 1 and 100, received: ${numberOfBulkTrades}`);
   }
   if (!selectedInstrument) {
     throw new Error('AI trading requires explicit instrument selection');
