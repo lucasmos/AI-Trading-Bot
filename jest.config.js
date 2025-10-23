@@ -1,12 +1,31 @@
 module.exports = {
   preset: 'ts-jest',
-  testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
-  testMatch: ['**/*.test.ts', '**/__tests__/**/*.test.(ts|tsx)'],
+  testEnvironment: 'jsdom',
+  roots: ['<rootDir>/src', '<rootDir>/__tests__'],
+  testMatch: [
+    '**/__tests__/**/*.test.(ts|tsx)',
+    '**/*.test.(ts|tsx)',
+  ],
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/**/index.ts',
+    '!src/**/__tests__/**',
+  ],
   transform: {
-    '^.+\.tsx?$': 'ts-jest',
+    '^.+\.tsx?$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react-jsx',
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+      },
+    }],
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^@/__tests__/(.*)$': '<rootDir>/__tests__/$1',
   },
+  setupFilesAfterEnv: ['<rootDir>/__tests__/setup.ts'],
+  testTimeout: 10000,
+  verbose: true,
 };
