@@ -1,33 +1,37 @@
 <!--
 SYNC IMPACT REPORT
 ================================================================================
-Version Bump: 0.0.0 → 1.0.0 (MAJOR: Initial constitution establishment)
+Version Bump: 1.0.0 → 1.1.0 (MINOR: Added new implementation principles)
 
-PRINCIPLES DEFINED:
-  ✓ Principle 1: Universal Theme Compatibility (NEW)
-  ✓ Principle 2: Component Stability & Non-Breaking Changes (NEW)
-  ✓ Principle 3: Type Safety (Declarative TypeScript) (NEW)
-  ✓ Principle 4: React/Next.js Best Practices (NEW)
-  ✓ Principle 5: Test-First Development (Conditional) (NEW)
-  ✓ Principle 6: Dependency Constraint (NEW)
+PRINCIPLES MODIFIED:
+  ✓ Principle 5: Test-First Development (Conditional) → Implementation-First Development (UPDATED)
+  ✓ Principle 7: Clean Implementation Focus (NEW)
+  ✓ Principle 8: Documentation Constraint (NEW)
 
-SECTIONS ADDED:
-  ✓ Theme Implementation Standards (NEW)
-  ✓ Security & Performance (NEW)
-  ✓ Development Workflow (NEW)
-  ✓ Governance (NEW with amendment procedure)
+SECTIONS MODIFIED:
+  ✓ Development Workflow - Updated testing approach to focus on runtime validation
+  ✓ Governance - Updated to reflect new implementation-focused approach
 
-TEMPLATES VALIDATED:
-  ✓ .specify/templates/plan-template.md - Has "Constitution Check" gate; validates principle alignment
-  ✓ .specify/templates/spec-template.md - User stories prioritized per principle IV (React best practices)
-  ✓ .specify/templates/tasks-template.md - Task phases support principle V (test-first) and principle VI (dependency constraint)
+TEMPLATES REQUIRING UPDATES:
+  ⚠ .specify/templates/tasks-template.md - Remove test file creation tasks; focus on implementation
+  ⚠ .specify/templates/plan-template.md - Update constitution check to include new principles
+  ✅ .specify/templates/spec-template.md - User stories remain unchanged; testing approach updated
 
 RUNTIME GUIDANCE FILES:
-  ✓ copilot.instructions.md - Aligned; emphasizes functional TypeScript, theme support via styled-components/Tailwind
-  ✓ README.md - No update needed; tech stack documented; no breaking changes
-  ✓ docs/blueprint.md - Color palette aligns with constitution Theme Implementation Standards
+  ✅ copilot.instructions.md - Already aligned with implementation-first approach
+  ✅ README.md - No update needed
+  ✅ docs/blueprint.md - No update needed
 
-DEFERRED ITEMS: None. All core principles and governance fully established.
+DEFERRED ITEMS: None. All principles established and validated.
+
+FOLLOW-UP: 
+  - Update task templates to remove automatic test file generation
+  - Validate that npm run dev and npm run build provide adequate testing coverage
+  - Review existing test files to determine which should be maintained vs removed
+
+Report Generated: 2025-10-23
+================================================================================
+-->
 
 FOLLOW-UP: 
   - When creating new features, use plan-template.md to verify "Constitution Check" passes
@@ -65,17 +69,32 @@ where appropriate. Implement proper error boundaries for graceful error handling
 (via hooks) for data fetching and state management; minimize useState usage. Keep components
 focused and modular; extract hooks for reusable logic.
 
-### V. Test-First Development (Conditional)
-New features affecting core trading logic, state management, or data calculations MUST include unit
-tests via Jest and React Native Testing Library. Test files should mirror source structure in
-`__tests__/` directories. Integration tests required for API routes and multi-component interactions.
-UI smoke tests acceptable for display-only components. Tests MUST pass before PR merge.
+### V. Implementation-First Development
+Feature implementation MUST focus on actual code changes to the codebase, not test file creation.
+Testing MUST be performed using `npm run dev` and `npm run build` to validate functionality in
+the runtime environment. NO test files (.test.ts, .spec.ts, etc.) should be created during
+implementation phases. Feature validation occurs through manual testing and build verification.
+Tests are considered maintenance overhead that distracts from core implementation work.
 
 ### VI. Dependency Constraint
 NO new packages may be added to `package.json` without explicit approval. Current tech stack
 (Next.js, React, TypeScript, TailwindCSS, Prisma, NextAuth, Recharts, Radix UI, React Query) is
 sufficient. If a feature cannot be implemented with existing dependencies, justify the addition in
 a feature specification with cost-benefit analysis before proceeding.
+
+### VII. Clean Implementation Focus
+During feature implementation, agents MUST NOT create additional .md files beyond the original
+specification documents. NO change reports, implementation summaries, or post-change documentation
+files should be generated. Focus exclusively on modifying the actual source code to implement
+the requested features. Documentation updates should only occur for user-facing docs when explicitly
+required by the feature specification.
+
+### VIII. Documentation Constraint
+Implementation work MUST NOT include creation of change tracking files, implementation reports,
+or supplementary documentation files. The source code changes themselves serve as the documentation
+of what was implemented. Any .md files generated after implementation (e.g., reports showing
+changes made to sections) are PROHIBITED. Keep implementation artifacts minimal and focused
+on the functional code changes only.
 
 ## Theme Implementation Standards
 
@@ -110,16 +129,16 @@ a feature specification with cost-benefit analysis before proceeding.
 **Git & PR Process**:
 - Feature branches named `###-feature-name` (e.g., `001-light-theme-update`)
 - PRs MUST reference related spec/plan docs in `.specify/specs/`
-- Before merge: (1) All tests pass, (2) Theme validation across all three modes, (3) No breaking changes to existing
-  components, (4) TypeScript strict mode validation passes, (5) Code style via Prettier
+- Before merge: (1) `npm run build` succeeds without errors, (2) Theme validation across all three modes, (3) No breaking changes to existing components, (4) TypeScript strict mode validation passes, (5) Code style via Prettier
 - Commit messages: `type: description` (e.g., `feat: add AMOLED support to trade-history component`)
 
 **Quality Gates**:
 - ESLint must pass with zero errors (warnings acceptable with justification in PR)
 - TypeScript compiler must pass with no errors (`npm run typecheck`)
-- Jest tests (if applicable) must pass: `npm run test`
+- Build process must complete successfully: `npm run build`
+- Development server must start without errors: `npm run dev`
 - Manual QA: Verify all three themes render correctly; test on mobile and desktop viewports
-- Update `MANUAL_QA_VERIFICATION_REPORT.md` with theme test results
+- NO additional test files or .md documentation files created during implementation
 
 ## Governance
 
@@ -150,4 +169,4 @@ approval from project lead before implementation.
 
 ---
 
-**Version**: 1.0.0 | **Ratified**: 2025-10-23 | **Last Amended**: 2025-10-23
+**Version**: 1.1.0 | **Ratified**: 2025-10-23 | **Last Amended**: 2025-10-23
