@@ -9,6 +9,9 @@
  * @see {@link jest.config.js} for jest configuration
  */
 
+// Import testing library matchers
+import '@testing-library/jest-dom';
+
 /**
  * Mock WebSocket implementation for testing
  *
