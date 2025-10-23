@@ -11,7 +11,7 @@
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **Total Tasks** | 46 | Organized across 6 phases |
+| **Total Tasks** | 46 + 18 (Phase 9) = 64 | Organized across 9 phases |
 | **Setup Phase** | 3 tasks | Infrastructure + prerequisites |
 | **Foundational Phase** | 6 tasks | Shared types, service, test setup |
 | **User Story 1** | 10 tasks | Real-time price stability (P1) |
@@ -19,9 +19,11 @@
 | **User Story 3** | 8 tasks | Keep-alive mechanism (P1) |
 | **User Story 4** | 6 tasks | Clean unmount (P2) |
 | **Polish Phase** | 3 tasks | Cross-cutting concerns |
+| **Phase 9 (NEW)** | 18 tests | Error Recovery & Resilience (P0) |
 | **Parallelizable Tasks** | 18 (39%) | Marked with [P] |
-| **Critical Path** | Setup → Foundational → US1 → Others | ~2 weeks implementation |
+| **Critical Path** | Setup → Foundational → US1 → Others | ~3 weeks implementation |
 | **MVP Scope** | Phase 1 + Phase 2 + US1 (Core Hook) | ~40% of total work |
+| **Production Ready** | Phases 3-8 Complete | 191/191 tests passing ✅ |
 
 ---
 
@@ -923,11 +925,389 @@ With Parallelization (4 engineers):
 
 ---
 
+## PHASE 9: ERROR RECOVERY & RESILIENCE (NEW - P0 Priority)
+
+**Goal**: Comprehensive error handling, graceful degradation, resilience under adverse conditions  
+**Duration**: 8 hours (sequential, after Phase 8 baseline)  
+**Dependencies**: Phases 3-8 complete (191/191 tests passing)  
+**Test Criteria**: 18+ tests passing, zero regressions in existing 191 tests, production-grade error handling
+**User Story**: US6 - Production-Grade Error Recovery & Resilience
+
+### Phase 9 Test Categories (18 tests total)
+
+#### Category 1: Network Resilience (4 tests)
+
+- [ ] T045 [P9] Frequent disconnections (5+ rapid cycles)
+  **Task**: Test rapid connect/disconnect/reconnect cycles
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-rapid-cycles.test.ts` (~90 lines)
+  **Details**:
+    - Establish connection (CONNECTED)
+    - Trigger 5 rapid disconnect events (Code 1006)
+    - Each triggers reconnection with backoff
+    - Verify state consistency after each cycle
+    - Verify message queue not corrupted
+    - Verify errorCount incremented appropriately
+  **Checklist**:
+    - [ ] All 5 cycles complete successfully
+    - [ ] State machine remains consistent
+    - [ ] No orphaned timers after cycles
+    - [ ] Error count tracking accurate
+    - [ ] Connection recovers after final cycle
+  **Estimated Effort**: 1 hour
+
+- [ ] T046 [P9] Packet loss simulation
+  **Task**: Simulate partial message delivery and recovery
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-packet-loss.test.ts` (~100 lines)
+  **Details**:
+    - Send subscription message
+    - Simulate incomplete message delivery (truncated JSON)
+    - Verify error detection via timeout
+    - Confirm reconnection triggered
+    - Test recovery from partial state
+  **Checklist**:
+    - [ ] Incomplete messages detected
+    - [ ] Connection timeout triggered
+    - [ ] Automatic reconnection occurs
+    - [ ] Recovery completes within backoff window
+  **Estimated Effort**: 1 hour
+
+- [ ] T047 [P9] High latency handling
+  **Task**: Test connection delays exceeding normal timeout
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-high-latency.test.ts` (~90 lines)
+  **Details**:
+    - Initiate connection
+    - Simulate 5+ second delay in response
+    - Verify connection timeout triggers (5s default)
+    - Verify reconnection scheduled
+    - Test with progressively increasing latency
+  **Checklist**:
+    - [ ] Timeout triggers on latency
+    - [ ] Reconnection scheduled correctly
+    - [ ] Backoff respected in retry
+    - [ ] No hung connections
+  **Estimated Effort**: 0.75 hours
+
+- [ ] T048 [P9] Connection degradation scenario
+  **Task**: Simulate gradual connection quality deterioration
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-degradation.test.ts` (~90 lines)
+  **Details**:
+    - Establish connection (good)
+    - Introduce first error (recovers)
+    - Introduce second error within 10 seconds
+    - Error escalation detected
+    - Circuit breaker consideration or aggressive retry
+  **Checklist**:
+    - [ ] Error escalation detected
+    - [ ] Recovery mechanisms activated
+    - [ ] Graceful degradation occurs
+    - [ ] No cascade failures
+  **Estimated Effort**: 0.75 hours
+
+#### Category 2: API Error Handling (4 tests)
+
+- [ ] T049 [P9] Rate limiting errors (429 responses)
+  **Task**: Handle Deriv rate limit responses
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-rate-limit.test.ts` (~100 lines)
+  **Details**:
+    - Send rapid subscribe/buy messages
+    - Receive 429 rate limit response
+    - Parse rate limit headers (Retry-After)
+    - Adjust backoff to respect rate limit window
+    - Verify compliance with rate limit
+  **Checklist**:
+    - [ ] Rate limit response detected
+    - [ ] Retry-After header parsed
+    - [ ] Backoff adjusted appropriately
+    - [ ] Requests pause for rate limit window
+    - [ ] Recovery after rate limit expires
+  **Estimated Effort**: 1 hour
+
+- [ ] T050 [P9] Invalid API requests
+  **Task**: Handle malformed messages rejected by Deriv
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-invalid-request.test.ts` (~90 lines)
+  **Details**:
+    - Send malformed subscribe message
+    - Receive error response from Deriv
+    - Verify error message extracted
+    - Verify hook remains CONNECTED (not disconnecting)
+    - Test error propagation to UI context
+  **Checklist**:
+    - [ ] Invalid request detected
+    - [ ] Error message clear and actionable
+    - [ ] Hook remains operational
+    - [ ] Connection not terminated
+    - [ ] Error logged appropriately
+  **Estimated Effort**: 0.75 hours
+
+- [ ] T051 [P9] Server errors (500, 503)
+  **Task**: Handle Deriv server errors and maintenance mode
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-server-errors.test.ts` (~100 lines)
+  **Details**:
+    - Simulate server error closure (1011 code)
+    - Verify reconnection with exponential backoff
+    - Simulate server recovery (connection succeeds)
+    - Verify recovery completes smoothly
+    - Test with 500/503 error responses
+  **Checklist**:
+    - [ ] Server errors detected
+    - [ ] Backoff reconnection scheduled
+    - [ ] Recovery on server return verified
+    - [ ] No permanent failure state
+    - [ ] Message queue preserved during recovery
+  **Estimated Effort**: 1 hour
+
+- [ ] T052 [P9] Malformed API responses
+  **Task**: Handle invalid JSON and unexpected schema from Deriv
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-malformed-response.test.ts` (~90 lines)
+  **Details**:
+    - Send valid subscribe, receive malformed JSON response
+    - Verify JSON parse error caught
+    - Verify connection maintained (not crashed)
+    - Test fallback to safe state
+    - Verify error logged with context
+  **Checklist**:
+    - [ ] Malformed JSON detected
+    - [ ] Parse errors caught safely
+    - [ ] Connection remains stable
+    - [ ] State not corrupted
+    - [ ] Error logging comprehensive
+  **Estimated Effort**: 0.75 hours
+
+#### Category 3: Edge Cases (4 tests)
+
+- [ ] T053 [P9] Rapid connect/disconnect during reconnection
+  **Task**: Test state machine under rapid state changes
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-rapid-state-changes.test.ts` (~100 lines)
+  **Details**:
+    - Trigger reconnection (state = RECONNECTING)
+    - Before reconnect completes, trigger disconnect
+    - Reconnect again (CONNECTING)
+    - Before complete, disconnect again
+    - Repeat 3+ times
+    - Verify state consistency maintained
+  **Checklist**:
+    - [ ] All state transitions valid
+    - [ ] No orphaned timers
+    - [ ] No memory leaks
+    - [ ] State machine integrity preserved
+  **Estimated Effort**: 1 hour
+
+- [ ] T054 [P9] Message queue overflow under stress
+  **Task**: Test queue capacity limits under high message load
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-queue-overflow.test.ts` (~90 lines)
+  **Details**:
+    - Disconnect (RECONNECTING)
+    - Generate 200+ messages queued for send
+    - Verify queue max (100) enforced
+    - Verify oldest messages evicted (FIFO)
+    - Reconnect and verify queue handled correctly
+  **Checklist**:
+    - [ ] Queue never exceeds 100 items
+    - [ ] FIFO ordering maintained in truncated queue
+    - [ ] No crash or buffer overflow
+    - [ ] Remaining messages sent correctly
+  **Estimated Effort**: 0.75 hours
+
+- [ ] T055 [P9] Concurrent operations race conditions
+  **Task**: Test thread-safe message handling
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-concurrent-ops.test.ts` (~100 lines)
+  **Details**:
+    - Simultaneously send: message, disconnect, reconnect
+    - Verify no race conditions
+    - Test with multiple message sends concurrent with reconnection
+    - Verify message ordering preserved
+  **Checklist**:
+    - [ ] No race condition errors
+    - [ ] Message ordering maintained
+    - [ ] All operations complete
+    - [ ] No lost or duplicated messages
+  **Estimated Effort**: 1 hour
+
+- [ ] T056 [P9] State corruption recovery
+  **Task**: Test self-healing from invalid states
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-state-corruption.test.ts` (~90 lines)
+  **Details**:
+    - Force invalid state (simulate bug)
+    - Trigger error scenario (disconnection)
+    - Verify recovery to valid state
+    - Verify no cascading failures
+  **Checklist**:
+    - [ ] Invalid state detected
+    - [ ] Recovery mechanism activated
+    - [ ] Valid state restored
+    - [ ] No permanent corruption
+  **Estimated Effort**: 0.75 hours
+
+#### Category 4: Data Integrity (3 tests)
+
+- [ ] T057 [P9] Message ordering preservation
+  **Task**: Verify FIFO ordering across disconnect/reconnect
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-message-ordering.test.ts` (~100 lines)
+  **Details**:
+    - Send 50 numbered messages
+    - At message 25: trigger disconnection
+    - Queue 20 more messages during reconnection
+    - Reconnect and send queued messages
+    - Verify all 70 messages in order (1-50, then 51-70)
+  **Checklist**:
+    - [ ] All messages received in order
+    - [ ] No missing sequence numbers
+    - [ ] Queue replay maintains order
+    - [ ] Perfect FIFO ordering
+  **Estimated Effort**: 1 hour
+
+- [ ] T058 [P9] Duplicate message prevention
+  **Task**: Prevent duplicate processing of same message
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-duplicate-prevention.test.ts` (~90 lines)
+  **Details**:
+    - Send message with ID
+    - Simulate duplicate delivery (network retry)
+    - Verify hook detects duplicate
+    - Verify message not re-queued
+    - Test with multiple duplicate scenarios
+  **Checklist**:
+    - [ ] Duplicates detected
+    - [ ] Not re-queued or re-sent
+    - [ ] No duplicate trades/subscriptions
+    - [ ] ID tracking accurate
+  **Estimated Effort**: 0.75 hours
+
+- [ ] T059 [P9] Partial message buffering & reassembly
+  **Task**: Handle messages received in chunks
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-partial-messages.test.ts` (~90 lines)
+  **Details**:
+    - Send large message (simulated)
+    - Receive in 3 parts (truncated)
+    - Verify buffering until complete
+    - Verify timeout on incomplete message
+    - Test reassembly and processing
+  **Checklist**:
+    - [ ] Partial messages buffered
+    - [ ] Complete message detected
+    - [ ] Reassembly accurate
+    - [ ] Timeout triggers on incomplete
+  **Estimated Effort**: 0.75 hours
+
+#### Category 5: Graceful Degradation (3 tests)
+
+- [ ] T060 [P9] Fallback strategies
+  **Task**: Implement reduced functionality when primary unavailable
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-fallback.test.ts` (~90 lines)
+  **Details**:
+    - Primary connection fails repeatedly
+    - Activate fallback mode (reduced features)
+    - Verify partial service maintained
+    - Test UI degradation gracefully
+  **Checklist**:
+    - [ ] Fallback mode detected
+    - [ ] Partial service available
+    - [ ] User informed of degradation
+    - [ ] Recovery seamless when primary available
+  **Estimated Effort**: 0.75 hours
+
+- [ ] T061 [P9] Circuit breaker pattern
+  **Task**: Implement circuit breaker for request protection
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-circuit-breaker.test.ts` (~100 lines)
+  **Details**:
+    - Rapid errors trigger circuit open
+    - Circuit open: block further attempts
+    - Half-open state: allow test request
+    - Success: circuit closes
+    - Test state transitions: closed → open → half-open → closed
+  **Checklist**:
+    - [ ] Circuit opens on error threshold
+    - [ ] Further requests blocked while open
+    - [ ] Half-open allows probe
+    - [ ] Closed state resumes normal operation
+  **Estimated Effort**: 1 hour
+
+- [ ] T062 [P9] Retry exhaustion and manual recovery
+  **Task**: Handle max retries exhausted state
+  **Inputs**: `__tests__/integration/`
+  **Outputs**:
+    - `src/__tests__/integration/websocket-retry-exhaustion.test.ts` (~90 lines)
+  **Details**:
+    - Force all 6 reconnection attempts to fail
+    - Verify state transitions to DISCONNECTED
+    - Verify manual reconnect capability available
+    - User triggers manual reconnection
+    - Verify successful reconnection
+  **Checklist**:
+    - [ ] All 6 attempts exhausted
+    - [ ] State = DISCONNECTED (not retrying)
+    - [ ] Manual reconnect button available
+    - [ ] User can trigger new reconnection cycle
+    - [ ] Backoff counter resets
+  **Estimated Effort**: 0.75 hours
+
+### Phase 9 Implementation Sequence
+
+**Milestone 1: Network Resilience (T045-T048)** - 2 hours
+- Tests 1-4 establishing connection resilience
+- Running: `npm test -- __tests__/integration/websocket-rapid*.test.ts --no-coverage`
+
+**Milestone 2: API Error Handling (T049-T052)** - 2 hours
+- Tests 5-8 establishing API error handling
+- Running: `npm test -- __tests__/integration/websocket-*error*.test.ts --no-coverage`
+
+**Milestone 3: Edge Cases (T053-T056)** - 2 hours
+- Tests 9-12 establishing edge case handling
+- Running: `npm test -- __tests__/integration/websocket-*cycle*.test.ts --no-coverage`
+
+**Milestone 4: Data & Degradation (T057-T062)** - 2 hours
+- Tests 13-18 establishing data integrity and graceful degradation
+- Running: `npm test -- __tests__/integration/websocket-message*.test.ts --no-coverage`
+
+### Phase 9 Success Metrics
+
+✅ All 18 tests passing  
+✅ Zero regressions in Phases 3-8 (191+ tests)  
+✅ Total test suite: 209+ tests  
+✅ Error scenarios: 100% coverage  
+✅ Production-grade resilience: Verified  
+✅ Enterprise deployment ready: Yes  
+
+---
+
 ## PHASE 7: POLISH & CROSS-CUTTING CONCERNS
 
 **Goal**: Integration, documentation, edge cases, production readiness  
-**Duration**: 3 hours (sequential, after core features)  
-**Dependencies**: T010-T041 complete  
+**Duration**: 3 hours (sequential, after Phase 9 complete)  
+**Dependencies**: T045-T062 complete  
 **Test Criteria**: Full feature tested, documented, ready for production
 
 ### Polish Phase Tasks
