@@ -31,14 +31,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- ✅ **Universal Theme Compatibility**: Feature supports Light/Dark/AMOLED themes
-- ✅ **Component Stability**: No breaking changes to existing component APIs
-- ✅ **Type Safety**: All code uses TypeScript strict mode, interfaces over types
-- ✅ **React/Next.js Best Practices**: Functional components, proper error boundaries, React Query for state
-- ✅ **Implementation-First Development**: Focus on code implementation, NO test files created during implementation
-- ✅ **Dependency Constraint**: No new packages added to package.json without approval
-- ✅ **Clean Implementation Focus**: NO additional .md files created during implementation beyond original specs
-- ✅ **Documentation Constraint**: NO change reports or implementation summaries generated post-implementation
+[Gates determined based on constitution file]
 
 ## Project Structure
 

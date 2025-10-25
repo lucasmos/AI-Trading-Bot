@@ -872,82 +872,194 @@ async function executeTradesWithTickTiming(
   const results: VolatilityTradeExecutionResult[] = [];
 
   if (executionMode === 'turbo') {
-    // Turbo mode: Execute all trades immediately on same tick with same price
-    console.log(`[TradeAction/TickTiming] Turbo mode: Executing all ${tradesToExecute.length} trades immediately with same entry/exit price`);
+    // Turbo mode: Execute trades with distribution-based batch execution for 5-100 trades
+    console.log(`[TradeAction/TickTiming] Turbo mode: Processing ${tradesToExecute.length} trades`);
 
-    // NEW: Handle distribution retrieval for 5-100 trades (for informational/consistency purposes)
-    if (numberOfBulkTrades >= 5) {
-      try {
-        const distribution = getTradeDistribution(numberOfBulkTrades);
-        if (validateDistribution(numberOfBulkTrades, distribution)) {
-          console.log(`[TradeAction/TickTiming] Turbo mode: Distribution for ${numberOfBulkTrades} trades retrieved for reference: ${distribution.join(', ')} (all trades execute simultaneously)`);
+    if (numberOfBulkTrades <= 4) {
+      // 1-4 trades: Execute all trades immediately on same tick with same price (preserve existing behavior)
+      console.log(`[TradeAction/TickTiming] Turbo mode: Direct execution for ${numberOfBulkTrades} trades (no distribution needed)`);
+
+      // Capture the current price point for all Turbo trades to use the same entry/exit price
+      let sharedPricePoint: Record<string, number> = {};
+
+      // CRITICAL FIX: Get fresh price data for ALL instruments used in trades
+      if (tradesToExecute.length > 0) {
+        // Group trades by instrument
+        const instrumentSet = new Set<string>();
+        for (const trade of tradesToExecute) {
+          instrumentSet.add((trade.instrument as VolatilityInstrumentType).toString());
         }
-      } catch (error: any) {
-        console.warn(`[TradeAction/TickTiming] Turbo mode: Warning getting distribution for ${numberOfBulkTrades} trades:`, error.message);
-        // Continue execution even if distribution retrieval fails
+
+        // Fetch shared price for each instrument
+        for (const instrumentStr of instrumentSet) {
+          const instrument = instrumentStr as VolatilityInstrumentType;
+          try {
+            const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
+            if (freshTicks.length > 0) {
+              sharedPricePoint[instrument] = freshTicks[0].price;
+              console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${instrument}: ${sharedPricePoint[instrument]}`);
+            } else {
+              throw new Error('No fresh ticks received');
+            }
+          } catch (error) {
+            console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${instrument}:`, error);
+            // Fallback to existing instrumentLatestSpot
+            const fallbackPrice = instrumentLatestSpot[instrument];
+            if (fallbackPrice && fallbackPrice > 0) {
+              sharedPricePoint[instrument] = fallbackPrice;
+              console.log(`[TradeAction/TickTiming] Turbo mode: Using fallback price for ${instrument}: ${sharedPricePoint[instrument]}`);
+            } else {
+              console.warn(`[TradeAction/TickTiming] Warning: No valid price available for Turbo mode execution on ${instrument}, proceeding with caution`);
+            }
+          }
+
+          // CRITICAL FIX: Validate shared price point before proceeding
+          if (!sharedPricePoint[instrument] || sharedPricePoint[instrument] <= 0) {
+            console.warn(`[TradeAction/TickTiming] Warning: Invalid shared price point for Turbo mode: ${sharedPricePoint[instrument]} on ${instrument}`);
+          }
+        }
+      }
+
+      for (const aiProposal of tradesToExecute) {
+        const result = await executeSingleTrade(
+          aiProposal,
+          userDerivApiToken,
+          targetAccountId,
+          selectedAccountType,
+          userId,
+          userSelectedTradeType,
+          totalStakeFromUser,
+          sharedPricePoint, // Use shared price point for all instruments instead of instrumentLatestSpot
+          instrumentATR,
+          predictionDigit,
+          selectedStrategy,
+          patternTrigger,
+          true // Flag to indicate this is a Turbo mode trade
+        );
+        results.push(result);
       }
     } else {
-      console.log(`[TradeAction/TickTiming] Turbo mode: Direct execution for ${numberOfBulkTrades} trades (no distribution needed)`);
-    }
+      // 5-100 trades: Use distribution-based batch execution across multiple ticks
+      console.log(`[TradeAction/TickTiming] Turbo mode: Using distribution-based batch execution for ${numberOfBulkTrades} trades`);
 
-    // Capture the current price point for all Turbo trades to use the same entry/exit price
-    let sharedPricePoint: Record<string, number> = {};
-
-    // CRITICAL FIX: Get fresh price data for ALL instruments used in trades
-    if (tradesToExecute.length > 0) {
-      // Group trades by instrument
-      const instrumentSet = new Set<string>();
-      for (const trade of tradesToExecute) {
-        instrumentSet.add((trade.instrument as VolatilityInstrumentType).toString());
+      // Validate trade count and retrieve distribution
+      if (!isValidTradeCount(numberOfBulkTrades)) {
+        console.error(`[TradeAction/TickTiming] ❌ Invalid trade count: ${numberOfBulkTrades}. Must be between 5 and 100.`);
+        return [{
+          success: false,
+          instrument: tradesToExecute[0]?.instrument || 'UNKNOWN',
+          tradeParams: {} as TradeDetails,
+          error: `Invalid trade count: ${numberOfBulkTrades}. Turbo mode supports 5-100 trades.`,
+          aiReasoning: 'TICK TIMING: Validation failed - invalid trade count'
+        }];
       }
 
-      // Fetch shared price for each instrument
-      for (const instrumentStr of instrumentSet) {
-        const instrument = instrumentStr as VolatilityInstrumentType;
-        try {
-          const freshTicks = await getTicks(instrument, 1, userDerivApiToken);
-          if (freshTicks.length > 0) {
-            sharedPricePoint[instrument] = freshTicks[0].price;
-            console.log(`[TradeAction/TickTiming] Turbo mode: Captured shared price point for ${instrument}: ${sharedPricePoint[instrument]}`);
-          } else {
-            throw new Error('No fresh ticks received');
-          }
-        } catch (error) {
-          console.error(`[TradeAction/TickTiming] Error capturing shared price point for ${instrument}:`, error);
-          // Fallback to existing instrumentLatestSpot
-          const fallbackPrice = instrumentLatestSpot[instrument];
-          if (fallbackPrice && fallbackPrice > 0) {
-            sharedPricePoint[instrument] = fallbackPrice;
-            console.log(`[TradeAction/TickTiming] Turbo mode: Using fallback price for ${instrument}: ${sharedPricePoint[instrument]}`);
-          } else {
-            console.warn(`[TradeAction/TickTiming] Warning: No valid price available for Turbo mode execution on ${instrument}, proceeding with caution`);
-          }
-        }
+      const distribution = getTradeDistribution(numberOfBulkTrades);
+      if (!validateDistribution(numberOfBulkTrades, distribution)) {
+        console.error(`[TradeAction/TickTiming] ❌ Distribution validation failed for ${numberOfBulkTrades} trades`);
+        return [{
+          success: false,
+          instrument: tradesToExecute[0]?.instrument || 'UNKNOWN',
+          tradeParams: {} as TradeDetails,
+          error: `Invalid trade distribution calculated for ${numberOfBulkTrades} trades.`,
+          aiReasoning: 'TICK TIMING: Distribution validation failed'
+        }];
+      }
 
-        // CRITICAL FIX: Validate shared price point before proceeding
-        if (!sharedPricePoint[instrument] || sharedPricePoint[instrument] <= 0) {
-          console.warn(`[TradeAction/TickTiming] Warning: Invalid shared price point for Turbo mode: ${sharedPricePoint[instrument]} on ${instrument}`);
+      console.log(`[TradeAction/TickTiming] Turbo mode: Executing ${numberOfBulkTrades} trades across ${distribution.length} ticks: ${distribution.join(', ')}`);
+
+      // Guard against empty tradesToExecute array
+      if (tradesToExecute.length === 0) {
+        console.error(`[TradeAction/TickTiming] ❌ No trades available for execution despite requested ${numberOfBulkTrades} trades`);
+        return [{
+          success: false,
+          instrument: 'UNKNOWN',
+          tradeParams: {} as TradeDetails,
+          error: `No trades available for execution despite requested ${numberOfBulkTrades} trades.`,
+          aiReasoning: 'TICK TIMING: Empty trades array - no trades to execute'
+        }];
+      }
+
+      let tradeIndex = 0;
+      for (let tickIndex = 0; tickIndex < distribution.length; tickIndex++) {
+        const tradesForThisTick = distribution[tickIndex];
+        
+        if (tradesForThisTick > 0) {
+          let batchSpot = { ...instrumentLatestSpot }; // Clone price map for this batch
+          
+          // Wait for next tick before executing subsequent batches
+          if (tickIndex > 0) {
+            try {
+              const instrumentFromAI = tradesToExecute[Math.min(tradeIndex, tradesToExecute.length - 1)].instrument as VolatilityInstrumentType;
+              await waitForNextTick(instrumentFromAI, userDerivApiToken);
+              console.log(`[TradeAction/TickTiming] Waited for tick ${tickIndex + 1}/${distribution.length}, executing ${tradesForThisTick} trades`);
+              
+              // Fetch fresh tick price for this batch
+              try {
+                const freshTicks = await getTicks(instrumentFromAI, 1, userDerivApiToken);
+                if (freshTicks.length > 0) {
+                  batchSpot[instrumentFromAI] = freshTicks[0].price;
+                  console.log(`[TradeAction/TickTiming] Captured fresh price for tick ${tickIndex + 1}: ${instrumentFromAI} = ${freshTicks[0].price}`);
+                } else {
+                  console.warn(`[TradeAction/TickTiming] No fresh ticks for ${instrumentFromAI}, falling back to previous price`);
+                }
+              } catch (tickError) {
+                console.warn(`[TradeAction/TickTiming] Failed to fetch fresh tick for ${instrumentFromAI}:`, tickError);
+                // Use existing price as fallback
+              }
+            } catch (error) {
+              console.error(`[TradeAction/TickTiming] Error waiting for tick ${tickIndex + 1}:`, error);
+              // Continue with execution even if tick timing fails
+            }
+          } else {
+            console.log(`[TradeAction/TickTiming] Executing initial batch of ${tradesForThisTick} trades on tick 1`);
+            
+            // Fetch fresh tick price for initial batch to ensure fresh price for each tick batch
+            try {
+              const instrumentFromAI = tradesToExecute[Math.min(tradeIndex, tradesToExecute.length - 1)].instrument as VolatilityInstrumentType;
+              const freshTicks = await getTicks(instrumentFromAI, 1, userDerivApiToken);
+              if (freshTicks.length > 0) {
+                batchSpot[instrumentFromAI] = freshTicks[0].price;
+                console.log(`[TradeAction/TickTiming] Captured fresh price for tick 1: ${instrumentFromAI} = ${freshTicks[0].price}`);
+              } else {
+                console.warn(`[TradeAction/TickTiming] No fresh ticks for ${instrumentFromAI}, falling back to existing price`);
+              }
+            } catch (tickError) {
+              console.warn(`[TradeAction/TickTiming] Failed to fetch fresh tick for initial batch ${instrumentFromAI}:`, tickError);
+              // Use existing price as fallback
+            }
+          }
+
+          // Execute batch simultaneously (CRITICAL DIFFERENCE from Safe mode)
+          const batchPromises = [];
+          for (let i = 0; i < tradesForThisTick && tradeIndex < tradesToExecute.length; i++) {
+            const tradePromise = executeSingleTrade(
+              tradesToExecute[tradeIndex],
+              userDerivApiToken,
+              targetAccountId,
+              selectedAccountType,
+              userId,
+              userSelectedTradeType,
+              totalStakeFromUser,
+              batchSpot, // Use updated price map with fresh tick price for this batch
+              instrumentATR,
+              predictionDigit,
+              selectedStrategy,
+              patternTrigger,
+              true // Turbo mode flag
+            );
+            batchPromises.push(tradePromise);
+            tradeIndex++;
+          }
+
+          // Execute all trades in this batch simultaneously
+          const batchResults = await Promise.all(batchPromises);
+          results.push(...batchResults);
+          
+          const successCount = batchResults.filter(result => result.success).length;
+          console.log(`[TradeAction/TickTiming] Batch ${tickIndex + 1} completed: ${successCount}/${tradesForThisTick} trades successful`);
         }
       }
-    }
-
-    for (const aiProposal of tradesToExecute) {
-      const result = await executeSingleTrade(
-        aiProposal,
-        userDerivApiToken,
-        targetAccountId,
-        selectedAccountType,
-        userId,
-        userSelectedTradeType,
-        totalStakeFromUser,
-        sharedPricePoint, // Use shared price point for all instruments instead of instrumentLatestSpot
-        instrumentATR,
-        predictionDigit,
-        selectedStrategy,
-        patternTrigger,
-        true // Flag to indicate this is a Turbo mode trade
-      );
-      results.push(result);
     }
   } else {
     // Safe mode: Implement split-tick execution strategy

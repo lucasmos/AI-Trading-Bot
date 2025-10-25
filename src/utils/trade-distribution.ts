@@ -29,95 +29,95 @@ export const TRADE_DISTRIBUTION_TABLE: Readonly<Record<number, ReadonlyArray<num
   10: Object.freeze([2, 3, 3, 2]),
   11: Object.freeze([3, 3, 3, 2]),
   12: Object.freeze([3, 3, 3, 3]),
-  13: Object.freeze([3, 3, 4, 3]),
+  13: Object.freeze([3, 4, 3, 3]),
   14: Object.freeze([3, 4, 4, 3]),
-  15: Object.freeze([4, 4, 4, 3]),
+  15: Object.freeze([3, 4, 4, 4]),
   16: Object.freeze([4, 4, 4, 4]),
   17: Object.freeze([4, 4, 5, 4]),
   18: Object.freeze([4, 5, 5, 4]),
-  19: Object.freeze([5, 5, 5, 4]),
-  20: Object.freeze([5, 5, 5, 5]),
-  21: Object.freeze([5, 5, 6, 5]),
+  19: Object.freeze([4, 5, 5, 5]),
+  20: Object.freeze([4, 6, 6, 4]),
+  21: Object.freeze([4, 6, 6, 5]),
   22: Object.freeze([5, 6, 6, 5]),
-  23: Object.freeze([6, 6, 6, 5]),
-  24: Object.freeze([6, 6, 6, 6]),
-  25: Object.freeze([6, 6, 7, 6]),
-  26: Object.freeze([6, 7, 7, 6]),
-  27: Object.freeze([7, 7, 7, 6]),
-  28: Object.freeze([7, 7, 7, 7]),
-  29: Object.freeze([7, 7, 8, 7]),
+  23: Object.freeze([5, 6, 6, 6]),
+  24: Object.freeze([5, 6, 7, 6]),
+  25: Object.freeze([5, 6, 7, 7]),
+  26: Object.freeze([5, 7, 7, 7]),
+  27: Object.freeze([6, 7, 7, 7]),
+  28: Object.freeze([6, 7, 8, 7]),
+  29: Object.freeze([6, 8, 8, 7]),
   30: Object.freeze([6, 9, 9, 6]),
   // 5-tick distributions (31-70 trades)
   31: Object.freeze([5, 6, 9, 6, 5]),
-  32: Object.freeze([5, 7, 8, 7, 5]),
-  33: Object.freeze([6, 7, 8, 7, 5]),
-  34: Object.freeze([6, 7, 8, 7, 6]),
-  35: Object.freeze([6, 8, 9, 8, 4]),
-  36: Object.freeze([6, 8, 9, 8, 5]),
-  37: Object.freeze([7, 8, 9, 8, 5]),
-  38: Object.freeze([7, 8, 9, 8, 6]),
-  39: Object.freeze([7, 9, 10, 9, 4]),
-  40: Object.freeze([7, 9, 10, 9, 5]),
-  41: Object.freeze([8, 9, 10, 9, 5]),
-  42: Object.freeze([8, 9, 10, 9, 6]),
-  43: Object.freeze([8, 10, 11, 10, 4]),
-  44: Object.freeze([8, 10, 11, 10, 5]),
-  45: Object.freeze([9, 10, 11, 10, 5]),
-  46: Object.freeze([9, 10, 11, 10, 6]),
-  47: Object.freeze([9, 11, 12, 11, 4]),
-  48: Object.freeze([9, 11, 12, 11, 5]),
-  49: Object.freeze([10, 11, 12, 11, 5]),
-  50: Object.freeze([10, 11, 12, 11, 6]),
-  51: Object.freeze([10, 12, 13, 12, 4]),
-  52: Object.freeze([10, 12, 13, 12, 5]),
-  53: Object.freeze([11, 12, 13, 12, 5]),
-  54: Object.freeze([11, 12, 13, 12, 6]),
-  55: Object.freeze([11, 13, 14, 13, 4]),
-  56: Object.freeze([11, 13, 14, 13, 5]),
-  57: Object.freeze([12, 13, 14, 13, 5]),
-  58: Object.freeze([12, 13, 14, 13, 6]),
-  59: Object.freeze([12, 14, 15, 14, 4]),
-  60: Object.freeze([12, 14, 15, 14, 5]),
-  61: Object.freeze([13, 14, 15, 14, 5]),
-  62: Object.freeze([13, 14, 15, 14, 6]),
-  63: Object.freeze([13, 15, 16, 15, 4]),
-  64: Object.freeze([13, 15, 16, 15, 5]),
-  65: Object.freeze([14, 15, 16, 15, 5]),
-  66: Object.freeze([14, 15, 16, 15, 6]),
-  67: Object.freeze([14, 16, 17, 16, 4]),
-  68: Object.freeze([14, 16, 17, 16, 5]),
-  69: Object.freeze([15, 16, 17, 16, 5]),
-  70: Object.freeze([15, 16, 17, 16, 6]),
+  32: Object.freeze([6, 6, 9, 6, 5]),
+  33: Object.freeze([6, 6, 10, 6, 5]),
+  34: Object.freeze([6, 7, 10, 7, 4]),
+  35: Object.freeze([6, 7, 11, 7, 4]),
+  36: Object.freeze([6, 7, 12, 7, 4]),
+  37: Object.freeze([7, 7, 12, 7, 4]),
+  38: Object.freeze([7, 7, 13, 7, 4]),
+  39: Object.freeze([7, 8, 13, 8, 3]),
+  40: Object.freeze([6, 8, 12, 8, 6]),
+  41: Object.freeze([7, 8, 13, 8, 5]),
+  42: Object.freeze([7, 8, 14, 8, 5]),
+  43: Object.freeze([7, 9, 14, 9, 4]),
+  44: Object.freeze([8, 9, 14, 9, 4]),
+  45: Object.freeze([8, 9, 15, 9, 4]),
+  46: Object.freeze([8, 10, 15, 10, 3]),
+  47: Object.freeze([8, 10, 16, 10, 3]),
+  48: Object.freeze([9, 10, 16, 10, 3]),
+  49: Object.freeze([9, 10, 17, 10, 3]),
+  50: Object.freeze([8, 10, 14, 10, 8]),
+  51: Object.freeze([10, 10, 11, 10, 10]),
+  52: Object.freeze([10, 11, 11, 10, 10]),
+  53: Object.freeze([10, 11, 11, 11, 10]),
+  54: Object.freeze([10, 11, 12, 11, 10]),
+  55: Object.freeze([11, 11, 12, 11, 10]),
+  56: Object.freeze([11, 11, 12, 11, 11]),
+  57: Object.freeze([11, 11, 13, 11, 11]),
+  58: Object.freeze([11, 12, 13, 12, 10]),
+  59: Object.freeze([11, 12, 13, 12, 11]),
+  60: Object.freeze([10, 12, 16, 12, 10]),
+  61: Object.freeze([12, 12, 13, 12, 12]),
+  62: Object.freeze([12, 12, 14, 12, 12]),
+  63: Object.freeze([12, 13, 14, 13, 11]),
+  64: Object.freeze([12, 13, 14, 13, 12]),
+  65: Object.freeze([12, 13, 15, 13, 12]),
+  66: Object.freeze([12, 13, 16, 13, 12]),
+  67: Object.freeze([13, 13, 16, 13, 12]),
+  68: Object.freeze([13, 14, 16, 14, 11]),
+  69: Object.freeze([13, 14, 16, 14, 12]),
+  70: Object.freeze([12, 14, 18, 14, 12]),
   // 6-tick distributions (71-100 trades)
   71: Object.freeze([11, 12, 12, 12, 12, 12]),
   72: Object.freeze([12, 12, 12, 12, 12, 12]),
-  73: Object.freeze([12, 12, 12, 12, 12, 13]),
-  74: Object.freeze([12, 12, 12, 12, 13, 13]),
-  75: Object.freeze([12, 12, 12, 13, 13, 13]),
-  76: Object.freeze([12, 13, 13, 13, 13, 12]),
-  77: Object.freeze([13, 13, 13, 13, 13, 12]),
-  78: Object.freeze([13, 13, 13, 13, 13, 13]),
-  79: Object.freeze([13, 13, 13, 13, 13, 14]),
-  80: Object.freeze([13, 13, 13, 13, 14, 14]),
-  81: Object.freeze([13, 13, 13, 14, 14, 14]),
-  82: Object.freeze([13, 14, 14, 14, 14, 13]),
-  83: Object.freeze([14, 14, 14, 14, 14, 13]),
-  84: Object.freeze([14, 14, 14, 14, 14, 14]),
-  85: Object.freeze([14, 14, 14, 14, 14, 15]),
-  86: Object.freeze([14, 14, 14, 14, 15, 15]),
-  87: Object.freeze([14, 14, 14, 15, 15, 15]),
-  88: Object.freeze([14, 15, 15, 15, 15, 14]),
-  89: Object.freeze([15, 15, 15, 15, 15, 14]),
-  90: Object.freeze([15, 15, 15, 15, 15, 15]),
-  91: Object.freeze([15, 15, 15, 15, 15, 16]),
-  92: Object.freeze([15, 15, 15, 15, 16, 16]),
-  93: Object.freeze([15, 15, 15, 16, 16, 16]),
+  73: Object.freeze([12, 12, 13, 12, 12, 12]),
+  74: Object.freeze([12, 12, 13, 13, 12, 12]),
+  75: Object.freeze([12, 13, 13, 13, 12, 12]),
+  76: Object.freeze([12, 13, 14, 13, 12, 12]),
+  77: Object.freeze([12, 13, 14, 14, 12, 12]),
+  78: Object.freeze([12, 13, 15, 14, 12, 12]),
+  79: Object.freeze([13, 13, 15, 14, 12, 12]),
+  80: Object.freeze([12, 14, 14, 14, 14, 12]),
+  81: Object.freeze([13, 14, 14, 14, 14, 12]),
+  82: Object.freeze([13, 14, 15, 14, 14, 12]),
+  83: Object.freeze([13, 14, 15, 15, 14, 12]),
+  84: Object.freeze([13, 15, 15, 15, 14, 12]),
+  85: Object.freeze([13, 15, 15, 15, 15, 12]),
+  86: Object.freeze([14, 15, 15, 15, 15, 12]),
+  87: Object.freeze([14, 15, 16, 15, 15, 12]),
+  88: Object.freeze([14, 15, 16, 16, 15, 12]),
+  89: Object.freeze([14, 15, 16, 16, 15, 13]),
+  90: Object.freeze([14, 16, 16, 16, 16, 12]),
+  91: Object.freeze([15, 15, 16, 15, 15, 15]),
+  92: Object.freeze([15, 15, 16, 16, 15, 15]),
+  93: Object.freeze([15, 16, 16, 16, 15, 15]),
   94: Object.freeze([15, 16, 16, 16, 16, 15]),
   95: Object.freeze([16, 16, 16, 16, 16, 15]),
   96: Object.freeze([16, 16, 16, 16, 16, 16]),
-  97: Object.freeze([16, 16, 16, 16, 16, 17]),
-  98: Object.freeze([16, 16, 16, 16, 17, 17]),
-  99: Object.freeze([16, 16, 16, 17, 17, 17]),
+  97: Object.freeze([16, 16, 17, 16, 16, 16]),
+  98: Object.freeze([16, 16, 17, 17, 16, 16]),
+  99: Object.freeze([16, 17, 17, 17, 16, 16]),
   100: Object.freeze([16, 17, 17, 17, 17, 16]),
 } as const);
 
@@ -219,4 +219,63 @@ export function isValidTradeCount(numberOfTrades: number): boolean {
   }
 
   return validateDistribution(numberOfTrades, distribution);
+}
+
+/**
+ * Verifies the integrity of the entire trade distribution table
+ * 
+ * Iterates through all trade counts (5-100) and validates that each distribution
+ * correctly sums to its expected trade count. Useful for development, testing,
+ * and CI to catch data corruption or incorrect edits.
+ * 
+ * In non-production builds, this function will assert on failures for immediate feedback.
+ * In production, it returns false on any validation failure without throwing.
+ * 
+ * @returns true if all distributions are valid, false if any validation fails
+ * 
+ * @example
+ * // In tests or CI
+ * expect(verifyTableIntegrity()).toBe(true);
+ * 
+ * // In development builds
+ * verifyTableIntegrity(); // Will assert on failure
+ * 
+ * // In production (safe check)
+ * if (!verifyTableIntegrity()) {
+ *   console.warn('Trade distribution table integrity check failed');
+ * }
+ */
+export function verifyTableIntegrity(): boolean {
+  for (let tradeCount = MIN_TRADE_COUNT; tradeCount <= MAX_TRADE_COUNT; tradeCount++) {
+    const distribution = TRADE_DISTRIBUTION_TABLE[tradeCount];
+    
+    // Check if distribution exists
+    if (!distribution) {
+      const errorMessage = `Missing distribution for trade count: ${tradeCount}`;
+      
+      // Assert in non-production builds for immediate feedback
+      if (process.env.NODE_ENV !== 'production') {
+        console.assert(false, errorMessage);
+      }
+      
+      return false;
+    }
+    
+    // Validate distribution sums correctly
+    if (!validateDistribution(tradeCount, distribution)) {
+      const distributionSum = distribution.reduce((sum, count) => sum + count, 0);
+      const errorMessage = `Invalid distribution for trade count ${tradeCount}: ` +
+        `expected sum ${tradeCount}, got ${distributionSum}. ` +
+        `Distribution: [${distribution.join(', ')}]`;
+      
+      // Assert in non-production builds for immediate feedback
+      if (process.env.NODE_ENV !== 'production') {
+        console.assert(false, errorMessage);
+      }
+      
+      return false;
+    }
+  }
+  
+  return true;
 }
